@@ -186,9 +186,16 @@ func (a *API) handleFriendRequest(w http.ResponseWriter, r *http.Request, user *
 	if !decode(w, r, &body) {
 		return
 	}
-	err := a.Store.SendRequest(user.ID, strings.TrimSpace(body.Nick))
+	targetNick := strings.TrimSpace(body.Nick)
+	err := a.Store.SendRequest(user.ID, targetNick)
 	switch {
 	case err == nil:
+		// Notify the addressee live (drives their tray notification + UI).
+		if target, _, e := a.Store.UserByNick(targetNick); e == nil {
+			a.Presence.NotifyUser(target.ID, presence.Event{
+				Type: "friend_request", UserID: user.ID, Nick: user.Nick,
+			})
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case errors.Is(err, store.ErrNoSuchUser):
 		writeErr(w, http.StatusNotFound, "no such user")

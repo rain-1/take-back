@@ -17,8 +17,9 @@ type FriendLookup func(userID int64) ([]int64, error)
 
 // Event is a message pushed to a client's events socket.
 type Event struct {
-	Type    string          `json:"type"` // "presence" | "message" | "hello"
+	Type    string          `json:"type"` // "presence" | "message" | "hello" | "friend_request"
 	UserID  int64           `json:"userId,omitempty"`
+	Nick    string          `json:"nick,omitempty"` // actor's nick (e.g. friend requester)
 	Online  bool            `json:"online,omitempty"`
 	Online0 []int64         `json:"onlineFriends,omitempty"` // sent once on connect
 	Message json.RawMessage `json:"message,omitempty"`
@@ -116,6 +117,12 @@ func (h *Hub) notifyFriends(userID int64, ev Event) {
 // when a DM is stored). The message payload is pre-serialized JSON.
 func (h *Hub) NotifyMessage(recipientID int64, msg json.RawMessage) {
 	h.sendTo(recipientID, Event{Type: "message", Message: msg})
+}
+
+// NotifyUser pushes an arbitrary event to a single user's live sockets (if any).
+// Used for out-of-band notifications like incoming friend requests.
+func (h *Hub) NotifyUser(userID int64, ev Event) {
+	h.sendTo(userID, ev)
 }
 
 var upgrader = websocket.Upgrader{CheckOrigin: func(_ *http.Request) bool { return true }}

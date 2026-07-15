@@ -174,8 +174,24 @@ async function enterApp() {
   $("auth").classList.add("hidden");
   $("main").classList.remove("hidden");
   $("meNick").textContent = me.nick;
+  requestNotifyPermission();
   await loadFriends();
   connectEvents();
+}
+
+// ---------- Desktop (tray) notifications ----------
+function requestNotifyPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+// notify shows an OS notification when permitted and the page isn't focused.
+// Clicking it focuses the tab (and optionally runs onClick).
+function notify(title, body, onClick) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (document.visibilityState === "visible" && document.hasFocus()) return;
+  const n = new Notification(title, { body, tag: title });
+  n.onclick = () => { window.focus(); n.close(); if (onClick) onClick(); };
 }
 
 // Try to resume an existing session on load.
@@ -361,7 +377,19 @@ function connectEvents() {
       renderFriends();
     } else if (e.type === "message") {
       const m = e.message;
-      if (openFriend && m.senderId === openFriend.id) { appendMessage(m); scrollMessages(); }
+      if (openFriend && m.senderId === openFriend.id) {
+        appendMessage(m); scrollMessages();
+      } else {
+        // Message from someone whose chat isn't open — notify.
+        const from = friendState.get(m.senderId);
+        const who = from ? from.user.nick : "someone";
+        const preview = m.body ? m.body.slice(0, 80) : "📷 image";
+        notify("Message from " + who, preview, () => { if (from) openChat(from.user); });
+      }
+    } else if (e.type === "friend_request") {
+      // A new incoming friend request: refresh the list and raise a notification.
+      loadFriends();
+      notify("Friend request", e.nick + " wants to be your friend");
     }
   };
   events.onclose = () => setTimeout(() => { if (me) connectEvents(); }, 2000);
