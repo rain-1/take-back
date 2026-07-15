@@ -1,3 +1,7 @@
 /tb-server
 /tb-web
 *.log
+*.db
+*.db-*
+/media/
+takeback.db

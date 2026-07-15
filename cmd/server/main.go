@@ -14,6 +14,9 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/rain1/take-back/internal/api"
+	"github.com/rain1/take-back/internal/presence"
+	"github.com/rain1/take-back/internal/store"
 )
 
 // Signal is one signaling message relayed between peers in a room.
@@ -247,17 +250,39 @@ func (c *client) writePump() {
 }
 
 func main() {
-	addr := flag.String("addr", ":8081", "listen address for the signaling server")
+	addr := flag.String("addr", ":8081", "listen address for the server")
+	dbPath := flag.String("db", "takeback.db", "SQLite database path")
+	mediaDir := flag.String("media", "media", "directory for uploaded images")
 	flag.Parse()
 
+	// Persistence.
+	db, err := store.Open(*dbPath)
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	media, err := api.NewMediaStore(*mediaDir)
+	if err != nil {
+		log.Fatalf("media dir: %v", err)
+	}
+
+	// Presence hub is told who each user's friends are so it can route events.
+	pres := presence.NewHub(db.AcceptedFriendIDs)
+
+	restAPI := &api.API{Store: db, Presence: pres, Media: media}
+
+	// WebRTC signaling hub (unchanged).
 	h := newHub()
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", h.serveWS)
+	mux.HandleFunc("/ws", h.serveWS) // WebRTC signaling
+	restAPI.Routes(mux)              // auth, friends, DMs, images, /api/events, /media/
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok"))
 	})
 
-	log.Printf("take-back signaling server listening on %s", *addr)
+	log.Printf("take-back server listening on %s (db=%s, media=%s)", *addr, *dbPath, *mediaDir)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		log.Fatal(err)
 	}
