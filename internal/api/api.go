@@ -44,6 +44,8 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/messages/image", a.auth(a.handleImageMessage))
 	mux.HandleFunc("/api/events", a.auth(a.handleEvents)) // presence + message stream (WS)
 
+	a.groupRoutes(mux)
+
 	// Serve uploaded media (originals + thumbnails).
 	mux.Handle("/media/", http.StripPrefix("/media/", http.FileServer(http.Dir(a.Media.Dir))))
 }
