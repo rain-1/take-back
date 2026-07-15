@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">take-back</string>
+    <string name="enter_nickname">Enter a nickname to get started</string>
+    <string name="cont">Continue</string>
+    <string name="host_call">Host a new call</string>
+    <string name="join_with_code">Join with a call code</string>
+    <string name="join">Join</string>
+    <string name="call_code">Call code:</string>
+    <string name="copy">Copy</string>
+    <string name="share_screen">Share screen</string>
+    <string name="stop_sharing">Stop sharing</string>
+    <string name="flip_camera">Flip</string>
+    <string name="leave">Leave</string>
+    <string name="connecting">connecting…</string>
+    <string name="connected">connected</string>
+    <string name="waiting">waiting for others</string>
+    <string name="disconnected">disconnected</string>
+</resources>
