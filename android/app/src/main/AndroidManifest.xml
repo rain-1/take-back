@@ -19,14 +19,21 @@
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
         <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden">
+            android:name=".LoginActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".HomeActivity" android:exported="false" />
+        <activity android:name=".ChatActivity" android:exported="false" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- Foreground service required by MediaProjection screen capture on API 29+. -->
         <service

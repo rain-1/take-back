@@ -9,7 +9,9 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.takeback.app.databinding.ActivityMainBinding
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
@@ -25,6 +27,11 @@ import kotlin.random.Random
  * and a share toggle swaps the camera for the screen.
  */
 class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents {
+
+    companion object {
+        /** Optional call-code extra; when present, the screen auto-joins. */
+        const val EXTRA_ROOM = "room"
+    }
 
     private lateinit var binding: ActivityMainBinding
     private val eglBase: EglBase by lazy { EglBase.create() }
@@ -76,6 +83,17 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.flipBtn.setOnClickListener { engine?.switchCamera() }
         binding.shareBtn.setOnClickListener { if (sharing) stopScreenShare() else requestScreenShare() }
         binding.leaveBtn.setOnClickListener { leaveCall() }
+
+        // Launched from a chat with a call code: use the logged-in nick and join
+        // straight away, skipping the nickname/lobby steps.
+        val room = intent.getStringExtra(EXTRA_ROOM)
+        if (room != null) {
+            binding.nickStep.visibility = View.GONE
+            lifecycleScope.launch {
+                nick = runCatching { com.takeback.app.net.ApiClient.me().nick }.getOrDefault("guest")
+                requestCall(room.uppercase())
+            }
+        }
     }
 
     // ---- Call setup ----

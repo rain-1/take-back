@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#0F1115"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textColor="#E7E9EE"
+        android:textSize="26sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/authTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/log_in"
+        android:textColor="#8B93A7"
+        android:paddingBottom="18dp" />
+
+    <EditText
+        android:id="@+id/nick"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/nickname"
+        android:textColor="#E7E9EE"
+        android:textColorHint="#5B6273"
+        android:inputType="text"
+        android:importantForAutofill="no"
+        android:layout_marginBottom="10dp" />
+
+    <EditText
+        android:id="@+id/password"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/password"
+        android:textColor="#E7E9EE"
+        android:textColorHint="#5B6273"
+        android:inputType="textPassword"
+        android:importantForAutofill="no" />
+
+    <TextView
+        android:id="@+id/error"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#F87171"
+        android:textSize="13sp"
+        android:minHeight="20dp"
+        android:paddingTop="6dp" />
+
+    <Button
+        android:id="@+id/submit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/log_in"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/toggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/need_account"
+        android:textColor="#60A5FA"
+        android:padding="12dp" />
+</LinearLayout>

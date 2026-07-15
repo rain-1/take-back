@@ -16,4 +16,24 @@
     <string name="connected">connected</string>
     <string name="waiting">waiting for others</string>
     <string name="disconnected">disconnected</string>
+
+    <string name="log_in">Log in</string>
+    <string name="register">Register</string>
+    <string name="create_account">Create an account</string>
+    <string name="nickname">nickname</string>
+    <string name="password">password</string>
+    <string name="need_account">No account? Register</string>
+    <string name="have_account">Have an account? Log in</string>
+    <string name="log_out">Log out</string>
+    <string name="add_friend">Add friend</string>
+    <string name="add">Add</string>
+    <string name="friends">Friends</string>
+    <string name="requests">Requests</string>
+    <string name="accept">Accept</string>
+    <string name="decline">Decline</string>
+    <string name="no_friends">No friends yet — add someone above.</string>
+    <string name="message_hint">Message (markdown)…</string>
+    <string name="send">Send</string>
+    <string name="video_call">Video call</string>
+    <string name="image">Image</string>
 </resources>
