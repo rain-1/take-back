@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>take-back</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, sans-serif;
+    background: #0f1115; color: #e7e9ee; min-height: 100vh;
+  }
+  header { padding: 1rem 1.25rem; border-bottom: 1px solid #262a33; display:flex; align-items:baseline; gap:.75rem;}
+  header h1 { font-size: 1.1rem; margin:0; letter-spacing:.02em;}
+  header .sub { color:#8b93a7; font-size:.8rem;}
+  main { padding: 1.25rem; max-width: 1100px; margin: 0 auto; }
+  .card { background:#171a21; border:1px solid #262a33; border-radius:12px; padding:1.25rem; margin-bottom:1rem;}
+  label { display:block; font-size:.8rem; color:#8b93a7; margin-bottom:.35rem;}
+  input {
+    width:100%; padding:.6rem .7rem; border-radius:8px; border:1px solid #2c313c;
+    background:#0f1115; color:#e7e9ee; font-size:1rem;
+  }
+  .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end;}
+  .row > div { flex:1; min-width:180px;}
+  button {
+    padding:.6rem 1rem; border-radius:8px; border:0; font-size:.95rem; cursor:pointer;
+    background:#3b82f6; color:white; font-weight:600;
+  }
+  button.secondary { background:#2c313c; color:#e7e9ee;}
+  button:disabled { opacity:.5; cursor:not-allowed;}
+  .hidden { display:none !important; }
+  .callbar { display:flex; align-items:center; gap:1rem; flex-wrap:wrap;}
+  .code {
+    font-family: ui-monospace, monospace; font-size:1.4rem; letter-spacing:.15em;
+    background:#0f1115; padding:.3rem .7rem; border-radius:8px; border:1px solid #2c313c;
+  }
+  #grid { display:grid; gap:.75rem; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); margin-top:1rem;}
+  .tile { position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:4/3;}
+  .tile video { width:100%; height:100%; object-fit:cover; }
+  .tile .name {
+    position:absolute; left:.5rem; bottom:.5rem; background:rgba(0,0,0,.55);
+    padding:.15rem .5rem; border-radius:6px; font-size:.8rem;
+  }
+  .status { font-size:.85rem; color:#8b93a7; }
+  .pill { font-size:.75rem; padding:.15rem .5rem; border-radius:999px; background:#22c55e22; color:#4ade80;}
+</style>
+</head>
+<body>
+<header>
+  <h1>take-back</h1>
+  <span class="sub">webrtc nat-passthrough prototype</span>
+</header>
+<main>
+
+  <!-- Step 1: nickname -->
+  <section id="nickStep" class="card">
+    <label for="nick">Enter a nickname to get started</label>
+    <div class="row">
+      <div><input id="nick" placeholder="e.g. river" autocomplete="off"></div>
+      <button id="nickBtn">Continue</button>
+    </div>
+  </section>
+
+  <!-- Step 2: host or join -->
+  <section id="lobbyStep" class="card hidden">
+    <div class="callbar" style="margin-bottom:1rem;">
+      <span class="status">Hi <b id="nickLabel"></b> — start or join a call.</span>
+    </div>
+    <div class="row">
+      <div>
+        <button id="hostBtn">Host a new call</button>
+      </div>
+      <div>
+        <label for="joinCode">Join with a call code</label>
+        <input id="joinCode" placeholder="ABCD12" autocomplete="off" style="text-transform:uppercase;">
+      </div>
+      <div style="flex:0;">
+        <button id="joinBtn" class="secondary">Join</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Step 3: in call -->
+  <section id="callStep" class="card hidden">
+    <div class="callbar">
+      <span class="status">Call code:</span>
+      <span class="code" id="callCode"></span>
+      <button id="copyBtn" class="secondary">Copy</button>
+      <span class="pill" id="connPill">connecting…</span>
+      <span style="flex:1;"></span>
+      <button id="leaveBtn" class="secondary">Leave</button>
+    </div>
+    <div id="grid"></div>
+  </section>
+
+  <p class="status" id="log"></p>
+</main>
+
+<script>
+const SIGNAL_URL = "{{.SignalURL}}";
+// Public STUN so peers can discover their NAT-mapped address. Add TURN here for
+// networks where a direct path can't be punched.
+const ICE_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+let nick = "";
+let ws = null;
+let myId = null;
+let roomCode = "";
+let localStream = null;
+const peers = new Map(); // peerId -> { pc, nick }
+
+const $ = (id) => document.getElementById(id);
+const logEl = $("log");
+function log(msg) { logEl.textContent = msg; console.log("[take-back]", msg); }
+
+// ---- Step 1: nickname ----
+$("nickBtn").onclick = () => {
+  const v = $("nick").value.trim();
+  if (!v) return;
+  nick = v;
+  $("nickLabel").textContent = nick;
+  $("nickStep").classList.add("hidden");
+  $("lobbyStep").classList.remove("hidden");
+};
+$("nick").addEventListener("keydown", (e) => { if (e.key === "Enter") $("nickBtn").click(); });
+
+// ---- Step 2: host / join ----
+function randomCode() {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < 6; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+$("hostBtn").onclick = () => startCall(randomCode());
+$("joinBtn").onclick = () => {
+  const c = $("joinCode").value.trim().toUpperCase();
+  if (c) startCall(c);
+};
+
+// ---- Step 3: the call ----
+async function startCall(code) {
+  roomCode = code;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  } catch (err) {
+    log("Could not access camera/microphone: " + err.message);
+    return;
+  }
+  $("lobbyStep").classList.add("hidden");
+  $("callStep").classList.remove("hidden");
+  $("callCode").textContent = code;
+  addTile("local", nick + " (you)", localStream, true);
+  connectSignaling();
+}
+
+$("copyBtn").onclick = () => {
+  navigator.clipboard.writeText(roomCode).then(() => log("Call code copied."));
+};
+$("leaveBtn").onclick = () => location.reload();
+
+function connectSignaling() {
+  const url = SIGNAL_URL + "?room=" + encodeURIComponent(roomCode) + "&nick=" + encodeURIComponent(nick);
+  ws = new WebSocket(url);
+  ws.onopen = () => log("Connected to signaling. Waiting for peers…");
+  ws.onclose = () => { $("connPill").textContent = "disconnected"; log("Signaling closed."); };
+  ws.onerror = () => log("Signaling error — is the server running?");
+  ws.onmessage = (ev) => handleSignal(JSON.parse(ev.data));
+}
+
+function send(obj) { ws.send(JSON.stringify(obj)); }
+
+async function handleSignal(msg) {
+  switch (msg.type) {
+    case "welcome":
+      myId = msg.to;
+      // We are the newcomer: initiate an offer to each existing peer.
+      for (const p of msg.peers || []) {
+        await createPeer(p.id, p.nick, true);
+      }
+      $("connPill").textContent = (msg.peers || []).length ? "connecting…" : "waiting for others";
+      break;
+    case "hello":
+      // An existing peer sees a newcomer; wait for their offer, but note nick.
+      break;
+    case "offer": {
+      const pc = await createPeer(msg.from, msg.nick, false);
+      await pc.setRemoteDescription(JSON.parse(msg.payload));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      send({ type: "answer", to: msg.from, nick, payload: JSON.stringify(answer) });
+      break;
+    }
+    case "answer": {
+      const entry = peers.get(msg.from);
+      if (entry) await entry.pc.setRemoteDescription(JSON.parse(msg.payload));
+      break;
+    }
+    case "candidate": {
+      const entry = peers.get(msg.from);
+      if (entry && msg.payload) {
+        try { await entry.pc.addIceCandidate(JSON.parse(msg.payload)); }
+        catch (e) { console.warn("addIceCandidate", e); }
+      }
+      break;
+    }
+    case "leave":
+      removePeer(msg.from);
+      break;
+  }
+}
+
+async function createPeer(peerId, peerNick, initiator) {
+  let entry = peers.get(peerId);
+  if (entry) return entry.pc;
+
+  const pc = new RTCPeerConnection(ICE_CONFIG);
+  entry = { pc, nick: peerNick || "peer" };
+  peers.set(peerId, entry);
+
+  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) send({ type: "candidate", to: peerId, payload: JSON.stringify(e.candidate) });
+  };
+  pc.ontrack = (e) => {
+    addTile(peerId, entry.nick, e.streams[0], false);
+    $("connPill").textContent = "connected";
+  };
+  pc.onconnectionstatechange = () => {
+    log("peer " + peerId + ": " + pc.connectionState);
+    if (pc.connectionState === "failed" || pc.connectionState === "closed") removePeer(peerId);
+  };
+
+  if (initiator) {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    send({ type: "offer", to: peerId, nick, payload: JSON.stringify(offer) });
+  }
+  return pc;
+}
+
+function removePeer(peerId) {
+  const entry = peers.get(peerId);
+  if (entry) { entry.pc.close(); peers.delete(peerId); }
+  const tile = document.getElementById("tile-" + peerId);
+  if (tile) tile.remove();
+  if (peers.size === 0) $("connPill").textContent = "waiting for others";
+}
+
+function addTile(id, name, stream, muted) {
+  let tile = document.getElementById("tile-" + id);
+  if (!tile) {
+    tile = document.createElement("div");
+    tile.className = "tile";
+    tile.id = "tile-" + id;
+    const video = document.createElement("video");
+    video.autoplay = true; video.playsInline = true; video.muted = muted;
+    const label = document.createElement("div");
+    label.className = "name";
+    tile.append(video, label);
+    $("grid").append(tile);
+  }
+  tile.querySelector("video").srcObject = stream;
+  tile.querySelector(".name").textContent = name;
+}
+</script>
+</body>
+</html>

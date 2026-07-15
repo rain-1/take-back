@@ -1,0 +1,13 @@
+This project is called take-back
+
+It's a chat application which also supports voice calls and video calls.
+
+This is a going to start with a prototype for testing webrtc ICE for nat passthrough
+Uesr should enter a nickname to get started
+
+Then can then host a video call which gives them a call id-code to share
+The other user(s) can join that video call id and then connect in and join the voice/video chat
+
+Client web interface hosted by a go application
+A server application also written in go for handling connections and helping web rtc to connect
+
