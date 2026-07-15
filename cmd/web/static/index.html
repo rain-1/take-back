@@ -96,6 +96,14 @@
         </div>
         <div class="err" id="addErr" style="color:#f87171;font-size:.75rem;"></div>
       </div>
+      <div class="section">
+        <h3>Groups</h3>
+        <div class="addrow">
+          <input id="groupName" placeholder="new group name" autocomplete="off">
+          <button id="newGroupBtn">Create</button>
+        </div>
+        <div id="groups" style="margin-top:.4rem;"></div>
+      </div>
       <div class="section hidden" id="requestsSection">
         <h3>Requests</h3>
         <div id="requests"></div>
@@ -112,9 +120,12 @@
         <div id="chatHeader">
           <span class="dot" id="chatDot"></span>
           <span class="nick" id="chatNick"></span>
+          <span class="sub" id="chatSub" style="color:#8b93a7;font-size:.75rem;"></span>
           <span style="flex:1;"></span>
+          <button class="secondary hidden" id="membersBtn">👥 Members</button>
           <button class="secondary" id="callBtn">📹 Video call</button>
         </div>
+        <div id="membersPanel" class="hidden" style="padding:.5rem 1rem;border-bottom:1px solid #262a33;display:flex;flex-wrap:wrap;gap:.5rem;"></div>
         <div id="messages"></div>
         <div id="composer">
           <button class="secondary" id="imgBtn" title="Send image">🖼️</button>
@@ -136,9 +147,12 @@ async function api(path, opts = {}) {
 }
 
 let me = null;
-let openFriend = null;       // { id, nick, online }
+let openFriend = null;       // { id, nick, online } when a DM is open
+let openGroup = null;        // { id, name, callCode } when a group is open
 let events = null;           // events WebSocket
 const friendState = new Map(); // id -> friend view
+const groupState = new Map();   // id -> group
+const groupMembers = new Map(); // userId -> { nick, online } for the open group
 
 // ---------- Auth ----------
 let registerMode = false;
@@ -176,8 +190,100 @@ async function enterApp() {
   $("meNick").textContent = me.nick;
   requestNotifyPermission();
   await loadFriends();
+  await loadGroups();
   connectEvents();
 }
+
+// ---------- Groups ----------
+$("newGroupBtn").onclick = async () => {
+  const name = $("groupName").value.trim();
+  if (!name) return;
+  const g = await api("/api/groups", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  $("groupName").value = "";
+  await loadGroups();
+  openGroupChat(g);
+};
+
+async function loadGroups() {
+  const list = await api("/api/groups");
+  groupState.clear();
+  list.forEach((g) => groupState.set(g.id, g));
+  renderGroups();
+}
+
+function renderGroups() {
+  const box = $("groups");
+  box.innerHTML = "";
+  if (groupState.size === 0) {
+    box.innerHTML = `<div style="color:#5b6273;font-size:.8rem;padding:.2rem 0;">No groups yet.</div>`;
+    return;
+  }
+  for (const g of groupState.values()) {
+    const row = document.createElement("div");
+    row.className = "friend" + (openGroup && openGroup.id === g.id ? " active" : "");
+    row.innerHTML = `<span style="color:#8b93a7;">#</span>
+      <span class="nick">${esc(g.name)}</span>
+      <span class="sub" style="color:#5b6273;font-size:.75rem;">${g.memberCount}</span>`;
+    row.onclick = () => openGroupChat(g);
+    box.append(row);
+  }
+}
+
+async function openGroupChat(g) {
+  openFriend = null;
+  openGroup = { id: g.id, name: g.name, callCode: g.callCode };
+  $("empty").classList.add("hidden");
+  $("chatPane").classList.remove("hidden");
+  $("chatDot").className = "dot hidden";
+  $("chatNick").textContent = "# " + g.name;
+  $("membersBtn").classList.remove("hidden");
+  $("membersPanel").classList.add("hidden");
+  renderGroups();
+  renderFriends();
+  await loadMembers(g.id);
+  const msgs = await api(`/api/groups/messages?group=${g.id}`);
+  $("messages").innerHTML = "";
+  msgs.forEach(appendMessage);
+  scrollMessages();
+}
+
+async function loadMembers(groupId) {
+  const members = await api(`/api/groups/members?group=${groupId}`);
+  groupMembers.clear();
+  members.forEach((m) => groupMembers.set(m.id, { nick: m.nick, online: m.online, owner: m.owner }));
+  $("chatSub").textContent = members.length + " members";
+  renderMembersPanel();
+}
+
+function renderMembersPanel() {
+  const panel = $("membersPanel");
+  panel.innerHTML = "";
+  for (const [id, m] of groupMembers) {
+    const chip = document.createElement("span");
+    chip.style.cssText = "display:flex;align-items:center;gap:.35rem;background:#1c2029;padding:.2rem .5rem;border-radius:999px;font-size:.8rem;";
+    chip.innerHTML = `<span class="dot ${m.online ? "online" : ""}"></span>${esc(m.nick)}${m.owner ? " ★" : ""}${id === me.id ? " (you)" : ""}`;
+    panel.append(chip);
+  }
+  const add = document.createElement("span");
+  add.style.cssText = "display:flex;gap:.3rem;align-items:center;";
+  add.innerHTML = `<input id="addMemberNick" placeholder="add by nick" style="width:120px;padding:.2rem .4rem;font-size:.8rem;">`;
+  const btn = mkBtn("+", "", async () => {
+    const nick = $("addMemberNick").value.trim();
+    if (!nick) return;
+    try { await api("/api/groups/add", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group: openGroup.id, nick }) });
+      await loadMembers(openGroup.id); await loadGroups();
+    } catch (e) { alert(e.message); }
+  });
+  btn.style.padding = ".2rem .5rem";
+  add.append(btn);
+  panel.append(add);
+}
+
+$("membersBtn").onclick = () => $("membersPanel").classList.toggle("hidden");
 
 // ---------- Desktop (tray) notifications ----------
 function requestNotifyPermission() {
@@ -281,11 +387,16 @@ function showEmpty() { $("empty").classList.remove("hidden"); $("chatPane").clas
 
 async function openChat(user) {
   openFriend = { id: user.id, nick: user.nick };
+  openGroup = null;
   $("empty").classList.add("hidden");
   $("chatPane").classList.remove("hidden");
   $("chatNick").textContent = user.nick;
+  $("chatSub").textContent = "";
+  $("membersBtn").classList.add("hidden");
+  $("membersPanel").classList.add("hidden");
   const f = friendState.get(user.id);
   $("chatDot").className = "dot " + (f && f.online ? "online" : "");
+  renderGroups();
   renderFriends();
   const msgs = await api(`/api/messages?with=${user.id}`);
   $("messages").innerHTML = "";
@@ -297,30 +408,55 @@ $("sendBtn").onclick = sendText;
 $("msgInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
 async function sendText() {
   const body = $("msgInput").value.trim();
-  if (!body || !openFriend) return;
+  if (!body) return;
   $("msgInput").value = "";
-  const msg = await api("/api/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ with: openFriend.id, body }),
-  });
+  let msg;
+  if (openGroup) {
+    msg = await api("/api/groups/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group: openGroup.id, body }),
+    });
+  } else if (openFriend) {
+    msg = await api("/api/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ with: openFriend.id, body }),
+    });
+  } else return;
   appendMessage(msg); scrollMessages();
 }
 
 $("imgBtn").onclick = () => $("imgInput").click();
 $("imgInput").onchange = async () => {
   const file = $("imgInput").files[0];
-  if (!file || !openFriend) return;
+  if (!file) return;
   const form = new FormData();
-  form.append("with", openFriend.id);
   form.append("image", file);
-  const msg = await api("/api/messages/image", { method: "POST", body: form });
+  let msg;
+  if (openGroup) {
+    form.append("group", openGroup.id);
+    msg = await api("/api/groups/messages/image", { method: "POST", body: form });
+  } else if (openFriend) {
+    form.append("with", openFriend.id);
+    msg = await api("/api/messages/image", { method: "POST", body: form });
+  } else return;
   appendMessage(msg); scrollMessages();
   $("imgInput").value = "";
 };
 
 function appendMessage(m) {
   const div = document.createElement("div");
-  div.className = "msg" + (m.senderId === me.id ? " me" : "");
+  const mine = m.senderId === me.id;
+  div.className = "msg" + (mine ? " me" : "");
+  // In a group, label messages from others with the sender's nick.
+  if (openGroup && !mine) {
+    const who = groupMembers.get(m.senderId);
+    if (who) {
+      const label = document.createElement("div");
+      label.style.cssText = "font-size:.7rem;color:#8b93a7;margin-bottom:.15rem;";
+      label.textContent = who.nick;
+      div.append(label);
+    }
+  }
   const call = m.body && m.body.match(/^📞 call:([A-Z0-9]{4,8})$/);
   if (call) {
     div.classList.add("callmsg");
@@ -344,15 +480,24 @@ function scrollMessages() { const m = $("messages"); m.scrollTop = m.scrollHeigh
 
 // ---------- Calls ----------
 $("callBtn").onclick = async () => {
-  if (!openFriend) return;
-  const code = randomCode();
-  // Notify the friend with a joinable call message, then open our own tab.
-  await api("/api/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ with: openFriend.id, body: "📞 call:" + code }),
-  }).then(appendMessage);
-  scrollMessages();
-  joinCall(code);
+  if (openGroup) {
+    // Group calls use the group's stable call code; announce it in the chat.
+    const code = openGroup.callCode;
+    await api("/api/groups/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group: openGroup.id, body: "📞 call:" + code }),
+    }).then(appendMessage);
+    scrollMessages();
+    joinCall(code);
+  } else if (openFriend) {
+    const code = randomCode();
+    await api("/api/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ with: openFriend.id, body: "📞 call:" + code }),
+    }).then(appendMessage);
+    scrollMessages();
+    joinCall(code);
+  }
 };
 function joinCall(code) {
   window.open(`/call.html?room=${encodeURIComponent(code)}&nick=${encodeURIComponent(me.nick)}`, "_blank");
@@ -372,6 +517,9 @@ function connectEvents() {
       const f = friendState.get(e.userId);
       if (f) { f.online = e.online; renderFriends();
         if (openFriend && openFriend.id === e.userId) $("chatDot").className = "dot " + (e.online ? "online" : ""); }
+      // Update the open group's member roster dot too.
+      const gm = groupMembers.get(e.userId);
+      if (gm) { gm.online = e.online; if (openGroup) renderMembersPanel(); }
     } else if (e.type === "hello") {
       (e.onlineFriends || []).forEach((id) => { const f = friendState.get(id); if (f) f.online = true; });
       renderFriends();
@@ -390,6 +538,19 @@ function connectEvents() {
       // A new incoming friend request: refresh the list and raise a notification.
       loadFriends();
       notify("Friend request", e.nick + " wants to be your friend");
+    } else if (e.type === "group_message") {
+      const m = e.message;
+      if (openGroup && m.groupId === openGroup.id) {
+        appendMessage(m); scrollMessages();
+      } else {
+        const g = groupState.get(m.groupId);
+        const preview = m.body ? m.body.slice(0, 80) : "📷 image";
+        notify("Message in " + (g ? g.name : "a group"), preview);
+      }
+    } else if (e.type === "group_update") {
+      // Roster/membership changed (userId carries the group id here).
+      loadGroups();
+      if (openGroup && e.userId === openGroup.id) loadMembers(openGroup.id);
     }
   };
   events.onclose = () => setTimeout(() => { if (me) connectEvents(); }, 2000);
