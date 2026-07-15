@@ -19,6 +19,8 @@ interface EventsListener {
     fun onHello(onlineFriendIds: List<Long>) {}
     fun onMessage(message: Message) {}
     fun onFriendRequest(fromId: Long, fromNick: String) {}
+    fun onGroupMessage(message: GroupMessage) {}
+    fun onGroupUpdate(groupId: Long) {}
 }
 
 /**
@@ -40,6 +42,9 @@ object Events {
 
     /** Id of the friend whose chat is open, so we suppress their notifications. */
     @Volatile var openFriendId: Long? = null
+
+    /** Id of the group whose chat is open, so we suppress its notifications. */
+    @Volatile var openGroupId: Long? = null
 
     fun addListener(l: EventsListener) = listeners.add(l)
     fun removeListener(l: EventsListener) = listeners.remove(l)
@@ -105,6 +110,15 @@ object Events {
                 listeners.forEach { it.onMessage(m) }
                 if (openFriendId != m.senderId) notifyMessage(m)
             }
+            "group_message" -> {
+                val m = ApiClient.parseGroupMessage(msg.getJSONObject("message"))
+                listeners.forEach { it.onGroupMessage(m) }
+                if (openGroupId != m.groupId) notifyGroupMessage(m)
+            }
+            "group_update" -> {
+                val groupId = msg.optLong("userId") // group id is carried in userId
+                listeners.forEach { it.onGroupUpdate(groupId) }
+            }
         }
     }
 
@@ -136,6 +150,11 @@ object Events {
     private fun notifyMessage(m: Message) {
         val preview = if (m.body.isNotEmpty()) m.body.take(80) else "📷 image"
         post(NOTIF_MESSAGE_BASE + m.senderId.toInt(), "New message", preview)
+    }
+
+    private fun notifyGroupMessage(m: GroupMessage) {
+        val preview = if (m.body.isNotEmpty()) m.body.take(80) else "📷 image"
+        post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(), "New group message", preview)
     }
 
     private fun post(id: Int, title: String, text: String) {

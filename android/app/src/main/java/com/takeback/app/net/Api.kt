@@ -43,6 +43,26 @@ data class Message(
     val created: Long,
 )
 
+data class Group(
+    val id: Long,
+    val name: String,
+    val ownerId: Long,
+    val callCode: String,
+    val memberCount: Int,
+)
+
+data class GroupMember(val id: Long, val nick: String, val online: Boolean, val owner: Boolean)
+
+data class GroupMessage(
+    val id: Long,
+    val groupId: Long,
+    val senderId: Long,
+    val body: String,
+    val imageUrl: String?,
+    val thumbUrl: String?,
+    val created: Long,
+)
+
 /**
  * ApiClient is the app-wide HTTP client for the take-back REST API. It persists
  * the session cookie so logins survive process restarts, and exposes suspend
@@ -128,6 +148,54 @@ object ApiClient {
         return parseMessage(post("/api/messages/image", body))
     }
 
+    // ---- groups ----
+
+    suspend fun createGroup(name: String): Group =
+        parseGroup(JSONObject(post("/api/groups", jsonBody(JSONObject().put("name", name)))))
+
+    suspend fun groups(): List<Group> {
+        val arr = JSONArray(get("/api/groups"))
+        return (0 until arr.length()).map { parseGroup(arr.getJSONObject(it)) }
+    }
+
+    suspend fun groupMembers(groupId: Long): List<GroupMember> {
+        val url = base.toHttpUrl("/api/groups/members").newBuilder()
+            .addQueryParameter("group", groupId.toString()).build()
+        val arr = JSONArray(get(url))
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            GroupMember(o.getLong("id"), o.getString("nick"), o.optBoolean("online"), o.optBoolean("owner"))
+        }
+    }
+
+    suspend fun addGroupMember(groupId: Long, nick: String) =
+        post("/api/groups/add", jsonBody(JSONObject().put("group", groupId).put("nick", nick))).let {}
+
+    suspend fun leaveGroup(groupId: Long) =
+        post("/api/groups/leave", jsonBody(JSONObject().put("group", groupId))).let {}
+
+    suspend fun groupConversation(groupId: Long, before: Long = 0): List<GroupMessage> {
+        val url = base.toHttpUrl("/api/groups/messages").newBuilder()
+            .addQueryParameter("group", groupId.toString())
+            .apply { if (before > 0) addQueryParameter("before", before.toString()) }
+            .build()
+        val arr = JSONArray(get(url))
+        return (0 until arr.length()).map { parseGroupMessage(arr.getJSONObject(it)) }
+    }
+
+    suspend fun sendGroupText(groupId: Long, body: String): GroupMessage =
+        parseGroupMessage(JSONObject(post("/api/groups/messages",
+            jsonBody(JSONObject().put("group", groupId).put("body", body)))))
+
+    suspend fun sendGroupImage(groupId: Long, filename: String, bytes: ByteArray, caption: String): GroupMessage {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("group", groupId.toString())
+            .addFormDataPart("body", caption)
+            .addFormDataPart("image", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
+            .build()
+        return parseGroupMessage(JSONObject(post("/api/groups/messages/image", body)))
+    }
+
     // ---- low-level ----
 
     private suspend fun get(path: String): String = get(base.toHttpUrl(path))
@@ -168,6 +236,22 @@ object ApiClient {
         id = o.getLong("id"),
         senderId = o.getLong("senderId"),
         recipientId = o.getLong("recipientId"),
+        body = o.optString("body"),
+        imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { mediaUrl(it) },
+        thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
+        created = o.getLong("created"),
+    )
+
+    private fun parseGroup(o: JSONObject) = Group(
+        id = o.getLong("id"), name = o.getString("name"),
+        ownerId = o.getLong("ownerId"), callCode = o.getString("callCode"),
+        memberCount = o.optInt("memberCount"),
+    )
+
+    fun parseGroupMessage(o: JSONObject) = GroupMessage(
+        id = o.getLong("id"),
+        groupId = o.getLong("groupId"),
+        senderId = o.getLong("senderId"),
         body = o.optString("body"),
         imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { mediaUrl(it) },
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },

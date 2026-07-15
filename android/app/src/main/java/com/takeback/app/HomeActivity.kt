@@ -20,6 +20,7 @@ import com.takeback.app.net.ApiClient
 import com.takeback.app.net.Events
 import com.takeback.app.net.EventsListener
 import com.takeback.app.net.Friend
+import com.takeback.app.net.Group
 import kotlinx.coroutines.launch
 
 /**
@@ -30,6 +31,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
 
     private lateinit var binding: ActivityHomeBinding
     private var friends: List<Friend> = emptyList()
+    private var groups: List<Group> = emptyList()
 
     private val notifPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -43,6 +45,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         requestNotifPermission()
 
         binding.addBtn.setOnClickListener { addFriend() }
+        binding.newGroupBtn.setOnClickListener { createGroup() }
         binding.logout.setOnClickListener { logout() }
 
         Events.addListener(this)
@@ -74,9 +77,66 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 val me = ApiClient.me()
                 binding.meNick.text = "signed in as ${me.nick}"
                 friends = ApiClient.friends()
+                groups = ApiClient.groups()
                 render()
+                renderGroups()
             } catch (_: Exception) { /* transient */ }
         }
+    }
+
+    private fun createGroup() {
+        val name = binding.newGroupName.text.toString().trim()
+        if (name.isEmpty()) return
+        lifecycleScope.launch {
+            runCatching { ApiClient.createGroup(name) }.onSuccess { g ->
+                binding.newGroupName.setText("")
+                refresh()
+                openGroup(g)
+            }
+        }
+    }
+
+    private fun renderGroups() {
+        binding.groups.removeAllViews()
+        if (groups.isEmpty()) {
+            binding.groups.addView(TextView(this).apply {
+                text = "No groups yet."
+                setTextColor(Color.parseColor("#5B6273"))
+                setPadding(16, 12, 16, 12)
+            })
+            return
+        }
+        for (g in groups) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(16, 22, 16, 22)
+                isClickable = true
+                setOnClickListener { openGroup(g) }
+            }
+            row.addView(TextView(this).apply {
+                text = "#"; setTextColor(Color.parseColor("#8B93A7")); textSize = 16f
+            })
+            row.addView(TextView(this).apply {
+                text = g.name
+                setTextColor(Color.parseColor("#E7E9EE"))
+                textSize = 16f
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 20 }
+            })
+            row.addView(TextView(this).apply {
+                text = g.memberCount.toString()
+                setTextColor(Color.parseColor("#5B6273")); textSize = 13f
+            })
+            binding.groups.addView(row)
+        }
+    }
+
+    private fun openGroup(g: Group) {
+        startActivity(Intent(this, GroupChatActivity::class.java).apply {
+            putExtra(GroupChatActivity.EXTRA_GROUP_ID, g.id)
+            putExtra(GroupChatActivity.EXTRA_GROUP_NAME, g.name)
+            putExtra(GroupChatActivity.EXTRA_CALL_CODE, g.callCode)
+        })
     }
 
     private fun render() {
@@ -202,4 +262,6 @@ class HomeActivity : AppCompatActivity(), EventsListener {
     }
 
     override fun onFriendRequest(fromId: Long, fromNick: String) = runOnUiThread { refresh() }
+
+    override fun onGroupUpdate(groupId: Long) = runOnUiThread { refresh() }
 }
