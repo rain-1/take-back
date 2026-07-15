@@ -7,315 +7,385 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; font-family: system-ui, sans-serif;
-    background: #0f1115; color: #e7e9ee; min-height: 100vh;
-  }
-  header { padding: 1rem 1.25rem; border-bottom: 1px solid #262a33; display:flex; align-items:baseline; gap:.75rem;}
-  header h1 { font-size: 1.1rem; margin:0; letter-spacing:.02em;}
-  header .sub { color:#8b93a7; font-size:.8rem;}
-  main { padding: 1.25rem; max-width: 1100px; margin: 0 auto; }
-  .card { background:#171a21; border:1px solid #262a33; border-radius:12px; padding:1.25rem; margin-bottom:1rem;}
-  label { display:block; font-size:.8rem; color:#8b93a7; margin-bottom:.35rem;}
-  input {
-    width:100%; padding:.6rem .7rem; border-radius:8px; border:1px solid #2c313c;
-    background:#0f1115; color:#e7e9ee; font-size:1rem;
-  }
-  .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end;}
-  .row > div { flex:1; min-width:180px;}
-  button {
-    padding:.6rem 1rem; border-radius:8px; border:0; font-size:.95rem; cursor:pointer;
-    background:#3b82f6; color:white; font-weight:600;
-  }
-  button.secondary { background:#2c313c; color:#e7e9ee;}
-  button:disabled { opacity:.5; cursor:not-allowed;}
+  body { margin:0; font-family: system-ui, sans-serif; background:#0f1115; color:#e7e9ee; height:100vh; overflow:hidden; }
+  header { padding:.75rem 1rem; border-bottom:1px solid #262a33; display:flex; align-items:center; gap:.75rem; }
+  header h1 { font-size:1rem; margin:0; letter-spacing:.02em; }
+  header .sub { color:#8b93a7; font-size:.75rem; }
+  button { padding:.5rem .8rem; border-radius:8px; border:0; font-size:.9rem; cursor:pointer; background:#3b82f6; color:#fff; font-weight:600; }
+  button.secondary { background:#2c313c; color:#e7e9ee; }
+  button.ghost { background:transparent; color:#8b93a7; padding:.2rem .4rem; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  input { padding:.55rem .65rem; border-radius:8px; border:1px solid #2c313c; background:#0f1115; color:#e7e9ee; font-size:.95rem; width:100%; }
   .hidden { display:none !important; }
-  .callbar { display:flex; align-items:center; gap:1rem; flex-wrap:wrap;}
-  .code {
-    font-family: ui-monospace, monospace; font-size:1.4rem; letter-spacing:.15em;
-    background:#0f1115; padding:.3rem .7rem; border-radius:8px; border:1px solid #2c313c;
-  }
-  #grid { display:grid; gap:.75rem; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); margin-top:1rem;}
-  .tile { position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:4/3;}
-  .tile video { width:100%; height:100%; object-fit:cover; }
-  .tile .name {
-    position:absolute; left:.5rem; bottom:.5rem; background:rgba(0,0,0,.55);
-    padding:.15rem .5rem; border-radius:6px; font-size:.8rem;
-  }
-  .status { font-size:.85rem; color:#8b93a7; }
-  .pill { font-size:.75rem; padding:.15rem .5rem; border-radius:999px; background:#22c55e22; color:#4ade80;}
+
+  /* Auth */
+  #auth { display:flex; align-items:center; justify-content:center; height:100vh; }
+  #auth .card { background:#171a21; border:1px solid #262a33; border-radius:12px; padding:1.5rem; width:320px; }
+  #auth h2 { margin:.2rem 0 1rem; }
+  #auth input { margin-bottom:.6rem; }
+  #auth .err { color:#f87171; font-size:.8rem; min-height:1em; }
+  #auth .toggle { color:#8b93a7; font-size:.85rem; margin-top:.8rem; text-align:center; }
+  #auth .toggle a { color:#60a5fa; cursor:pointer; }
+
+  /* App layout */
+  #app { display:flex; height:calc(100vh - 49px); }
+  #sidebar { width:290px; border-right:1px solid #262a33; display:flex; flex-direction:column; }
+  .section { padding:.75rem 1rem; border-bottom:1px solid #1c2029; }
+  .section h3 { margin:0 0 .5rem; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:#5b6273; }
+  .addrow { display:flex; gap:.4rem; }
+  .addrow input { flex:1; }
+  #friends { flex:1; overflow-y:auto; }
+  .friend { display:flex; align-items:center; gap:.6rem; padding:.55rem 1rem; cursor:pointer; }
+  .friend:hover { background:#171a21; }
+  .friend.active { background:#1d2230; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#3f4553; flex:none; }
+  .dot.online { background:#22c55e; }
+  .friend .nick { flex:1; }
+  .req { display:flex; align-items:center; gap:.4rem; padding:.35rem 0; font-size:.9rem; }
+  .req .nick { flex:1; }
+
+  /* Chat */
+  #chat { flex:1; display:flex; flex-direction:column; }
+  #chatHeader { padding:.7rem 1rem; border-bottom:1px solid #262a33; display:flex; align-items:center; gap:.6rem; }
+  #chatHeader .nick { font-weight:600; }
+  #messages { flex:1; overflow-y:auto; padding:1rem; display:flex; flex-direction:column; gap:.5rem; }
+  .msg { max-width:70%; padding:.5rem .7rem; border-radius:12px; background:#1c2029; word-wrap:break-word; }
+  .msg.me { align-self:flex-end; background:#274690; }
+  .msg .body p { margin:.2rem 0; }
+  .msg .body code { background:#0f1115; padding:.05rem .3rem; border-radius:4px; font-family:ui-monospace,monospace; font-size:.85em; }
+  .msg .body a { color:#93c5fd; }
+  .msg img.thumb { max-width:260px; max-height:220px; border-radius:8px; margin-top:.35rem; display:block; cursor:pointer; }
+  .msg .time { font-size:.65rem; color:#8b93a7; margin-top:.25rem; }
+  .callmsg button { margin-top:.3rem; }
+  #composer { border-top:1px solid #262a33; padding:.6rem 1rem; display:flex; gap:.5rem; align-items:center; }
+  #composer input[type=text] { flex:1; }
+  #empty { flex:1; display:flex; align-items:center; justify-content:center; color:#5b6273; }
 </style>
 </head>
 <body>
-<header>
-  <h1>take-back</h1>
-  <span class="sub">webrtc nat-passthrough prototype</span>
-</header>
-<main>
 
-  <!-- Step 1: nickname -->
-  <section id="nickStep" class="card">
-    <label for="nick">Enter a nickname to get started</label>
-    <div class="row">
-      <div><input id="nick" placeholder="e.g. river" autocomplete="off"></div>
-      <button id="nickBtn">Continue</button>
-    </div>
-  </section>
+<!-- ============ AUTH ============ -->
+<div id="auth">
+  <div class="card">
+    <h2 id="authTitle">Log in to take-back</h2>
+    <input id="authNick" placeholder="nickname" autocomplete="username">
+    <input id="authPass" type="password" placeholder="password" autocomplete="current-password">
+    <div class="err" id="authErr"></div>
+    <button id="authBtn" style="width:100%;">Log in</button>
+    <div class="toggle" id="authToggle">No account? <a>Register</a></div>
+  </div>
+</div>
 
-  <!-- Step 2: host or join -->
-  <section id="lobbyStep" class="card hidden">
-    <div class="callbar" style="margin-bottom:1rem;">
-      <span class="status">Hi <b id="nickLabel"></b> — start or join a call.</span>
-    </div>
-    <div class="row">
-      <div>
-        <button id="hostBtn">Host a new call</button>
+<!-- ============ APP ============ -->
+<div id="main" class="hidden">
+  <header>
+    <h1>take-back</h1>
+    <span class="sub">chat · friends · calls</span>
+    <span style="flex:1;"></span>
+    <span class="sub">signed in as <b id="meNick"></b></span>
+    <button class="secondary" id="logoutBtn">Log out</button>
+  </header>
+
+  <div id="app">
+    <aside id="sidebar">
+      <div class="section">
+        <h3>Add friend</h3>
+        <div class="addrow">
+          <input id="addNick" placeholder="their nickname" autocomplete="off">
+          <button id="addBtn">Add</button>
+        </div>
+        <div class="err" id="addErr" style="color:#f87171;font-size:.75rem;"></div>
       </div>
-      <div>
-        <label for="joinCode">Join with a call code</label>
-        <input id="joinCode" placeholder="ABCD12" autocomplete="off" style="text-transform:uppercase;">
+      <div class="section hidden" id="requestsSection">
+        <h3>Requests</h3>
+        <div id="requests"></div>
       </div>
-      <div style="flex:0;">
-        <button id="joinBtn" class="secondary">Join</button>
+      <div class="section" style="flex:1; display:flex; flex-direction:column; padding:0;">
+        <h3 style="padding:.75rem 1rem 0;">Friends</h3>
+        <div id="friends"></div>
       </div>
-    </div>
-  </section>
+    </aside>
 
-  <!-- Step 3: in call -->
-  <section id="callStep" class="card hidden">
-    <div class="callbar">
-      <span class="status">Call code:</span>
-      <span class="code" id="callCode"></span>
-      <button id="copyBtn" class="secondary">Copy</button>
-      <span class="pill" id="connPill">connecting…</span>
-      <span style="flex:1;"></span>
-      <button id="shareBtn" class="secondary">Share screen</button>
-      <button id="leaveBtn" class="secondary">Leave</button>
-    </div>
-    <div id="grid"></div>
-  </section>
-
-  <p class="status" id="log"></p>
-</main>
+    <section id="chat">
+      <div id="empty">Select a friend to start chatting.</div>
+      <div id="chatPane" class="hidden" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+        <div id="chatHeader">
+          <span class="dot" id="chatDot"></span>
+          <span class="nick" id="chatNick"></span>
+          <span style="flex:1;"></span>
+          <button class="secondary" id="callBtn">📹 Video call</button>
+        </div>
+        <div id="messages"></div>
+        <div id="composer">
+          <button class="secondary" id="imgBtn" title="Send image">🖼️</button>
+          <input type="file" id="imgInput" accept="image/*" class="hidden">
+          <input type="text" id="msgInput" placeholder="Message (markdown supported)…" autocomplete="off">
+          <button id="sendBtn">Send</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
 
 <script>
-const SIGNAL_URL = "{{.SignalURL}}";
-// Public STUN so peers can discover their NAT-mapped address. Add TURN here for
-// networks where a direct path can't be punched.
-const ICE_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-
-let nick = "";
-let ws = null;
-let myId = null;
-let roomCode = "";
-let localStream = null;    // what we send to peers (camera or screen)
-let cameraStream = null;   // the original camera+mic, kept so we can revert
-let screenStream = null;   // active screen capture, if any
-const peers = new Map(); // peerId -> { pc, nick }
-
 const $ = (id) => document.getElementById(id);
-const logEl = $("log");
-function log(msg) { logEl.textContent = msg; console.log("[take-back]", msg); }
+async function api(path, opts = {}) {
+  const res = await fetch(path, { credentials: "same-origin", ...opts });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.status === 204 ? null : res.json();
+}
 
-// ---- Step 1: nickname ----
-$("nickBtn").onclick = () => {
-  const v = $("nick").value.trim();
-  if (!v) return;
-  nick = v;
-  $("nickLabel").textContent = nick;
-  $("nickStep").classList.add("hidden");
-  $("lobbyStep").classList.remove("hidden");
+let me = null;
+let openFriend = null;       // { id, nick, online }
+let events = null;           // events WebSocket
+const friendState = new Map(); // id -> friend view
+
+// ---------- Auth ----------
+let registerMode = false;
+$("authToggle").onclick = () => {
+  registerMode = !registerMode;
+  $("authTitle").textContent = registerMode ? "Create a take-back account" : "Log in to take-back";
+  $("authBtn").textContent = registerMode ? "Register" : "Log in";
+  $("authToggle").innerHTML = registerMode
+    ? 'Have an account? <a>Log in</a>' : 'No account? <a>Register</a>';
+  $("authToggle").querySelector("a").onclick = $("authToggle").onclick;
 };
-$("nick").addEventListener("keydown", (e) => { if (e.key === "Enter") $("nickBtn").click(); });
+$("authBtn").onclick = async () => {
+  $("authErr").textContent = "";
+  const nick = $("authNick").value.trim(), password = $("authPass").value;
+  try {
+    me = await api(registerMode ? "/api/register" : "/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nick, password }),
+    });
+    enterApp();
+  } catch (e) { $("authErr").textContent = e.message; }
+};
+$("authPass").addEventListener("keydown", (e) => { if (e.key === "Enter") $("authBtn").click(); });
 
-// ---- Step 2: host / join ----
+$("logoutBtn").onclick = async () => {
+  await api("/api/logout", { method: "POST" }).catch(() => {});
+  events?.close();
+  location.reload();
+};
+
+// ---------- App bootstrap ----------
+async function enterApp() {
+  $("auth").classList.add("hidden");
+  $("main").classList.remove("hidden");
+  $("meNick").textContent = me.nick;
+  await loadFriends();
+  connectEvents();
+}
+
+// Try to resume an existing session on load.
+(async () => {
+  try { me = await api("/api/me"); enterApp(); } catch { /* show auth */ }
+})();
+
+// ---------- Friends ----------
+$("addBtn").onclick = async () => {
+  $("addErr").textContent = "";
+  const nick = $("addNick").value.trim();
+  if (!nick) return;
+  try {
+    await api("/api/friends/request", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nick }),
+    });
+    $("addNick").value = "";
+    await loadFriends();
+  } catch (e) { $("addErr").textContent = e.message; }
+};
+
+async function loadFriends() {
+  const list = await api("/api/friends");
+  friendState.clear();
+  list.forEach((f) => friendState.set(f.user.id, f));
+  renderFriends();
+}
+
+function renderFriends() {
+  const requests = [], accepted = [];
+  for (const f of friendState.values()) {
+    if (f.status === "pending" && f.direction === "incoming") requests.push(f);
+    else if (f.status === "accepted") accepted.push(f);
+  }
+
+  // Incoming requests
+  const reqBox = $("requests");
+  reqBox.innerHTML = "";
+  $("requestsSection").classList.toggle("hidden", requests.length === 0);
+  requests.forEach((f) => {
+    const row = document.createElement("div");
+    row.className = "req";
+    row.innerHTML = `<span class="dot"></span><span class="nick">${esc(f.user.nick)}</span>`;
+    const ok = mkBtn("Accept", "", () => respond(f.user.id, true));
+    const no = mkBtn("Decline", "ghost", () => respond(f.user.id, false));
+    ok.style.padding = no.style.padding = ".2rem .5rem";
+    row.append(ok, no);
+    reqBox.append(row);
+  });
+
+  // Accepted friends
+  const box = $("friends");
+  box.innerHTML = "";
+  accepted.sort((a, b) => Number(b.online) - Number(a.online) || a.user.nick.localeCompare(b.user.nick));
+  accepted.forEach((f) => {
+    const row = document.createElement("div");
+    row.className = "friend" + (openFriend && openFriend.id === f.user.id ? " active" : "");
+    row.innerHTML = `<span class="dot ${f.online ? "online" : ""}"></span>
+      <span class="nick">${esc(f.user.nick)}</span>`;
+    const rm = mkBtn("✕", "ghost", (e) => { e.stopPropagation(); removeFriend(f.user.id); });
+    row.append(rm);
+    row.onclick = () => openChat(f.user);
+    box.append(row);
+  });
+  if (accepted.length === 0) box.innerHTML = `<div style="padding:1rem;color:#5b6273;font-size:.85rem;">No friends yet — add someone above.</div>`;
+}
+
+async function respond(userId, accept) {
+  await api("/api/friends/respond", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, accept }),
+  });
+  await loadFriends();
+}
+async function removeFriend(userId) {
+  await api("/api/friends/remove", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+  if (openFriend && openFriend.id === userId) { openFriend = null; showEmpty(); }
+  await loadFriends();
+}
+
+// ---------- Chat ----------
+function showEmpty() { $("empty").classList.remove("hidden"); $("chatPane").classList.add("hidden"); }
+
+async function openChat(user) {
+  openFriend = { id: user.id, nick: user.nick };
+  $("empty").classList.add("hidden");
+  $("chatPane").classList.remove("hidden");
+  $("chatNick").textContent = user.nick;
+  const f = friendState.get(user.id);
+  $("chatDot").className = "dot " + (f && f.online ? "online" : "");
+  renderFriends();
+  const msgs = await api(`/api/messages?with=${user.id}`);
+  $("messages").innerHTML = "";
+  msgs.forEach(appendMessage);
+  scrollMessages();
+}
+
+$("sendBtn").onclick = sendText;
+$("msgInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+async function sendText() {
+  const body = $("msgInput").value.trim();
+  if (!body || !openFriend) return;
+  $("msgInput").value = "";
+  const msg = await api("/api/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ with: openFriend.id, body }),
+  });
+  appendMessage(msg); scrollMessages();
+}
+
+$("imgBtn").onclick = () => $("imgInput").click();
+$("imgInput").onchange = async () => {
+  const file = $("imgInput").files[0];
+  if (!file || !openFriend) return;
+  const form = new FormData();
+  form.append("with", openFriend.id);
+  form.append("image", file);
+  const msg = await api("/api/messages/image", { method: "POST", body: form });
+  appendMessage(msg); scrollMessages();
+  $("imgInput").value = "";
+};
+
+function appendMessage(m) {
+  const div = document.createElement("div");
+  div.className = "msg" + (m.senderId === me.id ? " me" : "");
+  const call = m.body && m.body.match(/^📞 call:([A-Z0-9]{4,8})$/);
+  if (call) {
+    div.classList.add("callmsg");
+    const code = call[1];
+    div.innerHTML = `<div class="body">📞 Video call</div>`;
+    div.append(mkBtn("Join call " + code, "", () => joinCall(code)));
+  } else {
+    let html = "";
+    if (m.body) html += `<div class="body">${renderMarkdown(m.body)}</div>`;
+    if (m.thumbUrl) html += `<a href="${m.imageUrl}" target="_blank" rel="noopener">
+      <img class="thumb" src="${m.thumbUrl}" alt="image"></a>`;
+    div.innerHTML = html;
+  }
+  const t = document.createElement("div");
+  t.className = "time";
+  t.textContent = new Date(m.created * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  div.append(t);
+  $("messages").append(div);
+}
+function scrollMessages() { const m = $("messages"); m.scrollTop = m.scrollHeight; }
+
+// ---------- Calls ----------
+$("callBtn").onclick = async () => {
+  if (!openFriend) return;
+  const code = randomCode();
+  // Notify the friend with a joinable call message, then open our own tab.
+  await api("/api/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ with: openFriend.id, body: "📞 call:" + code }),
+  }).then(appendMessage);
+  scrollMessages();
+  joinCall(code);
+};
+function joinCall(code) {
+  window.open(`/call.html?room=${encodeURIComponent(code)}&nick=${encodeURIComponent(me.nick)}`, "_blank");
+}
 function randomCode() {
-  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < 6; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return s;
-}
-$("hostBtn").onclick = () => startCall(randomCode());
-$("joinBtn").onclick = () => {
-  const c = $("joinCode").value.trim().toUpperCase();
-  if (c) startCall(c);
-};
-
-// ---- Step 3: the call ----
-async function startCall(code) {
-  roomCode = code;
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    cameraStream = localStream;
-  } catch (err) {
-    log("Could not access camera/microphone: " + err.message);
-    return;
-  }
-  $("lobbyStep").classList.add("hidden");
-  $("callStep").classList.remove("hidden");
-  $("callCode").textContent = code;
-  addTile("local", nick + " (you)", localStream, true);
-  connectSignaling();
+  const a = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 6 }, () => a[Math.floor(Math.random() * a.length)]).join("");
 }
 
-$("copyBtn").onclick = () => {
-  navigator.clipboard.writeText(roomCode).then(() => log("Call code copied."));
-};
-$("leaveBtn").onclick = () => location.reload();
-
-// ---- Screen sharing ----
-// Swaps the outgoing video track on every peer connection via replaceTrack, so
-// no SDP renegotiation is needed. Audio keeps flowing from the mic throughout.
-$("shareBtn").onclick = () => (screenStream ? stopScreenShare() : startScreenShare());
-
-async function startScreenShare() {
-  let capture;
-  try {
-    capture = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  } catch (err) {
-    log("Screen share cancelled: " + err.message);
-    return;
-  }
-  screenStream = capture;
-  const screenTrack = capture.getVideoTracks()[0];
-  replaceOutgoingVideo(screenTrack);
-
-  // Reflect it in our own preview (screen video + existing mic audio).
-  const preview = new MediaStream([screenTrack, ...cameraStream.getAudioTracks()]);
-  localStream = preview;
-  addTile("local", nick + " (you, sharing)", preview, true);
-
-  // The browser's native "Stop sharing" bar ends the track directly.
-  screenTrack.onended = stopScreenShare;
-  $("shareBtn").textContent = "Stop sharing";
-  log("Sharing your screen.");
-}
-
-function stopScreenShare() {
-  if (!screenStream) return;
-  screenStream.getTracks().forEach((t) => t.stop());
-  screenStream = null;
-
-  const camTrack = cameraStream.getVideoTracks()[0];
-  replaceOutgoingVideo(camTrack);
-  localStream = cameraStream;
-  addTile("local", nick + " (you)", cameraStream, true);
-  $("shareBtn").textContent = "Share screen";
-  log("Stopped sharing; back to camera.");
-}
-
-// replaceOutgoingVideo points every peer's video sender at `track`.
-function replaceOutgoingVideo(track) {
-  for (const { pc } of peers.values()) {
-    const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
-    if (sender) sender.replaceTrack(track);
-  }
-}
-
-function connectSignaling() {
-  const url = SIGNAL_URL + "?room=" + encodeURIComponent(roomCode) + "&nick=" + encodeURIComponent(nick);
-  ws = new WebSocket(url);
-  ws.onopen = () => log("Connected to signaling. Waiting for peers…");
-  ws.onclose = () => { $("connPill").textContent = "disconnected"; log("Signaling closed."); };
-  ws.onerror = () => log("Signaling error — is the server running?");
-  ws.onmessage = (ev) => handleSignal(JSON.parse(ev.data));
-}
-
-function send(obj) { ws.send(JSON.stringify(obj)); }
-
-async function handleSignal(msg) {
-  switch (msg.type) {
-    case "welcome":
-      myId = msg.to;
-      // We are the newcomer: initiate an offer to each existing peer.
-      for (const p of msg.peers || []) {
-        await createPeer(p.id, p.nick, true);
-      }
-      $("connPill").textContent = (msg.peers || []).length ? "connecting…" : "waiting for others";
-      break;
-    case "hello":
-      // An existing peer sees a newcomer; wait for their offer, but note nick.
-      break;
-    case "offer": {
-      const pc = await createPeer(msg.from, msg.nick, false);
-      await pc.setRemoteDescription(JSON.parse(msg.payload));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      send({ type: "answer", to: msg.from, nick, payload: JSON.stringify(answer) });
-      break;
+// ---------- Live events ----------
+function connectEvents() {
+  const url = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/api/events";
+  events = new WebSocket(url);
+  events.onmessage = (ev) => {
+    const e = JSON.parse(ev.data);
+    if (e.type === "presence") {
+      const f = friendState.get(e.userId);
+      if (f) { f.online = e.online; renderFriends();
+        if (openFriend && openFriend.id === e.userId) $("chatDot").className = "dot " + (e.online ? "online" : ""); }
+    } else if (e.type === "hello") {
+      (e.onlineFriends || []).forEach((id) => { const f = friendState.get(id); if (f) f.online = true; });
+      renderFriends();
+    } else if (e.type === "message") {
+      const m = e.message;
+      if (openFriend && m.senderId === openFriend.id) { appendMessage(m); scrollMessages(); }
     }
-    case "answer": {
-      const entry = peers.get(msg.from);
-      if (entry) await entry.pc.setRemoteDescription(JSON.parse(msg.payload));
-      break;
-    }
-    case "candidate": {
-      const entry = peers.get(msg.from);
-      if (entry && msg.payload) {
-        try { await entry.pc.addIceCandidate(JSON.parse(msg.payload)); }
-        catch (e) { console.warn("addIceCandidate", e); }
-      }
-      break;
-    }
-    case "leave":
-      removePeer(msg.from);
-      break;
-  }
+  };
+  events.onclose = () => setTimeout(() => { if (me) connectEvents(); }, 2000);
 }
 
-async function createPeer(peerId, peerNick, initiator) {
-  let entry = peers.get(peerId);
-  if (entry) return entry.pc;
-
-  const pc = new RTCPeerConnection(ICE_CONFIG);
-  entry = { pc, nick: peerNick || "peer" };
-  peers.set(peerId, entry);
-
-  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate) send({ type: "candidate", to: peerId, payload: JSON.stringify(e.candidate) });
-  };
-  pc.ontrack = (e) => {
-    addTile(peerId, entry.nick, e.streams[0], false);
-    $("connPill").textContent = "connected";
-  };
-  pc.onconnectionstatechange = () => {
-    log("peer " + peerId + ": " + pc.connectionState);
-    if (pc.connectionState === "failed" || pc.connectionState === "closed") removePeer(peerId);
-  };
-
-  if (initiator) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    send({ type: "offer", to: peerId, nick, payload: JSON.stringify(offer) });
-  }
-  return pc;
+// ---------- Helpers ----------
+function mkBtn(label, cls, onclick) {
+  const b = document.createElement("button");
+  b.textContent = label; if (cls) b.className = cls; b.onclick = onclick; return b;
 }
-
-function removePeer(peerId) {
-  const entry = peers.get(peerId);
-  if (entry) { entry.pc.close(); peers.delete(peerId); }
-  const tile = document.getElementById("tile-" + peerId);
-  if (tile) tile.remove();
-  if (peers.size === 0) $("connPill").textContent = "waiting for others";
+function esc(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
-
-function addTile(id, name, stream, muted) {
-  let tile = document.getElementById("tile-" + id);
-  if (!tile) {
-    tile = document.createElement("div");
-    tile.className = "tile";
-    tile.id = "tile-" + id;
-    const video = document.createElement("video");
-    video.autoplay = true; video.playsInline = true; video.muted = muted;
-    const label = document.createElement("div");
-    label.className = "name";
-    tile.append(video, label);
-    $("grid").append(tile);
-  }
-  tile.querySelector("video").srcObject = stream;
-  tile.querySelector(".name").textContent = name;
+// Minimal, safe Markdown: escape first, then apply a small set of inline rules.
+function renderMarkdown(src) {
+  let s = esc(src);
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  // Links [text](http/https url) only.
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/\n/g, "<br>");
+  return "<p>" + s + "</p>";
 }
 </script>
 </body>
