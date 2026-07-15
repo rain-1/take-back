@@ -93,7 +93,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val engine = RtcEngine(applicationContext, eglBase, this, this).also { this.engine = it }
         engine.startLocalMedia()
 
-        signaling = SignalingClient(BuildConfig.SIGNAL_URL, roomCode, nick, this).also { it.connect() }
+        val signalUrl = BuildConfig.BASE_URL.replaceFirst(Regex("^http"), "ws").trimEnd('/') + "/ws"
+        signaling = SignalingClient(signalUrl, roomCode, nick, this).also { it.connect() }
     }
 
     private fun leaveCall() {
