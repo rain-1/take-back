@@ -89,6 +89,7 @@
       <button id="copyBtn" class="secondary">Copy</button>
       <span class="pill" id="connPill">connecting…</span>
       <span style="flex:1;"></span>
+      <button id="shareBtn" class="secondary">Share screen</button>
       <button id="leaveBtn" class="secondary">Leave</button>
     </div>
     <div id="grid"></div>
@@ -107,7 +108,9 @@ let nick = "";
 let ws = null;
 let myId = null;
 let roomCode = "";
-let localStream = null;
+let localStream = null;    // what we send to peers (camera or screen)
+let cameraStream = null;   // the original camera+mic, kept so we can revert
+let screenStream = null;   // active screen capture, if any
 const peers = new Map(); // peerId -> { pc, nick }
 
 const $ = (id) => document.getElementById(id);
@@ -143,6 +146,7 @@ async function startCall(code) {
   roomCode = code;
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    cameraStream = localStream;
   } catch (err) {
     log("Could not access camera/microphone: " + err.message);
     return;
@@ -158,6 +162,55 @@ $("copyBtn").onclick = () => {
   navigator.clipboard.writeText(roomCode).then(() => log("Call code copied."));
 };
 $("leaveBtn").onclick = () => location.reload();
+
+// ---- Screen sharing ----
+// Swaps the outgoing video track on every peer connection via replaceTrack, so
+// no SDP renegotiation is needed. Audio keeps flowing from the mic throughout.
+$("shareBtn").onclick = () => (screenStream ? stopScreenShare() : startScreenShare());
+
+async function startScreenShare() {
+  let capture;
+  try {
+    capture = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  } catch (err) {
+    log("Screen share cancelled: " + err.message);
+    return;
+  }
+  screenStream = capture;
+  const screenTrack = capture.getVideoTracks()[0];
+  replaceOutgoingVideo(screenTrack);
+
+  // Reflect it in our own preview (screen video + existing mic audio).
+  const preview = new MediaStream([screenTrack, ...cameraStream.getAudioTracks()]);
+  localStream = preview;
+  addTile("local", nick + " (you, sharing)", preview, true);
+
+  // The browser's native "Stop sharing" bar ends the track directly.
+  screenTrack.onended = stopScreenShare;
+  $("shareBtn").textContent = "Stop sharing";
+  log("Sharing your screen.");
+}
+
+function stopScreenShare() {
+  if (!screenStream) return;
+  screenStream.getTracks().forEach((t) => t.stop());
+  screenStream = null;
+
+  const camTrack = cameraStream.getVideoTracks()[0];
+  replaceOutgoingVideo(camTrack);
+  localStream = cameraStream;
+  addTile("local", nick + " (you)", cameraStream, true);
+  $("shareBtn").textContent = "Share screen";
+  log("Stopped sharing; back to camera.");
+}
+
+// replaceOutgoingVideo points every peer's video sender at `track`.
+function replaceOutgoingVideo(track) {
+  for (const { pc } of peers.values()) {
+    const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+    if (sender) sender.replaceTrack(track);
+  }
+}
 
 function connectSignaling() {
   const url = SIGNAL_URL + "?room=" + encodeURIComponent(roomCode) + "&nick=" + encodeURIComponent(nick);
