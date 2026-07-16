@@ -5,45 +5,103 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>take-back</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg:        #0b0d11;
+    --panel:     #11141b;
+    --surface:   #171b24;
+    --surface-2: #1e2431;
+    --border:    #232936;
+    --border-soft: #1a1f29;
+    --text:      #e8eaf0;
+    --muted:     #8a93a6;
+    --dim:       #5a6273;
+    --accent:    #5b8cff;
+    --online:    #22c55e;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; font-family: system-ui, sans-serif;
-    background: #0f1115; color: #e7e9ee; min-height: 100vh;
+    margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px; background: var(--bg); color: var(--text); min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
   }
-  header { padding: 1rem 1.25rem; border-bottom: 1px solid #262a33; display:flex; align-items:baseline; gap:.75rem;}
-  header h1 { font-size: 1.1rem; margin:0; letter-spacing:.02em;}
-  header .sub { color:#8b93a7; font-size:.8rem;}
+  header {
+    padding: 0 1rem; height: 52px; display:flex; align-items:center; gap:.6rem;
+    border-bottom: 1px solid var(--border-soft); background: var(--panel);
+  }
+  header h1 { font-size:.95rem; margin:0; font-weight:650; letter-spacing:-.01em; }
+  header .sub { color: var(--dim); font-size:.78rem; }
   main { padding: 1.25rem; max-width: 1100px; margin: 0 auto; }
-  .card { background:#171a21; border:1px solid #262a33; border-radius:12px; padding:1.25rem; margin-bottom:1rem;}
-  label { display:block; font-size:.8rem; color:#8b93a7; margin-bottom:.35rem;}
+  .card {
+    background: var(--panel); border:1px solid var(--border);
+    border-radius:14px; padding:1.25rem; margin-bottom:1rem;
+  }
+  label { display:block; font-size:.8rem; color: var(--muted); margin-bottom:.35rem; }
   input {
-    width:100%; padding:.6rem .7rem; border-radius:8px; border:1px solid #2c313c;
-    background:#0f1115; color:#e7e9ee; font-size:1rem;
+    width:100%; padding:.5rem .7rem; border-radius:10px; border:1px solid var(--border);
+    background:#0d1016; color: var(--text); font-size:.95rem;
   }
-  .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end;}
-  .row > div { flex:1; min-width:180px;}
+  input::placeholder { color: var(--dim); }
+  input:focus { border-color:#2f4a8f; outline:none; }
   button {
-    padding:.6rem 1rem; border-radius:8px; border:0; font-size:.95rem; cursor:pointer;
-    background:#3b82f6; color:white; font-weight:600;
+    padding:.5rem .85rem; border-radius:10px; border:1px solid transparent; font-size:.875rem;
+    cursor:pointer; background: var(--accent); color:#fff; font-weight:550;
+    transition: background .15s ease;
   }
-  button.secondary { background:#2c313c; color:#e7e9ee;}
-  button:disabled { opacity:.5; cursor:not-allowed;}
+  button:hover { background:#6f9bff; }
+  button.secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  button.secondary:hover { background:#262d3c; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .hidden { display:none !important; }
-  .callbar { display:flex; align-items:center; gap:1rem; flex-wrap:wrap;}
+  .callbar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
   .code {
-    font-family: ui-monospace, monospace; font-size:1.4rem; letter-spacing:.15em;
-    background:#0f1115; padding:.3rem .7rem; border-radius:8px; border:1px solid #2c313c;
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size:1.15rem; letter-spacing:.18em;
+    background:#0d1016; padding:.3rem .7rem; border-radius:10px; border:1px solid var(--border);
   }
-  #grid { display:grid; gap:.75rem; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); margin-top:1rem;}
-  .tile { position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:4/3;}
+  .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; }
+  .row > div { flex:1; min-width:180px; }
+  #grid { display:grid; gap:.75rem; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); margin-top:1rem; }
+  .tile {
+    position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:4/3;
+    display:grid; place-items:center;
+    outline:2px solid transparent; outline-offset:-2px;
+    transition:outline-color .12s ease;
+  }
   .tile video { width:100%; height:100%; object-fit:cover; }
-  .tile .name {
-    position:absolute; left:.5rem; bottom:.5rem; background:rgba(0,0,0,.55);
-    padding:.15rem .5rem; border-radius:6px; font-size:.8rem;
+
+  /* Voice-only (camera off): show the profile picture instead of black video. */
+  .tile.novideo video { display:none; }
+  .tile .avatar { display:none; }
+  .tile.novideo .avatar {
+    display:grid; place-items:center;
+    width:96px; height:96px; border-radius:50%;
+    font-size:2rem; font-weight:650; color:#fff; letter-spacing:.02em;
+    border:3px solid transparent;
+    transition:border-color .12s ease, box-shadow .12s ease;
   }
-  .status { font-size:.85rem; color:#8b93a7; }
-  .pill { font-size:.75rem; padding:.15rem .5rem; border-radius:999px; background:#22c55e22; color:#4ade80;}
+
+  /* Speaking indicator: a green ring. Around the avatar in voice-only mode,
+     around the whole tile when video is on. */
+  .tile.speaking { outline-color:#22c55e; }
+  .tile.novideo.speaking { outline-color:transparent; }
+  .tile.novideo.speaking .avatar {
+    border-color:#22c55e; box-shadow:0 0 14px rgba(34,197,94,.55);
+  }
+  /* Muted mic beats speaking: never imply we're transmitting when we aren't. */
+  .tile.muted .avatar { border-color:transparent; box-shadow:none; }
+  .tile.muted { outline-color:transparent; }
+  .tile .micoff {
+    position:absolute; right:.5rem; top:.5rem; font-size:.9rem;
+    background:rgba(0,0,0,.55); border-radius:6px; padding:.1rem .35rem; display:none;
+  }
+  .tile.muted .micoff { display:block; }
+  .tile .name {
+    position:absolute; left:.5rem; bottom:.5rem; background:rgba(0,0,0,.6);
+    padding:.15rem .5rem; border-radius:6px; font-size:.78rem;
+  }
+  .status { font-size:.8rem; color: var(--dim); }
+  .pill { font-size:.72rem; padding:.15rem .55rem; border-radius:999px; background:rgba(34,197,94,.13); color:#4ade80; }
 </style>
 </head>
 <body>
@@ -89,6 +147,8 @@
       <button id="copyBtn" class="secondary">Copy</button>
       <span class="pill" id="connPill">connecting…</span>
       <span style="flex:1;"></span>
+      <button id="micBtn" class="secondary">🎤 Mic on</button>
+      <button id="camBtn" class="secondary">📷 Camera on</button>
       <button id="shareBtn" class="secondary">Share screen</button>
       <button id="leaveBtn" class="secondary">Leave</button>
     </div>
@@ -164,6 +224,41 @@ $("copyBtn").onclick = () => {
 };
 $("leaveBtn").onclick = () => location.reload();
 
+// ---- Mic / camera toggles ----
+// Toggling only flips track.enabled, so the sender/track stays put and no
+// renegotiation is needed. Peers are told over signaling so they can swap to
+// the profile picture — a disabled video track just sends black frames, which
+// they'd otherwise render as a black tile.
+let micOn = true, camOn = true;
+const peerState = new Map(); // peerId -> { video, audio }
+
+$("micBtn").onclick = () => {
+  micOn = !micOn;
+  cameraStream.getAudioTracks().forEach((t) => (t.enabled = micOn));
+  $("micBtn").textContent = micOn ? "🎤 Mic on" : "🔇 Mic off";
+  setTileMuted("local", !micOn);
+  broadcastState();
+};
+
+$("camBtn").onclick = () => {
+  camOn = !camOn;
+  // Don't clobber an active screen share with the camera toggle.
+  if (!screenStream) cameraStream.getVideoTracks().forEach((t) => (t.enabled = camOn));
+  $("camBtn").textContent = camOn ? "📷 Camera on" : "📷 Camera off";
+  setTileVideo("local", camOn || !!screenStream);
+  broadcastState();
+};
+
+function broadcastState() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  send({ type: "state", payload: JSON.stringify({ video: camOn || !!screenStream, audio: micOn }) });
+}
+
+function applyState(id, s) {
+  setTileVideo(id, !!s.video);
+  setTileMuted(id, !s.audio);
+}
+
 // ---- Screen sharing ----
 // Swaps the outgoing video track on every peer connection via replaceTrack, so
 // no SDP renegotiation is needed. Audio keeps flowing from the mic throughout.
@@ -228,6 +323,7 @@ async function handleSignal(msg) {
   switch (msg.type) {
     case "welcome":
       myId = msg.to;
+      broadcastState(); // let the room know our initial mic/camera state
       // We are the newcomer: initiate an offer to each existing peer.
       for (const p of msg.peers || []) {
         await createPeer(p.id, p.nick, true);
@@ -235,8 +331,17 @@ async function handleSignal(msg) {
       $("connPill").textContent = (msg.peers || []).length ? "connecting…" : "waiting for others";
       break;
     case "hello":
-      // An existing peer sees a newcomer; wait for their offer, but note nick.
+      // An existing peer sees a newcomer; wait for their offer. Re-announce our
+      // mic/camera state so the newcomer renders us correctly from the start.
+      broadcastState();
       break;
+    case "state": {
+      // A peer's mic/camera changed (or they just told us their initial state).
+      const s = JSON.parse(msg.payload);
+      peerState.set(msg.from, s);
+      applyState(msg.from, s);
+      break;
+    }
     case "offer": {
       const pc = await createPeer(msg.from, msg.nick, false);
       await pc.setRemoteDescription(JSON.parse(msg.payload));
@@ -316,6 +421,73 @@ function removePeer(peerId) {
   }
 })();
 
+// ---- Speaking detection (voice activity) ----
+// Each participant's audio is tapped with an AnalyserNode; when the short-term
+// RMS crosses a threshold we ring their tile green. This doubles as a "is my mic
+// actually picking me up?" check for yourself.
+let audioCtx = null;
+const vadAttached = new Set();
+
+const SPEAK_ON = 0.035;   // RMS to start showing as speaking
+const SPEAK_OFF = 0.020;  // drop below this to stop (hysteresis avoids flicker)
+const HANG_MS = 350;      // keep the ring this long after you stop talking
+
+function attachVAD(tileId, stream) {
+  if (vadAttached.has(tileId) || !stream.getAudioTracks().length) return;
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.4;
+  audioCtx.createMediaStreamSource(stream).connect(analyser);
+  vadAttached.add(tileId);
+
+  const buf = new Uint8Array(analyser.fftSize);
+  let speaking = false, quietSince = 0;
+
+  (function tick() {
+    const tile = document.getElementById(tileId);
+    if (!tile) { vadAttached.delete(tileId); return; } // tile gone: stop polling
+
+    analyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = (buf[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / buf.length);
+    const now = performance.now();
+
+    if (!speaking && rms > SPEAK_ON) { speaking = true; quietSince = 0; }
+    else if (speaking && rms < SPEAK_OFF) {
+      if (!quietSince) quietSince = now;
+      if (now - quietSince > HANG_MS) speaking = false;
+    } else if (speaking) quietSince = 0;
+
+    tile.classList.toggle("speaking", speaking);
+    requestAnimationFrame(tick);
+  })();
+}
+
+// ---- Avatars (match the chat client's initials style) ----
+function initialsOf(name) { return (name || "?").slice(0, 2).toUpperCase(); }
+function colorFor(name) {
+  let h = 0;
+  for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 55% 42%)`;
+}
+
+// setTileVideo toggles between the video feed and the profile picture.
+function setTileVideo(id, on) {
+  const tile = document.getElementById("tile-" + id);
+  if (tile) tile.classList.toggle("novideo", !on);
+}
+function setTileMuted(id, isMuted) {
+  const tile = document.getElementById("tile-" + id);
+  if (tile) tile.classList.toggle("muted", isMuted);
+}
+
 function addTile(id, name, stream, muted) {
   let tile = document.getElementById("tile-" + id);
   if (!tile) {
@@ -324,14 +496,33 @@ function addTile(id, name, stream, muted) {
     tile.id = "tile-" + id;
     const video = document.createElement("video");
     video.autoplay = true; video.playsInline = true; video.muted = muted;
+    const av = document.createElement("div");
+    av.className = "avatar";
+    const mic = document.createElement("div");
+    mic.className = "micoff";
+    mic.textContent = "🔇";
     const label = document.createElement("div");
     label.className = "name";
-    tile.append(video, label);
+    tile.append(video, av, mic, label);
     $("grid").append(tile);
   }
   tile.querySelector("video").srcObject = stream;
   tile.querySelector(".name").textContent = name;
+
+  // Profile picture shown whenever the camera is off.
+  const av = tile.querySelector(".avatar");
+  av.textContent = initialsOf(baseNick(name));
+  av.style.background = colorFor(baseNick(name));
+
+  // Ring this tile when its owner speaks.
+  attachVAD(tile.id, stream);
+
+  // A peer's state may have arrived before their video track did.
+  if (peerState.has(id)) applyState(id, peerState.get(id));
 }
+
+// baseNick strips the decorations we add to labels ("river (you, sharing)").
+function baseNick(label) { return (label || "").split(" (")[0]; }
 </script>
 </body>
 </html>

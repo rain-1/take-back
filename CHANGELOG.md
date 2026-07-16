@@ -24,6 +24,30 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.2.0
+
+Backwards compatible with 1.0/1.1 clients (protocol 1). The new `state`
+signaling message is additive — older clients ignore unknown message types, and
+newer clients assume "camera on" for a peer that never sends one.
+
+**Added**
+- **Speaking indicator in calls.** Each participant's audio is tapped with a Web
+  Audio `AnalyserNode`; when their short-term RMS crosses a threshold their tile
+  rings green. It uses hysteresis (on at 0.035 RMS, off below 0.020 after 350ms)
+  so the ring doesn't flicker between syllables. This shows who's talking in a
+  multi-person call, and lets you confirm your own mic is picking you up.
+- **Profile pictures in calls.** With the camera off, a tile shows the same
+  initials avatar as the chat client, and the speaking ring goes around it.
+- **Mic and camera toggles**, so a voice-only call is actually possible. Toggling
+  only flips `track.enabled` — no renegotiation. Your mic/camera state is sent to
+  peers over signaling (a disabled video track sends black frames, which peers
+  would otherwise render as a black tile). A muted mic never shows a speaking
+  ring, and shows a 🔇 badge.
+
+**Changed**
+- The call page now uses the same design tokens as the chat client, which had
+  drifted apart visually.
+
 ## 1.1.0
 
 Backwards compatible with 1.0.0 clients (protocol 1) — the new `lastActivity`
