@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -106,7 +107,10 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             })
             return
         }
-        for (g in groups) {
+        val ordered = groups.sortedWith(
+            compareByDescending<Group> { it.lastActivity }.thenBy { it.name.lowercase() }
+        )
+        for (g in ordered) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -121,9 +125,10 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 text = g.name
                 setTextColor(Color.parseColor("#E7E9EE"))
                 textSize = 16f
+                if (g.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 20 }
             })
-            row.addView(TextView(this).apply {
+            if (g.unread > 0) row.addView(pip(g.unread)) else row.addView(TextView(this).apply {
                 text = g.memberCount.toString()
                 setTextColor(Color.parseColor("#5B6273")); textSize = 13f
             })
@@ -141,8 +146,13 @@ class HomeActivity : AppCompatActivity(), EventsListener {
 
     private fun render() {
         val requests = friends.filter { it.status == "pending" && it.direction == "incoming" }
+        // Newest conversation first; never-messaged friends fall to the bottom
+        // alphabetically. Not sorted by unread/presence — those shift as you tap
+        // or as people come online, making rows jump.
         val accepted = friends.filter { it.status == "accepted" }
-            .sortedWith(compareByDescending<Friend> { it.online }.thenBy { it.user.nick.lowercase() })
+            .sortedWith(
+                compareByDescending<Friend> { it.lastActivity }.thenBy { it.user.nick.lowercase() }
+            )
 
         binding.requestsHeader.visibility = if (requests.isEmpty()) View.GONE else View.VISIBLE
         binding.requests.removeAllViews()
@@ -173,9 +183,10 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             text = f.user.nick
             setTextColor(Color.parseColor("#E7E9EE"))
             textSize = 16f
+            if (f.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 24 }
         })
-        row.addView(Button(this).apply {
+        if (f.unread > 0) row.addView(pip(f.unread)) else row.addView(Button(this).apply {
             text = "✕"
             setOnClickListener { remove(f) }
         })
@@ -204,6 +215,18 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         return row
     }
 
+    /** pip is the unread badge: an accent pill with the count (99+ capped). */
+    private fun pip(n: Int): View = TextView(this).apply {
+        text = if (n > 99) "99+" else n.toString()
+        setTextColor(Color.WHITE)
+        textSize = 11f
+        setPadding(14, 4, 14, 4)
+        background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 999f
+            setColor(Color.parseColor("#5B8CFF"))
+        }
+    }
+
     private fun dot(online: Boolean): View = View(this).apply {
         val size = (10 * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(size, size)
@@ -230,9 +253,25 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         refresh()
     }
 
-    private fun remove(f: Friend) = lifecycleScope.launch {
-        runCatching { ApiClient.removeFriend(f.user.id) }
-        refresh()
+    /**
+     * Unfriending is destructive and mutual, so confirm first — the ✕ sits where
+     * a "dismiss" control would, and must not silently delete a friendship.
+     */
+    private fun remove(f: Friend) {
+        AlertDialog.Builder(this)
+            .setTitle("Remove ${f.user.nick}?")
+            .setMessage(
+                "You'll each disappear from the other's friends list and won't be " +
+                    "able to message until you're friends again. Your history is kept."
+            )
+            .setPositiveButton("Remove") { _, _ ->
+                lifecycleScope.launch {
+                    runCatching { ApiClient.removeFriend(f.user.id) }
+                    refresh()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun openChat(f: Friend) {

@@ -404,7 +404,7 @@ function renderGroups() {
     box.innerHTML = `<div class="empty-note">No groups yet.</div>`;
     return;
   }
-  for (const g of groupState.values()) {
+  for (const g of [...groupState.values()].sort(byRecency((g) => g.name))) {
     const row = document.createElement("div");
     row.className = "row"
       + (openGroup && openGroup.id === g.id ? " active" : "")
@@ -564,13 +564,13 @@ function renderFriends() {
     reqBox.append(row);
   });
 
-  // Accepted friends — online first, then unread, then alphabetical.
+  // Newest conversation first. Deliberately NOT sorted by unread or presence:
+  // those change as you click (or as people come and go) and would make rows
+  // jump around under the cursor. Never-messaged friends fall to the bottom,
+  // alphabetically.
   const box = $("friends");
   box.innerHTML = "";
-  accepted.sort((a, b) =>
-    Number(b.online) - Number(a.online) ||
-    Number(b.unread > 0) - Number(a.unread > 0) ||
-    a.user.nick.localeCompare(b.user.nick));
+  accepted.sort(byRecency((f) => f.user.nick));
   accepted.forEach((f) => {
     const row = document.createElement("div");
     row.className = "row"
@@ -585,8 +585,18 @@ function renderFriends() {
 
     if (f.unread > 0) row.append(pip(f.unread));
     else {
-      const rm = mkBtn("✕", "ghost", (e) => { e.stopPropagation(); removeFriend(f.user.id); });
+      // This unfriends — a destructive, mutual action — so label it and confirm.
+      // (There's no "close chat" here: the row *is* the friend, not a tab.)
+      const rm = mkBtn("✕", "ghost", (e) => {
+        e.stopPropagation();
+        const ok = confirm(
+          `Remove ${f.user.nick} as a friend?\n\n` +
+          `You'll each disappear from the other's friends list and won't be able ` +
+          `to message until you're friends again. Your history is kept.`);
+        if (ok) removeFriend(f.user.id);
+      });
       rm.classList.add("rm");
+      rm.title = "Remove friend";
       row.append(rm);
     }
     row.onclick = () => openChat(f.user);
@@ -594,6 +604,23 @@ function renderFriends() {
   });
   if (accepted.length === 0)
     box.innerHTML = `<div class="empty-note">No friends yet — add someone above.</div>`;
+}
+
+// byRecency sorts conversations newest-first, falling back to name for those
+// with no messages yet. `nameOf` extracts the display name for that tiebreak.
+function byRecency(nameOf) {
+  return (a, b) =>
+    (b.lastActivity || 0) - (a.lastActivity || 0) ||
+    nameOf(a).localeCompare(nameOf(b));
+}
+
+// touchActivity bumps a conversation's last-activity so it moves to the top the
+// moment a message is sent or received, without refetching the list.
+function touchActivity(kind, id, created) {
+  const state = kind === "dm" ? friendState.get(id) : groupState.get(id);
+  if (!state) return;
+  state.lastActivity = created || Math.floor(Date.now() / 1000);
+  kind === "dm" ? renderFriends() : renderGroups();
 }
 
 // pip renders an unread badge (count, capped at 99+).
@@ -719,6 +746,7 @@ async function sendText() {
     });
   } else return;
   appendMessage(msg); scrollMessages();
+  touchActivity(openGroup ? "group" : "dm", openGroup ? openGroup.id : openFriend.id, msg.created);
 }
 
 $("imgBtn").onclick = () => $("imgInput").click();
@@ -736,6 +764,7 @@ $("imgInput").onchange = async () => {
     msg = await api("/api/messages/image", { method: "POST", body: form });
   } else return;
   appendMessage(msg); scrollMessages();
+  touchActivity(openGroup ? "group" : "dm", openGroup ? openGroup.id : openFriend.id, msg.created);
   $("imgInput").value = "";
 };
 
@@ -820,6 +849,7 @@ function connectEvents() {
       renderFriends();
     } else if (e.type === "message") {
       const m = e.message;
+      touchActivity("dm", m.senderId, m.created); // move the conversation to the top
       if (openFriend && m.senderId === openFriend.id) {
         appendMessage(m); scrollMessages();
         markRead("dm", openFriend.id, [m]); // keep it read while we're looking
@@ -840,6 +870,7 @@ function connectEvents() {
       loadFriends();
     } else if (e.type === "group_message") {
       const m = e.message;
+      touchActivity("group", m.groupId, m.created);
       if (openGroup && m.groupId === openGroup.id) {
         appendMessage(m); scrollMessages();
         markRead("group", openGroup.id, [m]);

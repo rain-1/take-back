@@ -32,9 +32,16 @@ func (a *API) handleGroups(w http.ResponseWriter, r *http.Request, user *store.U
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		lastAt, err := a.Store.LastGroupActivity(user.ID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		views := make([]groupView, 0, len(groups))
 		for _, g := range groups {
-			views = append(views, groupView{Group: g, Unread: unread[g.ID]})
+			views = append(views, groupView{
+				Group: g, Unread: unread[g.ID], LastActivity: lastAt[g.ID],
+			})
 		}
 		writeJSON(w, http.StatusOK, views)
 	case http.MethodPost:
@@ -60,10 +67,12 @@ func (a *API) handleGroups(w http.ResponseWriter, r *http.Request, user *store.U
 	}
 }
 
-// groupView is a Group plus this user's unread count for it.
+// groupView is a Group plus this user's unread count and the group's last
+// message time (clients order by this).
 type groupView struct {
 	store.Group
-	Unread int `json:"unread"`
+	Unread       int   `json:"unread"`
+	LastActivity int64 `json:"lastActivity"`
 }
 
 // memberView is a group member enriched with live presence.

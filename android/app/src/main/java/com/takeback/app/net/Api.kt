@@ -37,6 +37,8 @@ data class Friend(
     val status: String,     // pending | accepted
     val direction: String,  // incoming | outgoing
     val online: Boolean,
+    val unread: Int = 0,
+    val lastActivity: Long = 0, // unix time of the last message, 0 if none
 )
 
 data class Message(
@@ -55,6 +57,8 @@ data class Group(
     val ownerId: Long,
     val callCode: String,
     val memberCount: Int,
+    val unread: Int = 0,
+    val lastActivity: Long = 0,
 )
 
 data class GroupMember(val id: Long, val nick: String, val online: Boolean, val owner: Boolean)
@@ -273,6 +277,8 @@ object ApiClient {
             status = o.getString("status"),
             direction = o.optString("direction"),
             online = o.optBoolean("online"),
+            unread = o.optInt("unread"),
+            lastActivity = o.optLong("lastActivity"),
         )
     }
 
@@ -292,6 +298,8 @@ object ApiClient {
         id = o.getLong("id"), name = o.getString("name"),
         ownerId = o.getLong("ownerId"), callCode = o.getString("callCode"),
         memberCount = o.optInt("memberCount"),
+        unread = o.optInt("unread"),
+        lastActivity = o.optLong("lastActivity"),
     )
 
     fun parseGroupMessage(o: JSONObject) = GroupMessage(

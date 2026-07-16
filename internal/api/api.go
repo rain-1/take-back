@@ -184,11 +184,13 @@ func (a *API) handleMe(w http.ResponseWriter, _ *http.Request, user *store.User)
 
 // ---- friends handlers ----
 
-// friendView is a Friend enriched with live online status and unread count.
+// friendView is a Friend enriched with live online status, unread count, and
+// when the conversation last saw a message (clients order by this).
 type friendView struct {
 	store.Friend
-	Online bool `json:"online"`
-	Unread int  `json:"unread"`
+	Online       bool  `json:"online"`
+	Unread       int   `json:"unread"`
+	LastActivity int64 `json:"lastActivity"`
 }
 
 func (a *API) handleFriends(w http.ResponseWriter, _ *http.Request, user *store.User) {
@@ -202,12 +204,18 @@ func (a *API) handleFriends(w http.ResponseWriter, _ *http.Request, user *store.
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	lastAt, err := a.Store.LastDMActivity(user.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	views := make([]friendView, 0, len(friends))
 	for _, f := range friends {
 		views = append(views, friendView{
-			Friend: f,
-			Online: a.Presence.Online(f.User.ID),
-			Unread: unread[f.User.ID],
+			Friend:       f,
+			Online:       a.Presence.Online(f.User.ID),
+			Unread:       unread[f.User.ID],
+			LastActivity: lastAt[f.User.ID],
 		})
 	}
 	writeJSON(w, http.StatusOK, views)

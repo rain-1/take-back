@@ -24,6 +24,26 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.1.0
+
+Backwards compatible with 1.0.0 clients (protocol 1) — the new `lastActivity`
+field is additive and older clients simply ignore it.
+
+**Fixed**
+- Conversation lists no longer reshuffle when you click them. They were sorted
+  by online → unread → name, so opening a chat cleared its unread and made the
+  row jump. Lists are now ordered by **most recent message first** (a new
+  message moves that conversation to the top, live), which is stable across
+  clicks and presence changes. Friends with no messages sort last, by name.
+- The ✕ on a friend row silently unfriended them — it reads like a "dismiss
+  chat" control but is destructive and mutual. It now says "Remove friend" and
+  asks for confirmation, on web and Android.
+- Android friend/group rows now show unread pips and bold unread names.
+
+**Added**
+- `lastActivity` (unix time of the last message) on `/api/friends` and
+  `/api/groups`.
+
 ## 1.0.0
 
 First versioned release — the app is deployed and working end to end at
