@@ -5,61 +5,234 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>take-back</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg:        #0b0d11;
+    --panel:     #11141b;
+    --surface:   #171b24;
+    --surface-2: #1e2431;
+    --border:    #232936;
+    --border-soft: #1a1f29;
+    --text:      #e8eaf0;
+    --muted:     #8a93a6;
+    --dim:       #5a6273;
+    --accent:    #5b8cff;
+    --accent-dim:#2f4a8f;
+    --online:    #34d399;
+    --danger:    #f87171;
+    --radius:    10px;
+    --radius-lg: 14px;
+  }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, sans-serif; background:#0f1115; color:#e7e9ee; height:100vh; overflow:hidden; }
-  header { padding:.75rem 1rem; border-bottom:1px solid #262a33; display:flex; align-items:center; gap:.75rem; }
-  header h1 { font-size:1rem; margin:0; letter-spacing:.02em; }
-  header .sub { color:#8b93a7; font-size:.75rem; }
-  button { padding:.5rem .8rem; border-radius:8px; border:0; font-size:.9rem; cursor:pointer; background:#3b82f6; color:#fff; font-weight:600; }
-  button.secondary { background:#2c313c; color:#e7e9ee; }
-  button.ghost { background:transparent; color:#8b93a7; padding:.2rem .4rem; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  input { padding:.55rem .65rem; border-radius:8px; border:1px solid #2c313c; background:#0f1115; color:#e7e9ee; font-size:.95rem; width:100%; }
-  .hidden { display:none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .hidden { display: none !important; }
 
-  /* Auth */
-  #auth { display:flex; align-items:center; justify-content:center; height:100vh; }
-  #auth .card { background:#171a21; border:1px solid #262a33; border-radius:12px; padding:1.5rem; width:320px; }
-  #auth h2 { margin:.2rem 0 1rem; }
-  #auth input { margin-bottom:.6rem; }
-  #auth .err { color:#f87171; font-size:.8rem; min-height:1em; }
-  #auth .toggle { color:#8b93a7; font-size:.85rem; margin-top:.8rem; text-align:center; }
-  #auth .toggle a { color:#60a5fa; cursor:pointer; }
+  /* ---- Scrollbars ---- */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #262c39; border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #323a4a; background-clip: padding-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
 
-  /* App layout */
-  #app { display:flex; height:calc(100vh - 49px); }
-  #sidebar { width:290px; border-right:1px solid #262a33; display:flex; flex-direction:column; }
-  .section { padding:.75rem 1rem; border-bottom:1px solid #1c2029; }
-  .section h3 { margin:0 0 .5rem; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:#5b6273; }
-  .addrow { display:flex; gap:.4rem; }
-  .addrow input { flex:1; }
-  #friends { flex:1; overflow-y:auto; }
-  .friend { display:flex; align-items:center; gap:.6rem; padding:.55rem 1rem; cursor:pointer; }
-  .friend:hover { background:#171a21; }
-  .friend.active { background:#1d2230; }
-  .dot { width:9px; height:9px; border-radius:50%; background:#3f4553; flex:none; }
-  .dot.online { background:#22c55e; }
-  .friend .nick { flex:1; }
-  .req { display:flex; align-items:center; gap:.4rem; padding:.35rem 0; font-size:.9rem; }
-  .req .nick { flex:1; }
+  /* ---- Controls ---- */
+  button {
+    font: inherit; font-size: .875rem; font-weight: 550;
+    padding: .5rem .85rem; border-radius: var(--radius); border: 1px solid transparent;
+    background: var(--accent); color: #fff; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, opacity .15s ease;
+  }
+  button:hover { background: #6f9bff; }
+  button.secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  button.secondary:hover { background: #262d3c; }
+  button.ghost { background: transparent; color: var(--dim); padding: .25rem .45rem; border: 0; }
+  button.ghost:hover { color: var(--text); background: var(--surface-2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* Chat */
-  #chat { flex:1; display:flex; flex-direction:column; }
-  #chatHeader { padding:.7rem 1rem; border-bottom:1px solid #262a33; display:flex; align-items:center; gap:.6rem; }
-  #chatHeader .nick { font-weight:600; }
-  #messages { flex:1; overflow-y:auto; padding:1rem; display:flex; flex-direction:column; gap:.5rem; }
-  .msg { max-width:70%; padding:.5rem .7rem; border-radius:12px; background:#1c2029; word-wrap:break-word; }
-  .msg.me { align-self:flex-end; background:#274690; }
-  .msg .body p { margin:.2rem 0; }
-  .msg .body code { background:#0f1115; padding:.05rem .3rem; border-radius:4px; font-family:ui-monospace,monospace; font-size:.85em; }
-  .msg .body a { color:#93c5fd; }
-  .msg img.thumb { max-width:260px; max-height:220px; border-radius:8px; margin-top:.35rem; display:block; cursor:pointer; }
-  .msg .time { font-size:.65rem; color:#8b93a7; margin-top:.25rem; }
-  .callmsg button { margin-top:.3rem; }
-  #composer { border-top:1px solid #262a33; padding:.6rem 1rem; display:flex; gap:.5rem; align-items:center; }
-  #composer input[type=text] { flex:1; }
-  #empty { flex:1; display:flex; align-items:center; justify-content:center; color:#5b6273; }
+  input {
+    font: inherit; font-size: .9rem; width: 100%;
+    padding: .5rem .7rem; border-radius: var(--radius);
+    border: 1px solid var(--border); background: #0d1016; color: var(--text);
+    transition: border-color .15s ease;
+  }
+  input::placeholder { color: var(--dim); }
+  input:focus { border-color: var(--accent-dim); outline: none; }
+
+  .err { color: var(--danger); font-size: .78rem; min-height: 1em; }
+
+  /* ---- Auth ---- */
+  #auth { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 1rem; }
+  #auth .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.75rem; width: 340px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  }
+  #auth .brand { font-size: 1.25rem; font-weight: 700; letter-spacing: -.02em; margin-bottom: .15rem; }
+  #auth h2 { margin: 0 0 1.25rem; font-size: .875rem; font-weight: 450; color: var(--muted); }
+  #auth input { margin-bottom: .6rem; }
+  #auth .toggle { color: var(--muted); font-size: .82rem; margin-top: 1rem; text-align: center; }
+  #auth .toggle a { color: var(--accent); cursor: pointer; font-weight: 500; }
+  #auth .toggle a:hover { text-decoration: underline; }
+
+  /* ---- Shell ---- */
+  header {
+    padding: 0 1rem; height: 52px; display: flex; align-items: center; gap: .6rem;
+    border-bottom: 1px solid var(--border-soft); background: var(--panel);
+  }
+  header h1 { font-size: .95rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  header .sub { color: var(--dim); font-size: .78rem; }
+  #app { display: flex; height: calc(100vh - 52px); }
+
+  /* ---- Sidebar ---- */
+  #sidebar {
+    width: 272px; flex: none; background: var(--panel);
+    border-right: 1px solid var(--border-soft);
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+  .section { padding: .6rem .8rem; border-bottom: 1px solid var(--border-soft); }
+  .section:last-child { border-bottom: 0; }
+  .section h3 {
+    margin: 0 0 .35rem .25rem; font-size: .66rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .09em; color: var(--dim);
+  }
+  .addrow { display: flex; gap: .35rem; }
+  .addrow input { flex: 1; min-width: 0; padding: .35rem .55rem; font-size: .82rem; }
+  .addrow button { padding: .35rem .7rem; font-size: .8rem; }
+
+  /* Sidebar rows (friends + groups) */
+  .row {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .45rem .5rem; border-radius: var(--radius);
+    cursor: pointer; position: relative;
+    transition: background .12s ease;
+  }
+  .row:hover { background: var(--surface); }
+  .row.active { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+  .row .name { flex: 1; min-width: 0; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.unread .name { font-weight: 650; color: #fff; }
+  .row .rm { opacity: 0; transition: opacity .12s ease; }
+  .row:hover .rm { opacity: 1; }
+
+  /* Avatar */
+  .avatar {
+    width: 28px; height: 28px; flex: none; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: .72rem; font-weight: 650; color: #fff; letter-spacing: .02em;
+  }
+  .avatar.group { border-radius: 8px; background: var(--surface-2); color: var(--muted); }
+
+  /* Presence dot — sits as a badge on the avatar's corner */
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #39404f; flex: none; }
+  .dot.online { background: var(--online); }
+  .avatar-wrap { position: relative; flex: none; display: block; line-height: 0; }
+  .avatar-wrap .dot {
+    position: absolute; right: -1px; bottom: -1px;
+    width: 10px; height: 10px; border: 2px solid var(--panel); border-radius: 50%;
+  }
+  .row:hover .avatar-wrap .dot, .row.active .avatar-wrap .dot { border-color: var(--surface-2); }
+
+  /* Unread pip */
+  .pip {
+    flex: none; min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 9px; background: var(--accent); color: #fff;
+    font-size: .68rem; font-weight: 700; line-height: 18px; text-align: center;
+  }
+  .pip.dot-only { min-width: 8px; width: 8px; height: 8px; padding: 0; border-radius: 50%; }
+
+  /* Requests */
+  .req { display: flex; align-items: center; gap: .4rem; padding: .3rem .25rem; font-size: .88rem; }
+  .req .name { flex: 1; }
+  .req button { padding: .22rem .5rem; font-size: .75rem; }
+
+  .empty-note { color: var(--dim); font-size: .8rem; padding: .5rem .25rem; }
+
+  /* ---- Chat ---- */
+  #chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  #chatHeader {
+    height: 56px; flex: none; padding: 0 1rem; display: flex; align-items: center; gap: .55rem;
+    border-bottom: 1px solid var(--border-soft); background: var(--panel);
+  }
+  #chatHeader .nick { font-weight: 600; font-size: .95rem; }
+  #chatHeader .sub { color: var(--dim); font-size: .75rem; }
+
+  #membersPanel {
+    padding: .6rem 1rem; border-bottom: 1px solid var(--border-soft);
+    display: flex; flex-wrap: wrap; gap: .4rem; background: #0e1117;
+  }
+  .chip {
+    display: flex; align-items: center; gap: .35rem;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: .2rem .55rem; border-radius: 999px; font-size: .78rem;
+  }
+
+  #messages {
+    flex: 1; overflow-y: auto; padding: 1.25rem 1rem;
+    display: flex; flex-direction: column; gap: .35rem;
+  }
+  .msg {
+    max-width: min(68%, 560px); padding: .5rem .75rem;
+    border-radius: 14px; background: var(--surface);
+    align-self: flex-start; word-wrap: break-word; overflow-wrap: anywhere;
+    border-bottom-left-radius: 5px;
+  }
+  .msg.me {
+    align-self: flex-end; background: var(--accent-dim);
+    border-bottom-left-radius: 14px; border-bottom-right-radius: 5px;
+  }
+  .msg .sender { font-size: .7rem; font-weight: 650; color: var(--accent); margin-bottom: .15rem; }
+  .msg .body p { margin: 0; }
+  .msg .body p + p { margin-top: .4rem; }
+  .msg .body code {
+    background: rgba(0,0,0,.35); padding: .08rem .32rem; border-radius: 5px;
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size: .85em;
+  }
+  .msg .body a { color: #9dc0ff; }
+  .msg img.thumb {
+    max-width: 260px; max-height: 240px; border-radius: 10px;
+    margin-top: .35rem; display: block; cursor: zoom-in;
+    transition: opacity .15s ease;
+  }
+  .msg img.thumb:hover { opacity: .9; }
+  /* Timestamp: tucked to the right, and only fully visible on hover so it
+     doesn't compete with the message text. */
+  .msg .time {
+    font-size: .63rem; color: var(--dim); text-align: right;
+    margin-top: .1rem; opacity: .55; transition: opacity .15s ease;
+  }
+  .msg:hover .time { opacity: 1; }
+  .callmsg button { margin-top: .35rem; }
+
+  #empty {
+    flex: 1; display: flex; flex-direction: column; gap: .4rem;
+    align-items: center; justify-content: center; color: var(--dim);
+  }
+  #empty .big { font-size: 2rem; opacity: .5; }
+
+  #composer {
+    flex: none; border-top: 1px solid var(--border-soft); background: var(--panel);
+    padding: .6rem .8rem; display: flex; gap: .45rem; align-items: center;
+  }
+  #composer input[type=text] { flex: 1; border-radius: 999px; padding: .55rem .9rem; }
+  #composer button { border-radius: 999px; }
+  #composer .icon { padding: .45rem .6rem; font-size: 1rem; }
+
+  #log { position: fixed; bottom: .4rem; left: .8rem; font-size: .72rem; color: var(--dim); }
+
+  /* ---- Small screens ---- */
+  @media (max-width: 720px) {
+    #sidebar { width: 100%; position: absolute; inset: 52px 0 0 0; z-index: 5; }
+    #sidebar.tucked { display: none; }
+    .msg { max-width: 85%; }
+  }
 </style>
 </head>
 <body>
@@ -67,7 +240,8 @@
 <!-- ============ AUTH ============ -->
 <div id="auth">
   <div class="card">
-    <h2 id="authTitle">Log in to take-back</h2>
+    <div class="brand">take-back</div>
+    <h2 id="authTitle">Sign in to continue</h2>
     <input id="authNick" placeholder="nickname" autocomplete="username">
     <input id="authPass" type="password" placeholder="password" autocomplete="current-password">
     <div class="err" id="authErr"></div>
@@ -108,17 +282,20 @@
         <h3>Requests</h3>
         <div id="requests"></div>
       </div>
-      <div class="section" style="flex:1; display:flex; flex-direction:column; padding:0;">
-        <h3 style="padding:.75rem 1rem 0;">Friends</h3>
+      <div class="section" style="flex:1;">
+        <h3>Friends</h3>
         <div id="friends"></div>
       </div>
     </aside>
 
     <section id="chat">
-      <div id="empty">Select a friend to start chatting.</div>
+      <div id="empty">
+        <div class="big">✳</div>
+        <div>Pick a conversation to start chatting.</div>
+      </div>
       <div id="chatPane" class="hidden" style="flex:1; display:flex; flex-direction:column; min-height:0;">
         <div id="chatHeader">
-          <span class="dot" id="chatDot"></span>
+          <span id="chatAvatar"></span>
           <span class="nick" id="chatNick"></span>
           <span class="sub" id="chatSub" style="color:#8b93a7;font-size:.75rem;"></span>
           <span style="flex:1;"></span>
@@ -128,9 +305,9 @@
         <div id="membersPanel" class="hidden" style="padding:.5rem 1rem;border-bottom:1px solid #262a33;display:flex;flex-wrap:wrap;gap:.5rem;"></div>
         <div id="messages"></div>
         <div id="composer">
-          <button class="secondary" id="imgBtn" title="Send image">🖼️</button>
+          <button class="secondary icon" id="imgBtn" title="Send image">🖼</button>
           <input type="file" id="imgInput" accept="image/*" class="hidden">
-          <input type="text" id="msgInput" placeholder="Message (markdown supported)…" autocomplete="off">
+          <input type="text" id="msgInput" placeholder="Message — markdown supported" autocomplete="off">
           <button id="sendBtn">Send</button>
         </div>
       </div>
@@ -218,15 +395,29 @@ function renderGroups() {
   const box = $("groups");
   box.innerHTML = "";
   if (groupState.size === 0) {
-    box.innerHTML = `<div style="color:#5b6273;font-size:.8rem;padding:.2rem 0;">No groups yet.</div>`;
+    box.innerHTML = `<div class="empty-note">No groups yet.</div>`;
     return;
   }
   for (const g of groupState.values()) {
     const row = document.createElement("div");
-    row.className = "friend" + (openGroup && openGroup.id === g.id ? " active" : "");
-    row.innerHTML = `<span style="color:#8b93a7;">#</span>
-      <span class="nick">${esc(g.name)}</span>
-      <span class="sub" style="color:#5b6273;font-size:.75rem;">${g.memberCount}</span>`;
+    row.className = "row"
+      + (openGroup && openGroup.id === g.id ? " active" : "")
+      + (g.unread > 0 ? " unread" : "");
+    row.append(avatar(g.name, true));
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = g.name;
+    row.append(name);
+
+    if (g.unread > 0) {
+      row.append(pip(g.unread));
+    } else {
+      const count = document.createElement("span");
+      count.style.cssText = "color:var(--dim);font-size:.72rem;";
+      count.textContent = g.memberCount;
+      row.append(count);
+    }
     row.onclick = () => openGroupChat(g);
     box.append(row);
   }
@@ -237,8 +428,8 @@ async function openGroupChat(g) {
   openGroup = { id: g.id, name: g.name, callCode: g.callCode };
   $("empty").classList.add("hidden");
   $("chatPane").classList.remove("hidden");
-  $("chatDot").className = "dot hidden";
-  $("chatNick").textContent = "# " + g.name;
+  setChatAvatar(g.name, true);
+  $("chatNick").textContent = g.name;
   $("membersBtn").classList.remove("hidden");
   $("membersPanel").classList.add("hidden");
   renderGroups();
@@ -248,6 +439,7 @@ async function openGroupChat(g) {
   $("messages").innerHTML = "";
   msgs.forEach(appendMessage);
   scrollMessages();
+  markRead("group", g.id, msgs);
 }
 
 async function loadMembers(groupId) {
@@ -263,13 +455,13 @@ function renderMembersPanel() {
   panel.innerHTML = "";
   for (const [id, m] of groupMembers) {
     const chip = document.createElement("span");
-    chip.style.cssText = "display:flex;align-items:center;gap:.35rem;background:#1c2029;padding:.2rem .5rem;border-radius:999px;font-size:.8rem;";
+    chip.className = "chip";
     chip.innerHTML = `<span class="dot ${m.online ? "online" : ""}"></span>${esc(m.nick)}${m.owner ? " ★" : ""}${id === me.id ? " (you)" : ""}`;
     panel.append(chip);
   }
   const add = document.createElement("span");
   add.style.cssText = "display:flex;gap:.3rem;align-items:center;";
-  add.innerHTML = `<input id="addMemberNick" placeholder="add by nick" style="width:120px;padding:.2rem .4rem;font-size:.8rem;">`;
+  add.innerHTML = `<input id="addMemberNick" placeholder="add by nick" style="width:130px;padding:.2rem .5rem;font-size:.78rem;">`;
   const btn = mkBtn("+", "", async () => {
     const nick = $("addMemberNick").value.trim();
     if (!nick) return;
@@ -341,29 +533,88 @@ function renderFriends() {
   requests.forEach((f) => {
     const row = document.createElement("div");
     row.className = "req";
-    row.innerHTML = `<span class="dot"></span><span class="nick">${esc(f.user.nick)}</span>`;
-    const ok = mkBtn("Accept", "", () => respond(f.user.id, true));
-    const no = mkBtn("Decline", "ghost", () => respond(f.user.id, false));
-    ok.style.padding = no.style.padding = ".2rem .5rem";
-    row.append(ok, no);
+    row.append(avatar(f.user.nick));
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = f.user.nick;
+    row.append(name);
+    row.append(mkBtn("Accept", "", () => respond(f.user.id, true)));
+    row.append(mkBtn("Decline", "ghost", () => respond(f.user.id, false)));
     reqBox.append(row);
   });
 
-  // Accepted friends
+  // Accepted friends — online first, then unread, then alphabetical.
   const box = $("friends");
   box.innerHTML = "";
-  accepted.sort((a, b) => Number(b.online) - Number(a.online) || a.user.nick.localeCompare(b.user.nick));
+  accepted.sort((a, b) =>
+    Number(b.online) - Number(a.online) ||
+    Number(b.unread > 0) - Number(a.unread > 0) ||
+    a.user.nick.localeCompare(b.user.nick));
   accepted.forEach((f) => {
     const row = document.createElement("div");
-    row.className = "friend" + (openFriend && openFriend.id === f.user.id ? " active" : "");
-    row.innerHTML = `<span class="dot ${f.online ? "online" : ""}"></span>
-      <span class="nick">${esc(f.user.nick)}</span>`;
-    const rm = mkBtn("✕", "ghost", (e) => { e.stopPropagation(); removeFriend(f.user.id); });
-    row.append(rm);
+    row.className = "row"
+      + (openFriend && openFriend.id === f.user.id ? " active" : "")
+      + (f.unread > 0 ? " unread" : "");
+    row.append(avatarWrap(f.user.nick, false, f.online));
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = f.user.nick;
+    row.append(name);
+
+    if (f.unread > 0) row.append(pip(f.unread));
+    else {
+      const rm = mkBtn("✕", "ghost", (e) => { e.stopPropagation(); removeFriend(f.user.id); });
+      rm.classList.add("rm");
+      row.append(rm);
+    }
     row.onclick = () => openChat(f.user);
     box.append(row);
   });
-  if (accepted.length === 0) box.innerHTML = `<div style="padding:1rem;color:#5b6273;font-size:.85rem;">No friends yet — add someone above.</div>`;
+  if (accepted.length === 0)
+    box.innerHTML = `<div class="empty-note">No friends yet — add someone above.</div>`;
+}
+
+// pip renders an unread badge (count, capped at 99+).
+function pip(n) {
+  const p = document.createElement("span");
+  p.className = "pip";
+  p.textContent = n > 99 ? "99+" : String(n);
+  return p;
+}
+
+// setChatAvatar swaps the avatar shown in the chat header.
+function setChatAvatar(name, isGroup, online) {
+  $("chatAvatar").replaceChildren(avatarWrap(name, isGroup, online));
+}
+
+// avatarWrap is an avatar with an optional presence badge on its corner.
+// Pass online=undefined (groups) to omit the badge.
+function avatarWrap(name, isGroup, online) {
+  const wrap = document.createElement("span");
+  wrap.className = "avatar-wrap";
+  wrap.append(avatar(name, isGroup));
+  if (online !== undefined) {
+    const d = document.createElement("span");
+    d.className = "dot" + (online ? " online" : "");
+    wrap.append(d);
+  }
+  return wrap;
+}
+
+// avatar renders a colour-from-nick initials circle.
+function avatar(nick, isGroup) {
+  const a = document.createElement("span");
+  a.className = "avatar" + (isGroup ? " group" : "");
+  if (isGroup) {
+    a.textContent = "#";
+  } else {
+    a.textContent = (nick || "?").slice(0, 2).toUpperCase();
+    let h = 0;
+    for (let i = 0; i < nick.length; i++) h = (h * 31 + nick.charCodeAt(i)) >>> 0;
+    a.style.background = `hsl(${h % 360} 55% 42%)`;
+  }
+  return a;
 }
 
 async function respond(userId, accept) {
@@ -390,18 +641,42 @@ async function openChat(user) {
   openGroup = null;
   $("empty").classList.add("hidden");
   $("chatPane").classList.remove("hidden");
+  const f = friendState.get(user.id);
+  setChatAvatar(user.nick, false, !!(f && f.online));
   $("chatNick").textContent = user.nick;
   $("chatSub").textContent = "";
   $("membersBtn").classList.add("hidden");
   $("membersPanel").classList.add("hidden");
-  const f = friendState.get(user.id);
-  $("chatDot").className = "dot " + (f && f.online ? "online" : "");
   renderGroups();
   renderFriends();
   const msgs = await api(`/api/messages?with=${user.id}`);
   $("messages").innerHTML = "";
   msgs.forEach(appendMessage);
   scrollMessages();
+  markRead("dm", user.id, msgs);
+}
+
+// markRead tells the server we've seen this conversation up to its newest
+// message, and clears the local pip immediately.
+async function markRead(kind, id, msgs) {
+  const lastId = msgs && msgs.length ? msgs[msgs.length - 1].id : 0;
+  const state = kind === "dm" ? friendState.get(id) : groupState.get(id);
+  const hadUnread = state && state.unread > 0;
+  if (state) state.unread = 0;
+  if (hadUnread) { renderFriends(); renderGroups(); }
+  if (!lastId) return;
+  await api("/api/read", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, id, lastId }),
+  }).catch(() => {});
+}
+
+// bumpUnread increments the local pip for a conversation that isn't open.
+function bumpUnread(kind, id) {
+  const state = kind === "dm" ? friendState.get(id) : groupState.get(id);
+  if (!state) return;
+  state.unread = (state.unread || 0) + 1;
+  kind === "dm" ? renderFriends() : renderGroups();
 }
 
 $("sendBtn").onclick = sendText;
@@ -447,29 +722,28 @@ function appendMessage(m) {
   const div = document.createElement("div");
   const mine = m.senderId === me.id;
   div.className = "msg" + (mine ? " me" : "");
-  // In a group, label messages from others with the sender's nick.
+
+  // Build the whole bubble in one string — assigning innerHTML later would
+  // wipe out anything appended beforehand (e.g. the group sender label).
+  let html = "";
   if (openGroup && !mine) {
     const who = groupMembers.get(m.senderId);
-    if (who) {
-      const label = document.createElement("div");
-      label.style.cssText = "font-size:.7rem;color:#8b93a7;margin-bottom:.15rem;";
-      label.textContent = who.nick;
-      div.append(label);
-    }
+    if (who) html += `<div class="sender">${esc(who.nick)}</div>`;
   }
+
   const call = m.body && m.body.match(/^📞 call:([A-Z0-9]{4,8})$/);
   if (call) {
     div.classList.add("callmsg");
-    const code = call[1];
-    div.innerHTML = `<div class="body">📞 Video call</div>`;
-    div.append(mkBtn("Join call " + code, "", () => joinCall(code)));
+    html += `<div class="body">📞 Video call</div>`;
+    div.innerHTML = html;
+    div.append(mkBtn("Join call " + call[1], "", () => joinCall(call[1])));
   } else {
-    let html = "";
     if (m.body) html += `<div class="body">${renderMarkdown(m.body)}</div>`;
     if (m.thumbUrl) html += `<a href="${m.imageUrl}" target="_blank" rel="noopener">
       <img class="thumb" src="${m.thumbUrl}" alt="image"></a>`;
     div.innerHTML = html;
   }
+
   const t = document.createElement("div");
   t.className = "time";
   t.textContent = new Date(m.created * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -516,7 +790,7 @@ function connectEvents() {
     if (e.type === "presence") {
       const f = friendState.get(e.userId);
       if (f) { f.online = e.online; renderFriends();
-        if (openFriend && openFriend.id === e.userId) $("chatDot").className = "dot " + (e.online ? "online" : ""); }
+        if (openFriend && openFriend.id === e.userId) setChatAvatar(openFriend.nick, false, e.online); }
       // Update the open group's member roster dot too.
       const gm = groupMembers.get(e.userId);
       if (gm) { gm.online = e.online; if (openGroup) renderMembersPanel(); }
@@ -527,8 +801,10 @@ function connectEvents() {
       const m = e.message;
       if (openFriend && m.senderId === openFriend.id) {
         appendMessage(m); scrollMessages();
+        markRead("dm", openFriend.id, [m]); // keep it read while we're looking
       } else {
-        // Message from someone whose chat isn't open — notify.
+        // Message from someone whose chat isn't open — pip it and notify.
+        bumpUnread("dm", m.senderId);
         const from = friendState.get(m.senderId);
         const who = from ? from.user.nick : "someone";
         const preview = m.body ? m.body.slice(0, 80) : "📷 image";
@@ -545,7 +821,9 @@ function connectEvents() {
       const m = e.message;
       if (openGroup && m.groupId === openGroup.id) {
         appendMessage(m); scrollMessages();
+        markRead("group", openGroup.id, [m]);
       } else {
+        bumpUnread("group", m.groupId);
         const g = groupState.get(m.groupId);
         const preview = m.body ? m.body.slice(0, 80) : "📷 image";
         notify("Message in " + (g ? g.name : "a group"), preview);

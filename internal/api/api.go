@@ -42,6 +42,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/api/messages", a.auth(a.handleMessages)) // GET list, POST send text
 	mux.HandleFunc("/api/messages/image", a.auth(a.handleImageMessage))
+	mux.HandleFunc("/api/read", a.auth(a.handleRead)) // mark a conversation read
 	mux.HandleFunc("/api/events", a.auth(a.handleEvents)) // presence + message stream (WS)
 
 	a.groupRoutes(mux)
@@ -168,10 +169,11 @@ func (a *API) handleMe(w http.ResponseWriter, _ *http.Request, user *store.User)
 
 // ---- friends handlers ----
 
-// friendView is a Friend enriched with live online status.
+// friendView is a Friend enriched with live online status and unread count.
 type friendView struct {
 	store.Friend
 	Online bool `json:"online"`
+	Unread int  `json:"unread"`
 }
 
 func (a *API) handleFriends(w http.ResponseWriter, _ *http.Request, user *store.User) {
@@ -180,11 +182,42 @@ func (a *API) handleFriends(w http.ResponseWriter, _ *http.Request, user *store.
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	unread, err := a.Store.UnreadDMCounts(user.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	views := make([]friendView, 0, len(friends))
 	for _, f := range friends {
-		views = append(views, friendView{Friend: f, Online: a.Presence.Online(f.User.ID)})
+		views = append(views, friendView{
+			Friend: f,
+			Online: a.Presence.Online(f.User.ID),
+			Unread: unread[f.User.ID],
+		})
 	}
 	writeJSON(w, http.StatusOK, views)
+}
+
+// handleRead marks a conversation read up to a message id.
+// POST {kind: "dm"|"group", id: <peer or group id>, lastId: <message id>}
+func (a *API) handleRead(w http.ResponseWriter, r *http.Request, user *store.User) {
+	var body struct {
+		Kind   string `json:"kind"`
+		ID     int64  `json:"id"`
+		LastID int64  `json:"lastId"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.Kind != store.KindDM && body.Kind != store.KindGroup {
+		writeErr(w, http.StatusBadRequest, "kind must be dm or group")
+		return
+	}
+	if err := a.Store.MarkRead(user.ID, body.Kind, body.ID, body.LastID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (a *API) handleFriendRequest(w http.ResponseWriter, r *http.Request, user *store.User) {

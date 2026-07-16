@@ -27,10 +27,16 @@ func (a *API) handleGroups(w http.ResponseWriter, r *http.Request, user *store.U
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if groups == nil {
-			groups = []store.Group{}
+		unread, err := a.Store.UnreadGroupCounts(user.ID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
 		}
-		writeJSON(w, http.StatusOK, groups)
+		views := make([]groupView, 0, len(groups))
+		for _, g := range groups {
+			views = append(views, groupView{Group: g, Unread: unread[g.ID]})
+		}
+		writeJSON(w, http.StatusOK, views)
 	case http.MethodPost:
 		var body struct {
 			Name string `json:"name"`
@@ -52,6 +58,12 @@ func (a *API) handleGroups(w http.ResponseWriter, r *http.Request, user *store.U
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, "GET or POST")
 	}
+}
+
+// groupView is a Group plus this user's unread count for it.
+type groupView struct {
+	store.Group
+	Unread int `json:"unread"`
 }
 
 // memberView is a group member enriched with live presence.
