@@ -14,10 +14,10 @@ android {
         versionCode = 1
         versionName = "0.1"
 
-        // Base URL of the take-back server (REST API + signaling live here).
-        // 10.0.2.2 is the host machine as seen from the Android emulator.
-        // Use https:// (and the client derives wss://) for a TLS deployment.
-        buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8081\"")
+        // Default take-back server (REST API + signaling). Overridable at
+        // runtime via the in-app Settings screen — handy for pointing at a
+        // local dev server (e.g. http://10.0.2.2:8081 from the emulator).
+        buildConfigField("String", "BASE_URL", "\"https://takeback.chain-of-thought.org\"")
     }
 
     buildFeatures {

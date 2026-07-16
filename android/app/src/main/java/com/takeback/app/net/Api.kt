@@ -69,7 +69,16 @@ data class GroupMessage(
  * functions that run on Dispatchers.IO.
  */
 object ApiClient {
-    val base: String get() = BuildConfig.BASE_URL
+    private const val PREFS = "tb_config"
+    private const val KEY_SERVER = "server_url"
+
+    private lateinit var appContext: Context
+
+    @Volatile
+    private var baseUrl: String = BuildConfig.BASE_URL
+
+    /** Current server base URL (no trailing slash). */
+    val base: String get() = baseUrl
 
     lateinit var http: OkHttpClient
         private set
@@ -78,8 +87,31 @@ object ApiClient {
 
     fun init(context: Context) {
         if (::http.isInitialized) return
-        cookieJar = PersistentCookieJar(context.applicationContext)
+        appContext = context.applicationContext
+        baseUrl = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_SERVER, BuildConfig.BASE_URL)!!
+        rebuild()
+    }
+
+    private fun rebuild() {
+        cookieJar = PersistentCookieJar(appContext)
         http = OkHttpClient.Builder().cookieJar(cookieJar).build()
+    }
+
+    /** The default server compiled into the app. */
+    fun defaultServer(): String = BuildConfig.BASE_URL
+
+    /**
+     * Point the app at a different server. Clears the session (a cookie for the
+     * old host is meaningless on the new one) and rebuilds the HTTP client.
+     */
+    fun setServer(url: String) {
+        val norm = url.trim().trimEnd('/')
+        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_SERVER, norm).apply()
+        baseUrl = norm
+        if (::cookieJar.isInitialized) cookieJar.clear()
+        rebuild()
     }
 
     /** Absolute URL for a server-relative media path (e.g. "/media/x.jpg"). */

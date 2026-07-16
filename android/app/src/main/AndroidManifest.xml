@@ -28,6 +28,7 @@
         </activity>
 
         <activity android:name=".HomeActivity" android:exported="false" />
+        <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".ChatActivity" android:exported="false" />
         <activity android:name=".GroupChatActivity" android:exported="false" />
 

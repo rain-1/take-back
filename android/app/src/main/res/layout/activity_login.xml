@@ -67,4 +67,20 @@
         android:text="@string/need_account"
         android:textColor="#60A5FA"
         android:padding="12dp" />
+
+    <TextView
+        android:id="@+id/settingsLink"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚙ Server settings"
+        android:textColor="#8B93A7"
+        android:textSize="13sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/serverLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="#5B6273"
+        android:textSize="11sp" />
 </LinearLayout>

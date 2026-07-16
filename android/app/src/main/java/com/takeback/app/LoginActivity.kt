@@ -35,6 +35,14 @@ class LoginActivity : AppCompatActivity() {
 
         binding.toggle.setOnClickListener { toggleMode() }
         binding.submit.setOnClickListener { submit() }
+        binding.settingsLink.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        binding.serverLabel.text = ApiClient.base
     }
 
     private fun toggleMode() {
