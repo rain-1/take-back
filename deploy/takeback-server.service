@@ -1,0 +1,21 @@
+[Unit]
+Description=take-back backend (API + WebRTC signaling)
+After=network.target
+
+[Service]
+Type=simple
+User=takeback
+Group=takeback
+WorkingDirectory=/opt/takeback
+ExecStart=/opt/takeback/takeback-server -addr 127.0.0.1:8081 -db /var/lib/takeback/takeback.db -media /var/lib/takeback/media
+Restart=always
+RestartSec=2
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/takeback
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

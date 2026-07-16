@@ -1,0 +1,20 @@
+[Unit]
+Description=take-back web client (serves UI, proxies to backend)
+After=network.target takeback-server.service
+Wants=takeback-server.service
+
+[Service]
+Type=simple
+User=takeback
+Group=takeback
+WorkingDirectory=/opt/takeback
+ExecStart=/opt/takeback/takeback-web -addr 127.0.0.1:8080 -backend http://127.0.0.1:8081
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
