@@ -24,6 +24,26 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.3.0
+
+Backwards compatible (protocol 1). Android calls reach parity with the web
+client's 1.2.0 call features, and the two interoperate — an Android user's
+camera-off/mute shows correctly to a web user and vice versa.
+
+**Added (Android)**
+- **Speaking ring, profile pictures, and mic/camera toggles in calls**, matching
+  the web client. Thresholds and hysteresis are shared (see `SpeakingDetector`),
+  so both platforms feel the same.
+
+Audio levels can't be measured the way the web does it (there's no Web Audio),
+so Android uses two sources:
+- **Your own mic**: raw PCM from the WebRTC audio device module
+  (`setSamplesReadyCallback`), RMS'd per buffer. This deliberately doesn't use
+  `getStats`, which only reports once media is flowing to a peer — you can check
+  your mic works before anyone else joins.
+- **Remote peers**: `audioLevel` from each peer connection's `inbound-rtp` stats,
+  polled every 200ms (fast enough to feel live, cheap enough per peer).
+
 ## 1.2.0
 
 Backwards compatible with 1.0/1.1 clients (protocol 1). The new `state`

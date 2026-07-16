@@ -1,6 +1,8 @@
 package com.takeback.app
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import org.json.JSONObject
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
@@ -21,7 +23,9 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoCapturer
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+import org.webrtc.audio.JavaAudioDeviceModule
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.sqrt
 
 /**
  * Signaler is how the engine sends messages back out. The activity backs this
@@ -41,7 +45,13 @@ interface RtcEvents {
     fun onLocalVideo(track: VideoTrack)
     fun onRemoteVideo(peerId: String, nick: String, track: VideoTrack)
     fun onPeerClosed(peerId: String)
+
+    /** Someone started/stopped speaking. [id] is [LOCAL_ID] or a peer id. */
+    fun onSpeaking(id: String, speaking: Boolean) {}
 }
+
+/** Tile id used for our own video/audio. */
+const val LOCAL_ID = "local"
 
 /**
  * RtcEngine owns the shared local media and one [PeerConnection] per remote
@@ -72,17 +82,79 @@ class RtcEngine(
 
     private class PeerBox(val pc: PeerConnection)
 
+    // Speaking detection. Local level comes from the mic's raw samples; remote
+    // levels come from each peer connection's inbound-rtp stats (Android WebRTC
+    // has no Web Audio equivalent to tap a remote track directly).
+    private val detectors = ConcurrentHashMap<String, SpeakingDetector>()
+    private val statsHandler = Handler(Looper.getMainLooper())
+    private var micEnabledFlag = true
+
+    private fun detectorFor(id: String) =
+        detectors.getOrPut(id) { SpeakingDetector { on -> events.onSpeaking(id, on) } }
+
     init {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(appContext)
                 .createInitializationOptions()
         )
+
+        // Tap the microphone's captured samples so we can show a level even with
+        // no peers connected ("is my mic working?"). getStats can't do that —
+        // it only reports once media is flowing to someone.
+        val adm = JavaAudioDeviceModule.builder(appContext)
+            .setSamplesReadyCallback { samples -> onMicSamples(samples) }
+            .createAudioDeviceModule()
+
         val encoder = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
         val decoder = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
         factory = PeerConnectionFactory.builder()
+            .setAudioDeviceModule(adm)
             .setVideoEncoderFactory(encoder)
             .setVideoDecoderFactory(decoder)
             .createPeerConnectionFactory()
+
+        startStatsPolling()
+    }
+
+    /** Compute RMS over a buffer of 16-bit PCM and feed the local detector. */
+    private fun onMicSamples(samples: JavaAudioDeviceModule.AudioSamples) {
+        if (!micEnabledFlag) return // muted: never imply we're transmitting
+        val data = samples.data
+        var sum = 0.0
+        var n = 0
+        var i = 0
+        while (i + 1 < data.size) {
+            val v = (((data[i + 1].toInt() shl 8) or (data[i].toInt() and 0xff)).toShort()).toInt() / 32768.0
+            sum += v * v
+            n++
+            i += 2
+        }
+        if (n > 0) detectorFor(LOCAL_ID).update(sqrt(sum / n))
+    }
+
+    /**
+     * Poll each peer connection for its inbound audio level. 200ms is a
+     * compromise: fast enough to feel live, cheap enough to run per peer.
+     */
+    private fun startStatsPolling() {
+        statsHandler.postDelayed(object : Runnable {
+            override fun run() {
+                for ((peerId, box) in peers) {
+                    box.pc.getStats { report ->
+                        var level = 0.0
+                        for (s in report.statsMap.values) {
+                            if (s.type != "inbound-rtp") continue
+                            // Different WebRTC builds spell this "kind" or "mediaType".
+                            val kind = s.members["kind"] ?: s.members["mediaType"]
+                            if (kind != "audio") continue
+                            (s.members["audioLevel"] as? Number)?.let { level = it.toDouble() }
+                        }
+                        detectorFor(peerId).update(level)
+                    }
+                }
+                statsHandler.postDelayed(this, 200)
+            }
+        }, 200)
     }
 
     /** Acquire mic + front camera and publish local tracks. Call once. */
@@ -223,7 +295,29 @@ class RtcEngine(
         (cameraCapturer as? CameraVideoCapturer)?.switchCamera(null)
     }
 
+    // ---- Mic / camera toggles ----
+    // Flipping track.enabled keeps the sender and track in place, so peers need
+    // no renegotiation — the same trick the web client uses.
+
+    /** Mute/unmute the microphone. Muting also drops our speaking ring. */
+    fun setMicEnabled(on: Boolean) {
+        micEnabledFlag = on
+        localAudio?.setEnabled(on)
+        if (!on) detectors[LOCAL_ID]?.reset()
+    }
+
+    /**
+     * Turn the camera on/off. A disabled track still sends black frames, so the
+     * caller must also tell peers (see SignalingClient.sendState) for them to
+     * show our avatar instead of a black tile.
+     */
+    fun setCameraEnabled(on: Boolean) {
+        localVideo?.setEnabled(on)
+    }
+
     fun close() {
+        statsHandler.removeCallbacksAndMessages(null)
+        detectors.clear()
         try {
             currentCapturer?.stopCapture()
         } catch (_: InterruptedException) {

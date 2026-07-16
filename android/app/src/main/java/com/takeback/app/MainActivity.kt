@@ -3,10 +3,14 @@ package com.takeback.app
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -31,6 +35,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     companion object {
         /** Optional call-code extra; when present, the screen auto-joins. */
         const val EXTRA_ROOM = "room"
+
+        /** Ring colour for "this person is speaking". */
+        private val SPEAK_GREEN: Int = Color.parseColor("#22C55E")
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -41,8 +48,11 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private var nick: String = ""
     private var roomCode: String = ""
     private var sharing = false
+    private var micOn = true
+    private var camOn = true
 
-    private val renderers = HashMap<String, SurfaceViewRenderer>()
+    private val tiles = HashMap<String, Tile>()
+    private val peerState = HashMap<String, Pair<Boolean, Boolean>>() // id -> (video, audio)
 
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -84,6 +94,23 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.shareBtn.setOnClickListener { if (sharing) stopScreenShare() else requestScreenShare() }
         binding.leaveBtn.setOnClickListener { leaveCall() }
 
+        binding.micBtn.setOnClickListener {
+            micOn = !micOn
+            engine?.setMicEnabled(micOn)
+            binding.micBtn.text = if (micOn) "🎤" else "🔇"
+            tiles[LOCAL_ID]?.muted = !micOn
+            refreshTile(LOCAL_ID)
+            broadcastState()
+        }
+        binding.camBtn.setOnClickListener {
+            camOn = !camOn
+            if (!sharing) engine?.setCameraEnabled(camOn)
+            binding.camBtn.text = if (camOn) "📷" else "🚫"
+            tiles[LOCAL_ID]?.videoOn = camOn || sharing
+            refreshTile(LOCAL_ID)
+            broadcastState()
+        }
+
         // Launched from a chat with a call code: use the logged-in nick and join
         // straight away, skipping the nickname/lobby steps.
         val room = intent.getStringExtra(EXTRA_ROOM)
@@ -119,8 +146,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         signaling?.close(); signaling = null
         engine?.close(); engine = null
         stopService(Intent(this, ScreenCaptureService::class.java))
-        renderers.values.forEach { it.release() }
-        renderers.clear()
+        tiles.values.forEach { it.renderer.release() }
+        tiles.clear()
+        peerState.clear()
         binding.videoGrid.removeAllViews()
         binding.callStep.visibility = View.GONE
         binding.lobbyStep.visibility = View.VISIBLE
@@ -157,11 +185,29 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     // ---- SignalingListener (WebSocket thread) ----
 
     override fun onWelcome(selfId: String, peers: List<RemotePeer>) = runOnUiThread {
+        broadcastState() // announce our initial mic/camera state to the room
         peers.forEach { engine?.offerTo(it.id, it.nick) }
         binding.status.text = if (peers.isEmpty()) getString(R.string.waiting) else getString(R.string.connecting)
     }
 
-    override fun onHello(fromId: String, nick: String) { /* wait for their offer */ }
+    override fun onHello(fromId: String, nick: String) {
+        // A newcomer arrived: re-announce so they render us correctly at once.
+        broadcastState()
+    }
+
+    override fun onState(fromId: String, video: Boolean, audio: Boolean) = runOnUiThread {
+        peerState[fromId] = video to audio
+        applyState(fromId, video, audio)
+    }
+
+    override fun onSpeaking(id: String, speaking: Boolean) = runOnUiThread {
+        tiles[id]?.speaking = speaking
+        refreshTile(id)
+    }
+
+    private fun broadcastState() {
+        signaling?.sendState(camOn || sharing, micOn)
+    }
 
     override fun onOffer(fromId: String, nick: String, sdpJson: JSONObject) =
         runOnUiThread { engine?.onRemoteOffer(fromId, nick, sdpJson) }
@@ -179,45 +225,140 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     // ---- RtcEvents (signaling thread) ----
 
     override fun onLocalVideo(track: VideoTrack) = runOnUiThread {
-        attachRenderer("local", track)
+        attachRenderer(LOCAL_ID, nick, track)
     }
 
     override fun onRemoteVideo(peerId: String, nick: String, track: VideoTrack) = runOnUiThread {
-        attachRenderer(peerId, track)
+        attachRenderer(peerId, nick, track)
         binding.status.text = getString(R.string.connected)
     }
 
     override fun onPeerClosed(peerId: String) = runOnUiThread {
-        renderers.remove(peerId)?.let { r ->
-            binding.videoGrid.removeView(r.parent as View)
-            r.release()
+        tiles.remove(peerId)?.let { t ->
+            binding.videoGrid.removeView(t.root)
+            t.renderer.release()
         }
+        peerState.remove(peerId)
     }
 
     // ---- Video grid ----
 
-    private fun attachRenderer(key: String, track: VideoTrack) {
-        renderers[key]?.let { track.addSink(it); return }
+    /**
+     * One participant's tile: their video, or their profile picture when the
+     * camera is off, plus a green ring while they're speaking and a badge when
+     * their mic is muted.
+     */
+    private class Tile(
+        val root: FrameLayout,
+        val renderer: SurfaceViewRenderer,
+        val avatar: TextView,
+        val micBadge: TextView,
+        val label: TextView,
+    ) {
+        var speaking = false
+        var videoOn = true
+        var muted = false
+    }
+
+    private fun attachRenderer(key: String, nick: String, track: VideoTrack) {
+        tiles[key]?.let { track.addSink(it.renderer); return }
 
         val renderer = SurfaceViewRenderer(this).apply {
             init(eglBase.eglBaseContext, null)
             setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-            setMirror(key == "local")
+            setMirror(key == LOCAL_ID)
         }
-        val tile = FrameLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(0, 0) // sized by grid weights below
-            addView(renderer)
+        val avatar = TextView(this).apply {
+            text = initialsOf(nick)
+            setTextColor(Color.WHITE)
+            textSize = 26f
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            val d = (96 * resources.displayMetrics.density).toInt()
+            layoutParams = FrameLayout.LayoutParams(d, d, Gravity.CENTER)
         }
-        // Two columns; each tile takes half width and a fixed-ish height.
+        val micBadge = TextView(this).apply {
+            text = "🔇"
+            visibility = View.GONE
+            setPadding(8, 4, 8, 4)
+            layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.TOP)
+        }
+        val label = TextView(this).apply {
+            text = nick
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setPadding(12, 4, 12, 4)
+            setBackgroundColor(Color.parseColor("#99000000"))
+            layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.BOTTOM)
+        }
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            addView(renderer, FrameLayout.LayoutParams(-1, -1))
+            addView(avatar); addView(micBadge); addView(label)
+        }
+
         val params = android.widget.GridLayout.LayoutParams().apply {
             width = 0
             height = resources.displayMetrics.heightPixels / 3
             columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
             setMargins(8, 8, 8, 8)
         }
-        binding.videoGrid.addView(tile, params)
-        renderers[key] = renderer
+        binding.videoGrid.addView(root, params)
+
+        val tile = Tile(root, renderer, avatar, micBadge, label)
+        tiles[key] = tile
+        avatar.background = avatarBg(nick, speaking = false)
         track.addSink(renderer)
+
+        // State may have arrived before this peer's track did.
+        peerState[key]?.let { (video, audio) -> applyState(key, video, audio) }
+        refreshTile(key)
+    }
+
+    /** Circle behind the initials; gains a green stroke while speaking. */
+    private fun avatarBg(nick: String, speaking: Boolean): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(colorFor(nick))
+            if (speaking) setStroke((3 * resources.displayMetrics.density).toInt(), SPEAK_GREEN)
+        }
+
+    /** Repaint a tile from its current speaking/video/muted state. */
+    private fun refreshTile(key: String) {
+        val t = tiles[key] ?: return
+        t.renderer.visibility = if (t.videoOn) View.VISIBLE else View.GONE
+        t.avatar.visibility = if (t.videoOn) View.GONE else View.VISIBLE
+        t.micBadge.visibility = if (t.muted) View.VISIBLE else View.GONE
+
+        // A muted mic must never look like it's transmitting.
+        val ringing = t.speaking && !t.muted
+        if (t.videoOn) {
+            // Video: ring the whole tile.
+            t.root.foreground = if (ringing) GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke((3 * resources.displayMetrics.density).toInt(), SPEAK_GREEN)
+            } else null
+        } else {
+            t.root.foreground = null
+            t.avatar.background = avatarBg(nickOf(key), ringing)
+        }
+    }
+
+    private fun nickOf(key: String): String =
+        if (key == LOCAL_ID) nick else (tiles[key]?.label?.text?.toString() ?: "?")
+
+    private fun initialsOf(nick: String) = (nick.ifEmpty { "?" }).take(2).uppercase()
+
+    /** Same colour-from-nickname hash as the web client, so avatars match. */
+    private fun colorFor(nick: String): Int {
+        var h = 0L
+        for (c in nick) h = (h * 31 + c.code) and 0xFFFFFFFFL
+        return Color.HSVToColor(floatArrayOf((h % 360).toFloat(), 0.55f, 0.42f))
+    }
+
+    private fun applyState(id: String, video: Boolean, audio: Boolean) {
+        tiles[id]?.let { it.videoOn = video; it.muted = !audio }
+        refreshTile(id)
     }
 
     // ---- Signaler (out) ----

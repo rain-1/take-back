@@ -21,6 +21,8 @@ data class RemotePeer(val id: String, val nick: String)
 interface SignalingListener {
     fun onWelcome(selfId: String, peers: List<RemotePeer>)
     fun onHello(fromId: String, nick: String)
+    /** A peer announced its mic/camera state (or its initial state on join). */
+    fun onState(fromId: String, video: Boolean, audio: Boolean) {}
     fun onOffer(fromId: String, nick: String, sdpJson: JSONObject)
     fun onAnswer(fromId: String, sdpJson: JSONObject)
     fun onCandidate(fromId: String, candidateJson: JSONObject)
@@ -73,6 +75,10 @@ class SignalingClient(
                 listener.onWelcome(msg.optString("to"), peers)
             }
             "hello" -> listener.onHello(from, nickField)
+            "state" -> {
+                val p = payloadOf(msg)
+                listener.onState(from, p.optBoolean("video", true), p.optBoolean("audio", true))
+            }
             "offer" -> listener.onOffer(from, nickField, payloadOf(msg))
             "answer" -> listener.onAnswer(from, payloadOf(msg))
             "candidate" -> listener.onCandidate(from, payloadOf(msg))
@@ -91,6 +97,10 @@ class SignalingClient(
         if (payload != null) obj.put("payload", payload.toString())
         socket?.send(obj.toString())
     }
+
+    /** Broadcast our mic/camera state to everyone in the room (no `to` = all). */
+    fun sendState(video: Boolean, audio: Boolean) =
+        sendRaw("state", null, JSONObject().put("video", video).put("audio", audio))
 
     fun sendOffer(to: String, sdp: JSONObject) = sendRaw("offer", to, sdp)
     fun sendAnswer(to: String, sdp: JSONObject) = sendRaw("answer", to, sdp)
