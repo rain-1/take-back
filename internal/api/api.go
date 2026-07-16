@@ -13,6 +13,7 @@ import (
 
 	"github.com/rain1/take-back/internal/presence"
 	"github.com/rain1/take-back/internal/store"
+	"github.com/rain1/take-back/internal/version"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -30,6 +31,7 @@ type API struct {
 
 // Routes registers all API endpoints on mux under /api/.
 func (a *API) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/version", a.handleVersion) // unauthenticated: compat check
 	mux.HandleFunc("/api/register", a.handleRegister)
 	mux.HandleFunc("/api/login", a.handleLogin)
 	mux.HandleFunc("/api/logout", a.handleLogout)
@@ -96,6 +98,19 @@ func (a *API) setSession(w http.ResponseWriter, userID int64) error {
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
 	return nil
+}
+
+// ---- version ----
+
+// handleVersion reports this server's release and wire-protocol version so a
+// client can tell whether it is compatible before trying to use the API.
+// Deliberately unauthenticated.
+func (a *API) handleVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":     version.Name,
+		"version":  version.Version,
+		"protocol": version.Protocol,
+	})
 }
 
 // ---- auth handlers ----

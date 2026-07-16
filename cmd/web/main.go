@@ -9,12 +9,15 @@ package main
 import (
 	"embed"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"github.com/rain1/take-back/internal/version"
 )
 
 //go:embed static
@@ -23,7 +26,13 @@ var staticFS embed.FS
 func main() {
 	addr := flag.String("addr", ":8080", "listen address for the web client")
 	backend := flag.String("backend", "http://localhost:8081", "server base URL to proxy API/signaling to")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("%s web %s (protocol %d)\n", version.Name, version.Version, version.Protocol)
+		return
+	}
 
 	target, err := url.Parse(*backend)
 	if err != nil {
@@ -48,7 +57,8 @@ func main() {
 		fileServer.ServeHTTP(w, r)
 	})
 
-	log.Printf("take-back web client on %s (backend %s)", *addr, *backend)
+	log.Printf("take-back web %s (protocol %d) on %s (backend %s)",
+		version.Version, version.Protocol, *addr, *backend)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		log.Fatal(err)
 	}

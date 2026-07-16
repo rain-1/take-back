@@ -11,8 +11,11 @@ android {
         applicationId = "com.takeback.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        // Keep in step with internal/version/version.go. MAJOR == PROTOCOL:
+        // a client can only talk to a server with the same PROTOCOL.
+        versionName = "1.0.0"
+        buildConfigField("int", "PROTOCOL", "1")
 
         // Default take-back server (REST API + signaling). Overridable at
         // runtime via the in-app Settings screen — handy for pointing at a

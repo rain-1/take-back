@@ -2,6 +2,7 @@ package com.takeback.app
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.takeback.app.databinding.ActivityLoginBinding
@@ -42,7 +43,32 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        binding.serverLabel.text = ApiClient.base
+        binding.serverLabel.text = "${ApiClient.base} · app v${BuildConfig.VERSION_NAME}"
+        checkServerCompatibility()
+    }
+
+    /**
+     * Warn if the server speaks a different wire protocol than this build —
+     * MAJOR/PROTOCOL mismatch means the app must be updated (see
+     * internal/version). Best-effort: silent when offline.
+     */
+    private fun checkServerCompatibility() {
+        lifecycleScope.launch {
+            val v = runCatching { ApiClient.serverVersion() }.getOrNull() ?: return@launch
+            binding.serverLabel.text =
+                "${ApiClient.base} · app v${BuildConfig.VERSION_NAME} · server v${v.version}"
+            if (!v.compatible) {
+                AlertDialog.Builder(this@LoginActivity)
+                    .setTitle("Update required")
+                    .setMessage(
+                        "This app speaks protocol ${BuildConfig.PROTOCOL} but the server " +
+                            "(v${v.version}) speaks protocol ${v.protocol}.\n\n" +
+                            "Please install a newer take-back app."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
     }
 
     private fun toggleMode() {

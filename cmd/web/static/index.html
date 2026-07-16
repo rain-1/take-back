@@ -254,8 +254,10 @@
 <div id="main" class="hidden">
   <header>
     <h1>take-back</h1>
-    <span class="sub">chat · friends · calls</span>
+    <span class="sub" id="verLabel"></span>
     <span style="flex:1;"></span>
+    <span class="sub hidden" id="staleWarn" style="color:var(--danger);cursor:pointer;"
+          title="Reload to get the current version">⚠ update available — reload</span>
     <span class="sub">signed in as <b id="meNick"></b></span>
     <button class="secondary" id="logoutBtn">Log out</button>
   </header>
@@ -316,6 +318,10 @@
 </div>
 
 <script>
+// Wire-protocol version this client speaks. Must match the server's MAJOR /
+// protocol; see internal/version. Bump only alongside a breaking API change.
+const CLIENT_PROTOCOL = 1;
+
 const $ = (id) => document.getElementById(id);
 async function api(path, opts = {}) {
   const res = await fetch(path, { credentials: "same-origin", ...opts });
@@ -492,10 +498,25 @@ function notify(title, body, onClick) {
   n.onclick = () => { window.focus(); n.close(); if (onClick) onClick(); };
 }
 
-// Try to resume an existing session on load.
+// Try to resume an existing session on load, and check we're not a stale
+// cached page talking to a newer server.
 (async () => {
+  checkVersion();
   try { me = await api("/api/me"); enterApp(); } catch { /* show auth */ }
 })();
+
+// checkVersion shows the server version, and warns if this page's protocol no
+// longer matches it (i.e. a cached tab after a breaking deploy).
+async function checkVersion() {
+  try {
+    const v = await api("/api/version");
+    $("verLabel").textContent = "v" + v.version;
+    if (v.protocol !== CLIENT_PROTOCOL) {
+      $("staleWarn").classList.remove("hidden");
+      $("staleWarn").onclick = () => location.reload(true);
+    }
+  } catch { /* offline; ignore */ }
+}
 
 // ---------- Friends ----------
 $("addBtn").onclick = async () => {

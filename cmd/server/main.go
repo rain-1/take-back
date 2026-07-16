@@ -9,6 +9,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/rain1/take-back/internal/api"
 	"github.com/rain1/take-back/internal/presence"
 	"github.com/rain1/take-back/internal/store"
+	"github.com/rain1/take-back/internal/version"
 )
 
 // Signal is one signaling message relayed between peers in a room.
@@ -253,7 +255,13 @@ func main() {
 	addr := flag.String("addr", ":8081", "listen address for the server")
 	dbPath := flag.String("db", "takeback.db", "SQLite database path")
 	mediaDir := flag.String("media", "media", "directory for uploaded images")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("%s server %s (protocol %d)\n", version.Name, version.Version, version.Protocol)
+		return
+	}
 
 	// Persistence.
 	db, err := store.Open(*dbPath)
@@ -282,7 +290,8 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-	log.Printf("take-back server listening on %s (db=%s, media=%s)", *addr, *dbPath, *mediaDir)
+	log.Printf("take-back server %s (protocol %d) listening on %s (db=%s, media=%s)",
+		version.Version, version.Protocol, *addr, *dbPath, *mediaDir)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		log.Fatal(err)
 	}

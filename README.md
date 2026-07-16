@@ -16,6 +16,14 @@ voice/video calls (WebRTC).
   **full-mesh** WebRTC audio/video call, with screen sharing and camera flip.
   Launchable straight from a DM chat.
 
+## Versioning
+
+`MAJOR.MINOR.PATCH`, where **MAJOR is the wire-protocol version** — so
+compatibility is readable straight from the version string (`1.4.0` and `1.9.2`
+interoperate; `2.0.0` does not). MINOR carries features and bug fixes. The
+server advertises itself at `GET /api/version`, and both clients check it on
+startup. See [CHANGELOG.md](CHANGELOG.md) for the full rules and history.
+
 ## Architecture
 
 Two Go programs plus a native Android client:

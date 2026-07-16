@@ -26,6 +26,12 @@ class ApiException(message: String) : Exception(message)
 
 data class User(val id: Long, val nick: String)
 
+/** Server identity + wire-protocol version, from GET /api/version. */
+data class ServerVersion(val name: String, val version: String, val protocol: Int) {
+    /** True when this app can talk to that server (see internal/version). */
+    val compatible: Boolean get() = protocol == BuildConfig.PROTOCOL
+}
+
 data class Friend(
     val user: User,
     val status: String,     // pending | accepted
@@ -120,6 +126,14 @@ object ApiClient {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private fun jsonBody(obj: JSONObject): RequestBody = obj.toString().toRequestBody(jsonType)
+
+    // ---- version ----
+
+    /** Ask the server what it is and whether we speak its protocol. */
+    suspend fun serverVersion(): ServerVersion {
+        val o = JSONObject(get("/api/version"))
+        return ServerVersion(o.optString("name"), o.optString("version"), o.optInt("protocol"))
+    }
 
     // ---- auth ----
 
