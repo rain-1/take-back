@@ -19,6 +19,7 @@ interface EventsListener {
     fun onHello(onlineFriendIds: List<Long>) {}
     fun onMessage(message: Message) {}
     fun onFriendRequest(fromId: Long, fromNick: String) {}
+    fun onFriendUpdate() {}
     fun onGroupMessage(message: GroupMessage) {}
     fun onGroupUpdate(groupId: Long) {}
 }
@@ -105,6 +106,7 @@ object Events {
                 listeners.forEach { it.onFriendRequest(fromId, nick) }
                 notifyFriendRequest(nick)
             }
+            "friend_update" -> listeners.forEach { it.onFriendUpdate() }
             "message" -> {
                 val m = parsePushedMessage(msg.getJSONObject("message"))
                 listeners.forEach { it.onMessage(m) }

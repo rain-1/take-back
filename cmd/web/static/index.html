@@ -538,6 +538,9 @@ function connectEvents() {
       // A new incoming friend request: refresh the list and raise a notification.
       loadFriends();
       notify("Friend request", e.nick + " wants to be your friend");
+    } else if (e.type === "friend_update") {
+      // A request we sent was accepted/declined, or a friend removed us.
+      loadFriends();
     } else if (e.type === "group_message") {
       const m = e.message;
       if (openGroup && m.groupId === openGroup.id) {

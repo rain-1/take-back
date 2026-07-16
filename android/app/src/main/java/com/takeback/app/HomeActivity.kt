@@ -263,5 +263,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
 
     override fun onFriendRequest(fromId: Long, fromNick: String) = runOnUiThread { refresh() }
 
+    override fun onFriendUpdate() = runOnUiThread { refresh() }
+
     override fun onGroupUpdate(groupId: Long) = runOnUiThread { refresh() }
 }

@@ -105,6 +105,9 @@ type credentials struct {
 }
 
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if !allow(w, r, registerLimiter) {
+		return
+	}
 	var c credentials
 	if !decode(w, r, &c) {
 		return
@@ -132,6 +135,9 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !allow(w, r, loginLimiter) {
+		return
+	}
 	var c credentials
 	if !decode(w, r, &c) {
 		return
@@ -226,6 +232,9 @@ func (a *API) handleFriendRespond(w http.ResponseWriter, r *http.Request, user *
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Tell the original requester their request was answered so their friends
+	// list updates live (previously only visible on reload).
+	a.Presence.NotifyUser(body.UserID, presence.Event{Type: "friend_update"})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -240,6 +249,7 @@ func (a *API) handleFriendRemove(w http.ResponseWriter, r *http.Request, user *s
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.Presence.NotifyUser(body.UserID, presence.Event{Type: "friend_update"})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
