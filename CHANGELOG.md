@@ -24,6 +24,33 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.8.0
+
+Audio controls in the web call settings. Backwards compatible (protocol 1);
+purely client-side, no wire changes.
+
+**Added**
+- **Per-participant volume** sliders — turn down whoever's loud, per person
+  rather than one blunt master. Applied to each peer's media element, and
+  re-applied if their tile is rebuilt. Capped at 100%: boosting past it would
+  mean routing their audio through Web Audio, which goes silent if the
+  AudioContext is suspended — not worth risking someone's audio.
+- **Mic gain** — your level as peers hear it, persisted across calls.
+- **Live mic level meter** showing what peers actually hear (post-gain), so you
+  can check you're being picked up and aren't too quiet or loud. It only polls
+  while the settings panel is open.
+
+The gain is applied by routing the mic through a Web Audio GainNode and sending
+that processed track. That's engaged **lazily** — only once you touch the slider
+— because a suspended AudioContext makes the processed track emit silence, and
+the context starts suspended when a call auto-joins from a chat link (no user
+gesture on that page). Until then we send the raw track exactly as before, so
+the default path is unchanged. A saved gain is applied on your first click.
+
+**Not yet on Android**: these audio controls are web-only.
+
+---
+
 ## 1.7.0
 
 Android reaches parity with the web client's 1.6.0 call features. Backwards

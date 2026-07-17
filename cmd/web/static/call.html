@@ -123,6 +123,27 @@
   .setnote { display:flex; align-items:center; gap:.5rem; color: var(--dim); font-size:.75rem; }
   @media (max-width:640px) { .setrow { grid-template-columns:1fr; gap:.3rem; } }
 
+  /* Mic level meter + gain */
+  .levelbox { display:flex; align-items:center; gap:.6rem; }
+  .meter {
+    width:110px; height:8px; border-radius:999px; background:#1c2029;
+    overflow:hidden; flex:none;
+  }
+  .meter > div {
+    height:100%; width:0%; border-radius:999px; background: var(--online);
+    transition: width .06s linear;
+  }
+  input[type=range] { accent-color: var(--accent); width:130px; }
+
+  /* Per-participant volumes. Top-align the label: the list grows with the
+     number of people, and a vertically-centred label drifts away from it. */
+  #volumesRow { align-items: start; }
+  #volumesRow > label { padding-top: .25rem; }
+  #volumes { display:grid; gap:.35rem; }
+  .volrow { display:flex; align-items:center; gap:.5rem; font-size:.8rem; }
+  .volrow .who { width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color: var(--text); }
+  .volrow .val { color: var(--dim); font-size:.72rem; width:34px; text-align:right; }
+
   .status { font-size:.8rem; color: var(--dim); }
   .pill { font-size:.72rem; padding:.15rem .55rem; border-radius:999px; background:rgba(34,197,94,.13); color:#4ade80; }
 </style>
@@ -185,6 +206,20 @@
       <div class="setrow">
         <label for="micSelect">Microphone</label>
         <select id="micSelect"></select>
+      </div>
+      <div class="setrow">
+        <label>Mic level</label>
+        <div class="levelbox">
+          <div class="meter" title="Live level of what your peers hear">
+            <div id="micMeter"></div>
+          </div>
+          <input type="range" id="micGain" min="0" max="200" step="5" value="100">
+          <span class="setnote" id="micGainVal">100%</span>
+        </div>
+      </div>
+      <div class="setrow" id="volumesRow">
+        <label>Volumes</label>
+        <div id="volumes"></div>
       </div>
       <div class="setrow">
         <label for="camSelect">Camera</label>
@@ -284,7 +319,10 @@ let mirrored = localStorage.getItem(PREF_MIRROR) !== "0"; // default: mirrored
 $("settingsBtn").onclick = async () => {
   const panel = $("settingsPanel");
   panel.classList.toggle("hidden");
-  if (!panel.classList.contains("hidden")) await loadDevices();
+  if (panel.classList.contains("hidden")) { stopMeter(); return; }
+  await loadDevices();
+  renderVolumes();
+  startMeter();
 };
 
 $("mirrorChk").onchange = () => {
@@ -336,6 +374,131 @@ function currentTrackDeviceId(kind) {
 $("micSelect").onchange = () => switchDevice("audio", $("micSelect").value);
 $("camSelect").onchange = () => switchDevice("video", $("camSelect").value);
 
+// ---- Mic level: meter + gain ----
+// The meter shows the level of what peers actually hear (post-gain), so it
+// answers "am I being picked up, and am I too quiet/loud?".
+const PREF_GAIN = "tb.micGain";
+let micGainValue = parseFloat(localStorage.getItem(PREF_GAIN) || "1") || 1;
+let micGainNode = null, micDest = null, micSourceNode = null;
+let gainChainActive = false;   // are we sending the processed track?
+let localRms = 0;              // updated by the local VAD tick
+let meterTimer = null;
+
+$("micGain").value = String(Math.round(micGainValue * 100));
+$("micGainVal").textContent = Math.round(micGainValue * 100) + "%";
+$("micGain").oninput = () => {
+  micGainValue = Number($("micGain").value) / 100;
+  $("micGainVal").textContent = Math.round(micGainValue * 100) + "%";
+  localStorage.setItem(PREF_GAIN, String(micGainValue));
+  applyMicGain();
+};
+
+/**
+ * Route the mic through a GainNode and send THAT to peers.
+ *
+ * Deliberately lazy: a suspended AudioContext makes a MediaStreamDestination
+ * emit silence, and the context starts suspended when a call auto-joins from a
+ * chat link (no user gesture on that page) — routing by default could leave you
+ * inaudible. So we keep sending the raw track until you actually touch the
+ * slider, which is itself the gesture that lets the context run.
+ */
+function applyMicGain() {
+  if (micGainValue === 1 && !gainChainActive) return; // nothing to do; stay raw
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+
+  if (!micGainNode) {
+    micGainNode = audioCtx.createGain();
+    micDest = audioCtx.createMediaStreamDestination();
+    micGainNode.connect(micDest);
+  }
+  micGainNode.gain.value = micGainValue;
+
+  if (!gainChainActive) {
+    rebuildMicSource();
+    const processed = micDest.stream.getAudioTracks()[0];
+    processed.enabled = micOn;
+    for (const entry of peers.values()) {
+      const sender = entry.pc.getSenders().find((s) => s.track && s.track.kind === "audio");
+      if (sender) sender.replaceTrack(processed);
+    }
+    gainChainActive = true;
+    // Meter/ring should follow what we now send.
+    detachVAD("tile-local");
+    attachVAD("tile-local", micDest.stream);
+    log("Mic gain applied.");
+  }
+}
+
+// (Re)connect the chain's input to the current microphone.
+function rebuildMicSource() {
+  if (!micGainNode) return;
+  try { micSourceNode?.disconnect(); } catch (e) { /* not connected */ }
+  micSourceNode = audioCtx.createMediaStreamSource(cameraStream);
+  micSourceNode.connect(micGainNode);
+}
+
+// The meter only needs to run while the panel is visible.
+function startMeter() {
+  stopMeter();
+  meterTimer = setInterval(() => {
+    // Scale so normal speech fills a useful part of the bar.
+    const pct = Math.min(100, Math.round((localRms / 0.25) * 100));
+    $("micMeter").style.width = pct + "%";
+    $("micMeter").style.background = micOn ? "var(--online)" : "var(--dim)";
+  }, 80);
+}
+function stopMeter() { if (meterTimer) clearInterval(meterTimer); meterTimer = null; }
+
+// ---- Per-participant volume ----
+// Each remote camera tile's <video> carries that peer's audio, so its .volume
+// gives us a clean per-person control.
+const peerVolumes = new Map(); // peerId -> 0..1
+
+function renderVolumes() {
+  const box = $("volumes");
+  if (!box) return;
+  box.innerHTML = "";
+  const remotes = [...peers.entries()];
+  if (!remotes.length) {
+    box.innerHTML = `<span class="setnote">No one else here yet.</span>`;
+    return;
+  }
+  for (const [peerId, entry] of remotes) {
+    const row = document.createElement("div");
+    row.className = "volrow";
+
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = entry.nick;
+
+    const slider = document.createElement("input");
+    // 0–100%: the element's own volume. Boosting past 100% would mean routing
+    // their audio through Web Audio, which goes silent if the AudioContext is
+    // suspended — not worth risking someone's audio to make them louder.
+    slider.type = "range"; slider.min = "0"; slider.max = "100"; slider.step = "5";
+    slider.value = String(Math.round((peerVolumes.get(peerId) ?? 1) * 100));
+
+    const val = document.createElement("span");
+    val.className = "val";
+    val.textContent = slider.value + "%";
+
+    slider.oninput = () => {
+      const v = Number(slider.value) / 100;
+      peerVolumes.set(peerId, v);
+      val.textContent = slider.value + "%";
+      setPeerVolume(peerId, v);
+    };
+    row.append(who, slider, val);
+    box.append(row);
+  }
+}
+
+function setPeerVolume(peerId, v) {
+  const video = document.querySelector("#tile-" + peerId + " video");
+  if (video) video.volume = Math.max(0, Math.min(1, v));
+}
+
 // switchDevice swaps a capture device mid-call. replaceTrack reuses the
 // existing senders, so no renegotiation and peers see no interruption.
 async function switchDevice(kind, deviceId) {
@@ -368,7 +531,18 @@ async function switchDevice(kind, deviceId) {
     // The analyser is bound to the OLD track, so the speaking ring would go
     // dead after a mic change unless we rebuild it against the new stream.
     detachVAD("tile-local");
-    attachVAD("tile-local", cameraStream);
+    if (gainChainActive) {
+      rebuildMicSource(); // point the gain chain at the new mic
+      const processed = micDest.stream.getAudioTracks()[0];
+      processed.enabled = micOn;
+      for (const entry of peers.values()) {
+        const snd = entry.pc.getSenders().find((x) => x.track && x.track.kind === "audio");
+        if (snd) await snd.replaceTrack(processed);
+      }
+      attachVAD("tile-local", micDest.stream);
+    } else {
+      attachVAD("tile-local", cameraStream);
+    }
   } else {
     const v = document.querySelector("#tile-local video");
     if (v) { v.srcObject = cameraStream; v.play().catch(() => {}); }
@@ -385,9 +559,11 @@ $("audioGate").onclick = async () => {
   $("audioGate").classList.add("hidden");
   log("Audio enabled.");
 };
-// Any click is a user gesture: opportunistically un-suspend.
+// Any click is a user gesture: opportunistically un-suspend, and only then
+// engage a saved mic gain (the chain would emit silence while suspended).
 document.addEventListener("click", () => {
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  if (micGainValue !== 1 && !gainChainActive && cameraStream) applyMicGain();
 });
 // Coming back to the tab can leave the context suspended; the rings depend on it.
 document.addEventListener("visibilitychange", () => {
@@ -405,6 +581,8 @@ const peerState = new Map(); // peerId -> { video, audio }
 $("micBtn").onclick = () => {
   micOn = !micOn;
   cameraStream.getAudioTracks().forEach((t) => (t.enabled = micOn));
+  // When the gain chain is engaged, that processed track is what peers get.
+  if (gainChainActive && micDest) micDest.stream.getAudioTracks().forEach((t) => (t.enabled = micOn));
   $("micBtn").textContent = micOn ? "🎤 Mic on" : "🔇 Mic off";
   setTileMuted("local", !micOn);
   broadcastState();
@@ -698,6 +876,8 @@ function routeRemoteTrack(peerId, entry, e) {
 }
 
 function removePeer(peerId) {
+  peerVolumes.delete(peerId);
+  if (!$("settingsPanel").classList.contains("hidden")) renderVolumes();
   const entry = peers.get(peerId);
   if (entry) { entry.pc.close(); peers.delete(peerId); }
   const tile = document.getElementById("tile-" + peerId);
@@ -754,6 +934,7 @@ function attachVAD(tileId, stream) {
       sum += v * v;
     }
     const rms = Math.sqrt(sum / buf.length);
+    if (tileId === "tile-local") localRms = rms; // feeds the settings meter
     const now = performance.now();
 
     if (!speaking && rms > SPEAK_ON) { speaking = true; quietSince = 0; }
@@ -842,6 +1023,11 @@ function addTile(id, name, stream, muted) {
   // A peer's state may have arrived before their video track did.
   if (peerState.has(id)) applyState(id, peerState.get(id));
   if (id === "local") applyMirror();
+
+  // Re-apply any volume the user already set for this peer, and keep the
+  // settings list in step as people arrive.
+  if (peerVolumes.has(id)) setPeerVolume(id, peerVolumes.get(id));
+  if (!$("settingsPanel").classList.contains("hidden")) renderVolumes();
 }
 
 // baseNick strips the decorations we add to labels ("river (you, sharing)").
