@@ -36,6 +36,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/login", a.handleLogin)
 	mux.HandleFunc("/api/logout", a.handleLogout)
 	mux.HandleFunc("/api/me", a.auth(a.handleMe))
+	mux.HandleFunc("/api/me/avatar", a.auth(a.handleSetAvatar))
 
 	mux.HandleFunc("/api/friends", a.auth(a.handleFriends))
 	mux.HandleFunc("/api/friends/request", a.auth(a.handleFriendRequest))
@@ -182,6 +183,37 @@ func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleMe(w http.ResponseWriter, _ *http.Request, user *store.User) {
 	writeJSON(w, http.StatusOK, user)
+}
+
+// handleSetAvatar stores an uploaded profile picture (thumbnailed) and points
+// the user at it. Multipart field: image.
+func (a *API) handleSetAvatar(w http.ResponseWriter, r *http.Request, user *store.User) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad upload")
+		return
+	}
+	file, _, err := r.FormFile("image")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "missing image field")
+		return
+	}
+	defer file.Close()
+	// Reuse the thumbnailer; the 320px thumb is exactly the right size for an
+	// avatar, and we only keep that (not the full-res original).
+	_, thumb, err := a.Media.SaveImage(file)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := a.Store.SetAvatar(user.ID, thumb); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"avatarUrl": "/media/" + thumb})
 }
 
 // ---- friends handlers ----

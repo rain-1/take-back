@@ -19,6 +19,7 @@ func init() {
 		`ALTER TABLE group_messages ADD COLUMN edited_at INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE messages ADD COLUMN reply_to INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE group_messages ADD COLUMN reply_to INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN avatar_file TEXT NOT NULL DEFAULT ''`,
 	)
 }
 

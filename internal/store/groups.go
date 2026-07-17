@@ -174,7 +174,7 @@ func (s *Store) GroupMemberIDs(groupID int64) ([]int64, error) {
 // GroupMembers returns the members of a group as users (for the member list).
 func (s *Store) GroupMembers(groupID int64) ([]User, error) {
 	rows, err := s.db.Query(
-		`SELECT u.id, u.nick, u.created_at
+		`SELECT u.id, u.nick, u.created_at, u.avatar_file
 		   FROM group_members gm JOIN users u ON u.id = gm.user_id
 		  WHERE gm.group_id = ? AND gm.status = ? ORDER BY u.nick`, groupID, MemberJoined,
 	)
@@ -186,10 +186,12 @@ func (s *Store) GroupMembers(groupID int64) ([]User, error) {
 	for rows.Next() {
 		var u User
 		var created int64
-		if err := rows.Scan(&u.ID, &u.Nick, &created); err != nil {
+		var avatar string
+		if err := rows.Scan(&u.ID, &u.Nick, &created, &avatar); err != nil {
 			return nil, err
 		}
 		u.Created = time.Unix(created, 0)
+		u.AvatarURL = avatarURL(avatar)
 		out = append(out, u)
 	}
 	return out, rows.Err()

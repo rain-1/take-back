@@ -24,6 +24,28 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.14.0
+
+Two chat requests from the group. Backwards compatible (protocol 1); the
+`avatarUrl` field is additive.
+
+**Added**
+- **Profile pictures** (web). Click your avatar in the header to upload one; it's
+  thumbnailed to 320px and shown wherever you appear — friend rows, the chat
+  header, and (via `avatarUrl` on every user) anywhere else that renders an
+  avatar. Falls back to the initials circle when unset. `users` gains an
+  `avatar_file` column via migration; `POST /api/me/avatar` stores it.
+
+**Fixed**
+- **Contrast on your own (blue) messages** (Etheri): the ✎/☺/↩ controls,
+  timestamp, and "edited" marker used dim greys that vanished against the accent
+  bubble — lightened for sent messages.
+
+Android profile pictures and the Slack-style message layout (same-side +
+consecutive-message grouping) are the next items.
+
+---
+
 ## 1.13.0
 
 Replies and a keyboard shortcut (web + backend). Backwards compatible

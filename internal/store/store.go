@@ -24,9 +24,10 @@ var (
 
 // User is a registered account. PassHash is never serialized to clients.
 type User struct {
-	ID      int64     `json:"id"`
-	Nick    string    `json:"nick"`
-	Created time.Time `json:"created"`
+	ID        int64     `json:"id"`
+	Nick      string    `json:"nick"`
+	Created   time.Time `json:"created"`
+	AvatarURL string    `json:"avatarUrl,omitempty"` // "/media/xxx" or empty
 }
 
 // Friendship status values.
@@ -126,29 +127,45 @@ func (s *Store) CreateUser(nick, passHash string) (*User, error) {
 // UserByNick returns the user and its stored password hash.
 func (s *Store) UserByNick(nick string) (*User, string, error) {
 	row := s.db.QueryRow(
-		`SELECT id, nick, pass_hash, created_at FROM users WHERE nick = ? COLLATE NOCASE`, nick)
+		`SELECT id, nick, pass_hash, created_at, avatar_file FROM users WHERE nick = ? COLLATE NOCASE`, nick)
 	return scanUserWithHash(row)
 }
 
 // UserByID looks up a user by primary key.
 func (s *Store) UserByID(id int64) (*User, error) {
-	row := s.db.QueryRow(`SELECT id, nick, pass_hash, created_at FROM users WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, nick, pass_hash, created_at, avatar_file FROM users WHERE id = ?`, id)
 	u, _, err := scanUserWithHash(row)
 	return u, err
 }
 
 func scanUserWithHash(row *sql.Row) (*User, string, error) {
 	var u User
-	var hash string
+	var hash, avatar string
 	var created int64
-	if err := row.Scan(&u.ID, &u.Nick, &hash, &created); err != nil {
+	if err := row.Scan(&u.ID, &u.Nick, &hash, &created, &avatar); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, "", ErrNoSuchUser
 		}
 		return nil, "", err
 	}
 	u.Created = time.Unix(created, 0)
+	u.AvatarURL = avatarURL(avatar)
 	return &u, hash, nil
+}
+
+// avatarURL turns a stored avatar filename into a servable path.
+func avatarURL(file string) string {
+	if file == "" {
+		return ""
+	}
+	return "/media/" + file
+}
+
+// UserBySession also needs the avatar column.
+// SetAvatar records a user's avatar image filename.
+func (s *Store) SetAvatar(userID int64, file string) error {
+	_, err := s.db.Exec(`UPDATE users SET avatar_file = ? WHERE id = ?`, file, userID)
+	return err
 }
 
 // ---- Sessions ----
@@ -170,7 +187,7 @@ func (s *Store) NewSession(userID int64, ttl time.Duration) (string, error) {
 // UserBySession resolves a session token to its (unexpired) user.
 func (s *Store) UserBySession(token string) (*User, error) {
 	row := s.db.QueryRow(
-		`SELECT u.id, u.nick, u.pass_hash, u.created_at
+		`SELECT u.id, u.nick, u.pass_hash, u.created_at, u.avatar_file
 		   FROM sessions s JOIN users u ON u.id = s.user_id
 		  WHERE s.token = ? AND s.expires_at > ?`,
 		token, time.Now().Unix(),
@@ -263,7 +280,7 @@ func (s *Store) AreFriends(a, b int64) bool {
 // requests (with direction so the UI can offer Accept on incoming ones).
 func (s *Store) Friends(meID int64) ([]Friend, error) {
 	rows, err := s.db.Query(
-		`SELECT u.id, u.nick, u.created_at, f.status, f.requester_id
+		`SELECT u.id, u.nick, u.created_at, u.avatar_file, f.status, f.requester_id
 		   FROM friendships f
 		   JOIN users u ON u.id = CASE WHEN f.requester_id = ? THEN f.addressee_id ELSE f.requester_id END
 		  WHERE f.requester_id = ? OR f.addressee_id = ?
@@ -279,10 +296,12 @@ func (s *Store) Friends(meID int64) ([]Friend, error) {
 	for rows.Next() {
 		var f Friend
 		var created, requester int64
-		if err := rows.Scan(&f.User.ID, &f.User.Nick, &created, &f.Status, &requester); err != nil {
+		var avatar string
+		if err := rows.Scan(&f.User.ID, &f.User.Nick, &created, &avatar, &f.Status, &requester); err != nil {
 			return nil, err
 		}
 		f.User.Created = time.Unix(created, 0)
+		f.User.AvatarURL = avatarURL(avatar)
 		if requester == meID {
 			f.Direction = "outgoing"
 		} else {
