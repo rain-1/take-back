@@ -532,9 +532,50 @@ func cmdWait(c *client, args []string) error {
 	timeout := fs.Duration("timeout", 0, "exit after this long even with no message (0 = wait forever)")
 	fs.Parse(args)
 
+	var me user
+	_ = c.do("GET", "/api/me", nil, &me)
+
+	var deadline time.Time
+	if *timeout > 0 {
+		deadline = time.Now().Add(*timeout)
+	}
+
+	// Reconnect loop: the events socket gets dropped by proxies on idle (a 1006
+	// abnormal closure via Cloudflare), so a single Read that errors must NOT end
+	// the wait — reconnect and keep listening. Only a real message (or the
+	// optional timeout) ends it. Backoff caps so a persistent outage doesn't spin.
+	backoff := time.Second
+	for {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			fmt.Println("(idle)")
+			return nil
+		}
+		line, fatal, err := c.waitOnce(&me, deadline)
+		if line != "" {
+			fmt.Println(line)
+			return nil
+		}
+		if fatal != nil {
+			return fatal // e.g. session expired — no point retrying
+		}
+		if err != nil {
+			time.Sleep(backoff)
+			if backoff < 15*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
+		backoff = time.Second // clean reconnect (deadline hit inside)
+	}
+}
+
+// waitOnce connects once and reads until a reportable event (returns the line),
+// a fatal error (don't retry), or a transient error (reconnect). A nil line and
+// nil errors means the per-connection deadline elapsed cleanly.
+func (c *client) waitOnce(me *user, deadline time.Time) (line string, fatal error, transient error) {
 	u, err := url.Parse(c.cfg.Server)
 	if err != nil {
-		return err
+		return "", err, nil
 	}
 	scheme := "wss"
 	if u.Scheme == "http" {
@@ -545,17 +586,14 @@ func cmdWait(c *client, args []string) error {
 	conn, resp, err := websocket.DefaultDialer.Dial(scheme+"://"+u.Host+"/api/events", hdr)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			return errors.New("session expired — run `tb login`")
+			return "", errors.New("session expired — run `tb login`"), nil
 		}
-		return err
+		return "", nil, err // transient: retry
 	}
 	defer conn.Close()
 
-	var me user
-	_ = c.do("GET", "/api/me", nil, &me)
-
-	if *timeout > 0 {
-		conn.SetReadDeadline(time.Now().Add(*timeout))
+	if !deadline.IsZero() {
+		conn.SetReadDeadline(deadline)
 	}
 	for {
 		var ev struct {
@@ -564,12 +602,10 @@ func cmdWait(c *client, args []string) error {
 			Message json.RawMessage `json:"message"`
 		}
 		if err := conn.ReadJSON(&ev); err != nil {
-			// A read timeout is a clean "nothing arrived" exit, not an error.
-			if *timeout > 0 {
-				fmt.Println("(idle)")
-				return nil
+			if !deadline.IsZero() && time.Now().After(deadline) {
+				return "", nil, nil // deadline: caller handles the clean exit
 			}
-			return err
+			return "", nil, err // dropped: reconnect
 		}
 		switch ev.Type {
 		case "message", "group_message":
@@ -577,23 +613,16 @@ func cmdWait(c *client, args []string) error {
 			if json.Unmarshal(ev.Message, &m) != nil || m.SenderID == me.ID {
 				continue // our own echo; keep waiting
 			}
-			who, isGroup := c.resolveConvo(m.SenderID, m.GroupID)
-			target := who
-			if isGroup {
-				target = who // already "#name"
-			}
+			who, _ := c.resolveConvo(m.SenderID, m.GroupID)
 			body := m.Body
 			if body == "" && m.ImageURL != "" {
 				body = "[image]"
 			}
-			fmt.Printf("NEW from %s: %s\n", target, body)
-			return nil
+			return fmt.Sprintf("NEW from %s: %s", who, body), nil, nil
 		case "friend_request":
-			fmt.Printf("FRIEND-REQUEST from %s\n", ev.Nick)
-			return nil
+			return fmt.Sprintf("FRIEND-REQUEST from %s", ev.Nick), nil, nil
 		case "group_invite":
-			fmt.Printf("GROUP-INVITE from %s\n", ev.Nick)
-			return nil
+			return fmt.Sprintf("GROUP-INVITE from %s", ev.Nick), nil, nil
 		}
 	}
 }
