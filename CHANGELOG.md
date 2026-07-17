@@ -24,6 +24,22 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.15.0
+
+Message-layout redesign (web) from Etheri's feedback. Client-only; no wire
+change.
+
+**Changed**
+- **Slack/Discord-style message layout.** Messages are now a single
+  left-aligned column — your own messages are no longer pulled to the right in a
+  different colour ("we don't want the text on different sides"). Consecutive
+  messages from the same sender within 5 minutes are **grouped under one avatar,
+  name, and timestamp** instead of repeating them per line. Profile pictures
+  (1.14.0) appear as the group avatar. Per-message hover toolbar (edit / reply /
+  react / time) and the reaction, quote, and jump-to features all carry over.
+
+---
+
 ## 1.14.0
 
 Two chat requests from the group. Backwards compatible (protocol 1); the

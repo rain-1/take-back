@@ -175,20 +175,26 @@
   }
 
   #messages {
-    flex: 1; overflow-y: auto; padding: 1.25rem 1rem;
-    display: flex; flex-direction: column; gap: .35rem;
+    flex: 1; overflow-y: auto; padding: 1rem .5rem;
+    display: flex; flex-direction: column;
   }
+  /* Slack/Discord-style groups: everyone in one left-aligned column, avatar and
+     name shown once per run of consecutive messages from the same sender. */
+  .grp { display: flex; gap: .6rem; padding: .1rem .5rem; }
+  .grp.newgroup { margin-top: .55rem; }
+  .grp-av { width: 36px; flex: none; padding-top: .15rem; }
+  .grp-av .avatar { width: 36px; height: 36px; font-size: .82rem; }
+  .grp-main { flex: 1; min-width: 0; }
+  .grp-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .1rem; }
+  .grp-head .name { font-weight: 650; font-size: .9rem; color: var(--text); }
+  .grp-head .htime { font-size: .68rem; color: var(--dim); }
+
   .msg {
-    max-width: min(68%, 560px); padding: .5rem .75rem;
-    border-radius: 14px; background: var(--surface);
-    align-self: flex-start; word-wrap: break-word; overflow-wrap: anywhere;
-    border-bottom-left-radius: 5px;
+    position: relative; padding: .1rem .4rem .1rem .4rem; border-radius: 6px;
+    word-wrap: break-word; overflow-wrap: anywhere;
+    transition: background .1s ease;
   }
-  .msg.me {
-    align-self: flex-end; background: var(--accent-dim);
-    border-bottom-left-radius: 14px; border-bottom-right-radius: 5px;
-  }
-  .msg .sender { font-size: .7rem; font-weight: 650; color: var(--accent); margin-bottom: .15rem; }
+  .msg:hover { background: var(--surface); }
   .msg .body p { margin: 0; }
   .msg .body p + p { margin-top: .4rem; }
   .msg .body code {
@@ -212,21 +218,21 @@
   .msg .edited { font-style: italic; }
   .callmsg button { margin-top: .35rem; }
 
-  /* Edit affordance lives INSIDE the bubble's footer row: an absolutely
-     positioned control outside the bubble gets clipped by the scrolling
-     message list. Revealed on hover, and only on your own messages. */
+  /* Hover toolbar, top-right of each message (Slack-style). */
   .msg .timerow {
-    display: flex; align-items: center; justify-content: flex-end; gap: .4rem;
-    margin-top: .1rem;
+    position: absolute; top: -.6rem; right: .3rem; z-index: 2;
+    display: flex; align-items: center; gap: .1rem;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: .1rem .2rem; opacity: 0; pointer-events: none; transition: opacity .1s ease;
   }
+  .msg:hover .timerow { opacity: 1; pointer-events: auto; }
+  .msg .timerow .time { position: static; opacity: 1; margin: 0 .2rem; }
   .msg .editbtn {
-    opacity: 0; transition: opacity .12s ease;
-    font-size: .68rem; padding: 0 .25rem; line-height: 1.3;
-    background: transparent; border: 0; color: var(--dim);
+    font-size: .68rem; padding: .1rem .25rem; line-height: 1.3;
+    background: transparent; border: 0; color: var(--muted);
     border-radius: 5px; cursor: pointer; font-weight: 500;
   }
-  .msg.me:hover .editbtn, .msg .editbtn:focus-visible { opacity: 1; }
-  .msg .editbtn:hover { color: #fff; background: rgba(255,255,255,.12); }
+  .msg .editbtn:hover { color: var(--text); background: var(--surface-2); }
   .msg .editbox {
     width: 100%; min-width: 220px; font: inherit; font-size: .9rem;
     background: #0d1016; color: var(--text);
@@ -281,17 +287,10 @@
   .reaction.mine .rc { color: #bcd0ff; }
   /* the add-reaction affordance, revealed on message hover */
   .react-add {
-    opacity: 0; transition: opacity .12s ease;
-    font-size: .8rem; padding: .1rem .35rem; border-radius: 999px;
-    background: transparent; border: 1px solid transparent; color: var(--dim); cursor: pointer;
+    font-size: .82rem; padding: .1rem .3rem; border-radius: 6px;
+    background: transparent; border: 0; color: var(--muted); cursor: pointer;
   }
-  .msg:hover .react-add { opacity: 1; }
-  /* On your own (blue) bubbles, the dim greys used for the timestamp, edited
-     marker, and the ✎/☺/↩ controls vanish against the accent — lighten them. */
-  .msg.me .time, .msg.me .edited { color: #c7d6ff; }
-  .msg.me .react-add { color: #bcd0ff; }
-  .msg.me .react-add:hover { color: #fff; background: rgba(255,255,255,.14); border-color: transparent; }
-  .msg.me .editbtn { color: #c7d6ff; }
+  .react-add:hover { color: var(--text); background: var(--surface-2); }
   .msg.me .editbtn:hover { color: #fff; background: rgba(255,255,255,.14); }
   .react-add:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
 
@@ -598,7 +597,7 @@ async function openGroupChat(g) {
   renderFriends();
   await loadMembers(g.id);
   const msgs = await api(`/api/groups/messages?group=${g.id}`);
-  $("messages").innerHTML = "";
+  $("messages").innerHTML = ""; resetGrouping();
   msgs.forEach(appendMessage);
   scrollMessages();
   markRead("group", g.id, msgs);
@@ -889,7 +888,7 @@ async function openChat(user) {
   renderGroups();
   renderFriends();
   const msgs = await api(`/api/messages?with=${user.id}`);
-  $("messages").innerHTML = "";
+  $("messages").innerHTML = ""; resetGrouping();
   msgs.forEach(appendMessage);
   scrollMessages();
   markRead("dm", user.id, msgs);
@@ -924,7 +923,7 @@ $("msgInput").addEventListener("keydown", (e) => {
   // Press ↑ in an empty composer to edit your most recent text message —
   // the shell/Slack convention. Only when empty, so it never eats cursor moves.
   if (e.key === "ArrowUp" && $("msgInput").value === "") {
-    const mine = [...$("messages").children].reverse().find(
+    const mine = [...allMessageEls()].reverse().find(
       (d) => d._msg && d._msg.senderId === me.id && d._msg.body &&
              !d._msg.body.match(/^📞 call:/));
     if (mine) { e.preventDefault(); startEdit(mine, mine._msg); }
@@ -944,7 +943,7 @@ $("replyBarCancel").onclick = cancelReply;
 
 // jumpToMessage scrolls to a message and briefly flashes it.
 function jumpToMessage(id) {
-  const div = [...$("messages").children].find((d) => d.dataset.msgId == id);
+  const div = findMessageEl(id);
   if (!div) { toast("That message isn't loaded"); return; }
   div.scrollIntoView({ behavior: "smooth", block: "center" });
   div.classList.remove("flash"); void div.offsetWidth; div.classList.add("flash");
@@ -991,18 +990,54 @@ $("imgInput").onchange = async () => {
   $("imgInput").value = "";
 };
 
+// Grouping state: consecutive messages from the same sender within GROUP_WINDOW
+// share one avatar + name header (Slack/Discord style).
+const GROUP_WINDOW = 5 * 60; // seconds
+let grp = { sender: null, time: 0, main: null };
+function resetGrouping() { grp = { sender: null, time: 0, main: null }; }
+
+function senderName(senderId) {
+  if (senderId === me.id) return me.nick;
+  if (openGroup) return groupMembers.get(senderId)?.nick || "someone";
+  return openFriend ? openFriend.nick : "someone";
+}
+
+// appendMessage places a message, starting a new sender-group or continuing the
+// current one.
 function appendMessage(m) {
+  const newGroup = m.senderId !== grp.sender ||
+    (m.created - grp.time) > GROUP_WINDOW || !grp.main;
+
+  if (newGroup) {
+    const row = document.createElement("div");
+    row.className = "grp newgroup";
+    const av = document.createElement("div");
+    av.className = "grp-av";
+    av.append(avatar(senderName(m.senderId), false, avatarUrlFor(m.senderId)));
+    const main = document.createElement("div");
+    main.className = "grp-main";
+    const head = document.createElement("div");
+    head.className = "grp-head";
+    head.innerHTML = `<span class="name">${esc(senderName(m.senderId))}</span>` +
+      `<span class="htime">${new Date(m.created * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>`;
+    main.append(head);
+    row.append(av, main);
+    $("messages").append(row);
+    grp.main = main;
+  }
+  grp.main.append(messageEl(m));
+  grp.sender = m.senderId;
+  grp.time = m.created;
+}
+
+// messageEl builds one message body (without the sender header — that's on the
+// group). Keeps its own quote, reactions, and hover toolbar.
+function messageEl(m) {
   const div = document.createElement("div");
   const mine = m.senderId === me.id;
-  div.className = "msg" + (mine ? " me" : "");
+  div.className = "msg";
 
-  // Build the whole bubble in one string — assigning innerHTML later would
-  // wipe out anything appended beforehand (e.g. the group sender label).
   let html = "";
-  if (openGroup && !mine) {
-    const who = groupMembers.get(m.senderId);
-    if (who) html += `<div class="sender">${esc(who.nick)}</div>`;
-  }
 
   // Quote block for replies — click to jump to the original.
   if (m.replyTo) {
@@ -1076,7 +1111,13 @@ function appendMessage(m) {
 
   div.dataset.msgId = m.id;
   div._msg = m; // keep the message object for live reaction updates
-  $("messages").append(div);
+  return div;
+}
+
+// allMessageEls returns every rendered message bubble, across groups.
+function allMessageEls() { return $("messages").querySelectorAll(".msg"); }
+function findMessageEl(id) {
+  return [...allMessageEls()].find((d) => d.dataset.msgId == id);
 }
 
 // startEdit swaps the bubble's body for an inline editor.
@@ -1191,7 +1232,7 @@ document.addEventListener("click", (e) => {
 // recomputing our own "mine" flag against the fresh per-user list.
 function applyReaction(ev) {
   if (reactionScope() !== ev.scope) return;
-  const div = [...$("messages").children].find((d) => d.dataset.msgId == ev.messageId);
+  const div = findMessageEl(ev.messageId);
   if (!div || !div._msg) return;
   div._msg.reactions = aggregateReactionList(ev.reactions);
   const row = div.querySelector(".reactions");
@@ -1227,7 +1268,7 @@ function markEdited(div, editedAt) {
 
 // applyEdit updates a message already on screen (someone else edited theirs).
 function applyEdit(m) {
-  const div = [...$("messages").children].find((d) => d.dataset.msgId == m.id);
+  const div = findMessageEl(m.id);
   if (!div) return;
   const bodyEl = div.querySelector(".body");
   if (bodyEl) bodyEl.innerHTML = renderMarkdown(m.body);
