@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0F1115">
+    android:background="#0B0D11">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,14 +11,14 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:padding="12dp"
-        android:background="#151821">
+        android:background="#11141B">
 
         <TextView
             android:id="@+id/groupName"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textColor="#E7E9EE"
+            android:textColor="#E8EAF0"
             android:textSize="17sp"
             android:textStyle="bold" />
 
@@ -38,7 +38,7 @@
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#12151c"
+        android:background="#0E1117"
         android:scrollbars="none">
 
         <LinearLayout
@@ -71,14 +71,14 @@
         android:gravity="center_vertical"
         android:visibility="gone"
         android:padding="8dp"
-        android:background="#12151C">
+        android:background="#0E1117">
 
         <TextView
             android:id="@+id/replyBarText"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textColor="#8B93A7"
+            android:textColor="#8A93A6"
             android:textSize="13sp"
             android:maxLines="1"
             android:ellipsize="end" />
@@ -97,7 +97,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:padding="8dp"
-        android:background="#151821">
+        android:background="#11141B">
 
         <Button
             android:id="@+id/imgBtn"
@@ -111,8 +111,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="@string/message_hint"
-            android:textColor="#E7E9EE"
-            android:textColorHint="#5B6273"
+            android:textColor="#E8EAF0"
+            android:textColorHint="#5A6273"
             android:inputType="textMultiLine|textCapSentences"
             android:maxLines="4"
             android:importantForAutofill="no" />

@@ -26,7 +26,17 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ## 1.15.1
 
-**Fixed**
+**Changed (Android)**
+- **Android now matches the web theme and style.** The whole app moves onto the
+  web's design tokens (dark palette, accent blue, rounded Material3 buttons) via
+  a central `colors.xml` + theme. Chat screens adopt the same **Slack-style
+  grouped layout** — one left-aligned column, consecutive messages from a sender
+  under a single avatar + name + time (shared `MessageRenderer`). **Profile
+  pictures** appear on Android (friend rows, message groups, group members) and
+  can be set from **Settings → Profile picture**; same 320px thumbnail and
+  nick-hash fallback as the web.
+
+**Fixed (web)**
 - The sender name and message text weren't aligned in the new layout — the name
   sat a few px left of the text because the message body had left padding the
   group header didn't. Matched them (verified pixel-aligned).

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors the web client's design tokens (cmd/web/static/index.html). -->
+    <color name="tb_bg">#0B0D11</color>
+    <color name="tb_panel">#11141B</color>
+    <color name="tb_surface">#171B24</color>
+    <color name="tb_surface2">#1E2431</color>
+    <color name="tb_border">#232936</color>
+    <color name="tb_border_soft">#1A1F29</color>
+    <color name="tb_text">#E8EAF0</color>
+    <color name="tb_muted">#8A93A6</color>
+    <color name="tb_dim">#5A6273</color>
+    <color name="tb_accent">#5B8CFF</color>
+    <color name="tb_accent_dim">#2F4A8F</color>
+    <color name="tb_online">#34D399</color>
+    <color name="tb_danger">#F87171</color>
+    <color name="tb_panel_alt">#0E1117</color>
+    <color name="white">#FFFFFF</color>
+</resources>

@@ -41,15 +41,12 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private lateinit var binding: ActivityGroupChatBinding
-    private lateinit var markwon: Markwon
+    private lateinit var renderer: MessageRenderer
     private var groupId: Long = 0
     private lateinit var groupName: String
     private lateinit var callCode: String
     private var myId: Long = 0
     private var members: List<GroupMember> = emptyList()
-    private val reactionRows = HashMap<Long, android.widget.LinearLayout>()
-    private val reactionState = HashMap<Long, List<com.takeback.app.net.Reaction>>()
-    private val messageViews = HashMap<Long, android.view.View>()
     private var replyingTo: GroupMessage? = null
 
     private val pickImage = registerForActivityResult(
@@ -60,12 +57,19 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         super.onCreate(savedInstanceState)
         binding = ActivityGroupChatBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        markwon = Markwon.create(this)
 
         groupId = intent.getLongExtra(EXTRA_GROUP_ID, 0)
         groupName = intent.getStringExtra(EXTRA_GROUP_NAME) ?: "group"
         callCode = intent.getStringExtra(EXTRA_CALL_CODE) ?: ""
         binding.groupName.text = "# $groupName"
+
+        renderer = MessageRenderer(
+            this, binding.messages, binding.scroll, Markwon.create(this),
+            onReply = { startReply(it.id, it.senderNick, it.body) },
+            onReact = { id, emoji, add -> react(id, emoji, add) },
+            onJoinCall = { joinCall(it) },
+            onOpenImage = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+        )
 
         binding.sendBtn.setOnClickListener { sendText() }
         binding.imgBtn.setOnClickListener { pickImage.launch("image/*") }
@@ -99,10 +103,9 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 members = ApiClient.groupMembers(groupId)
                 renderMembers()
                 val msgs = ApiClient.groupConversation(groupId)
-                binding.messages.removeAllViews()
-                reactionRows.clear(); reactionState.clear(); messageViews.clear()
-                msgs.forEach { addMessage(it) }
-                scrollToBottom()
+                renderer.clear()
+                msgs.forEach { render(it) }
+                renderer.scrollToBottom()
             } catch (_: Exception) { /* transient */ }
         }
     }
@@ -115,18 +118,19 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(16, 8, 16, 8)
                 background = GradientDrawable().apply {
-                    cornerRadius = 999f; setColor(Color.parseColor("#1C2029"))
+                    cornerRadius = 999f; setColor(Color.parseColor("#171B24"))
                 }
                 val lp = LinearLayout.LayoutParams(-2, -2); lp.marginEnd = 12; layoutParams = lp
             }
-            val size = (9 * resources.displayMetrics.density).toInt()
+            chip.addView(Avatars.view(this, m.nick, m.avatarUrl, 20, endMarginDp = 6))
+            val size = (8 * resources.displayMetrics.density).toInt()
             chip.addView(View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(size, size).also { it.marginEnd = 10 }
-                setBackgroundColor(if (m.online) Color.parseColor("#22C55E") else Color.parseColor("#3F4553"))
+                layoutParams = LinearLayout.LayoutParams(size, size).also { it.marginStart = 6; it.marginEnd = 8 }
+                setBackgroundColor(if (m.online) Color.parseColor("#34D399") else Color.parseColor("#39404F"))
             })
             chip.addView(TextView(this).apply {
                 text = m.nick + if (m.owner) " ★" else ""
-                setTextColor(Color.parseColor("#E7E9EE")); textSize = 13f
+                setTextColor(Color.parseColor("#E8EAF0")); textSize = 13f
             })
             binding.members.addView(chip)
         }
@@ -163,7 +167,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         cancelReply()
         lifecycleScope.launch {
             runCatching { ApiClient.sendGroupText(groupId, body, replyTo) }
-                .onSuccess { addMessage(it); scrollToBottom() }
+                .onSuccess { render(it); renderer.scrollToBottom() }
         }
     }
 
@@ -172,7 +176,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             try {
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
                 val name = (uri.lastPathSegment ?: "image").substringAfterLast('/')
-                addMessage(ApiClient.sendGroupImage(groupId, name, bytes, "")); scrollToBottom()
+                render(ApiClient.sendGroupImage(groupId, name, bytes, "")); renderer.scrollToBottom()
             } catch (_: Exception) { /* ignore */ }
         }
     }
@@ -181,7 +185,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         val code = callCode.ifEmpty { return }
         lifecycleScope.launch {
             runCatching { ApiClient.sendGroupText(groupId, "📞 call:$code") }
-                .onSuccess { addMessage(it); scrollToBottom() }
+                .onSuccess { render(it); renderer.scrollToBottom() }
         }
         joinCall(code)
     }
@@ -195,95 +199,33 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
 
     // ---- rendering ----
 
-    private fun addMessage(m: GroupMessage) {
-        val mine = m.senderId == myId
-        val bubble = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 16)
-            background = GradientDrawable().apply {
-                cornerRadius = 28f
-                setColor(Color.parseColor(if (mine) "#274690" else "#1C2029"))
-            }
-        }
-        // Label messages from others with the sender's nick.
-        if (!mine) nickOf(m.senderId)?.let {
-            bubble.addView(TextView(this).apply {
-                text = it; setTextColor(Color.parseColor("#8B93A7")); textSize = 11f
-            })
-        }
+    private fun avatarOf(userId: Long) = members.firstOrNull { it.id == userId }?.avatarUrl ?: ""
 
-        // Quote block for a reply — tap to jump to the original.
-        if (m.replyTo != 0L) {
-            val who = if (m.replySender == myId) "you" else (nickOf(m.replySender) ?: "someone")
-            bubble.addView(ReactionsUi.quoteBlock(this, who, m.replyBody) { jumpTo(m.replyTo) })
-        }
-
-        val call = CALL_RE.find(m.body)
-        if (call != null) {
-            val code = call.groupValues[1]
-            bubble.addView(TextView(this).apply { text = "📞 Video call"; setTextColor(Color.WHITE) })
-            bubble.addView(Button(this).apply {
-                text = "Join call $code"; setOnClickListener { joinCall(code) }
-            })
-        } else {
-            if (m.body.isNotEmpty()) {
-                val tv = TextView(this).apply { setTextColor(Color.parseColor("#E7E9EE")) }
-                markwon.setMarkdown(tv, m.body)
-                bubble.addView(tv)
-            }
-            if (m.thumbUrl != null) {
-                bubble.addView(ImageView(this).apply {
-                    adjustViewBounds = true
-                    maxWidth = (240 * resources.displayMetrics.density).toInt()
-                    load(m.thumbUrl)
-                    setOnClickListener { m.imageUrl?.let { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } }
-                    val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = 8; layoutParams = lp
-                })
-            }
-        }
-
-        val rxRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = 4; layoutParams = lp
-        }
-        reactionRows[m.id] = rxRow
-        reactionState[m.id] = m.reactions
-        ReactionsUi.render(this, rxRow, m.reactions) { emoji, add -> react(m.id, emoji, add) }
-
-        bubble.setOnLongClickListener {
-            ReactionsUi.showActions(this,
-                onReply = { startReply(m) },
-                onReact = {
-                    ReactionsUi.showPicker(this) { emoji ->
-                        val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
-                        react(m.id, emoji, !(existing?.mine ?: false))
-                    }
-                })
-            true
-        }
-
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = if (mine) Gravity.END else Gravity.START
-            addView(bubble)
-            addView(rxRow)
-        }
-        messageViews[m.id] = column
-        binding.messages.addView(LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(-1, -2).also { it.topMargin = 8 }
-            gravity = if (mine) Gravity.END else Gravity.START
-            addView(column)
-        })
+    /** Convert a group message into the renderer's normalized form. */
+    private fun render(m: GroupMessage) {
+        val call = CALL_RE.find(m.body)?.groupValues?.get(1)
+        renderer.add(
+            RMsg(
+                id = m.id, senderId = m.senderId,
+                senderNick = if (m.senderId == myId) (nickOf(myId) ?: "you") else (nickOf(m.senderId) ?: "someone"),
+                senderAvatar = avatarOf(m.senderId),
+                body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl, created = m.created,
+                reactions = m.reactions,
+                replyTo = m.replyTo,
+                replyNick = if (m.replySender == myId) "you" else (nickOf(m.replySender) ?: "someone"),
+                replyBody = m.replyBody,
+                mine = m.senderId == myId, callCode = call,
+            )
+        )
     }
 
     private fun react(messageId: Long, emoji: String, add: Boolean) = lifecycleScope.launch {
         runCatching { ApiClient.react("group", messageId, emoji, add) }
     }
 
-    private fun startReply(m: GroupMessage) {
-        replyingTo = m
-        val who = if (m.senderId == myId) "you" else (nickOf(m.senderId) ?: "someone")
-        binding.replyBarText.text = "Replying to $who: ${m.body.take(50).ifEmpty { "image" }}"
+    private fun startReply(id: Long, nick: String, body: String) {
+        replyingTo = GroupMessage(id, groupId, 0, body, null, null, 0)
+        binding.replyBarText.text = "Replying to $nick: ${body.take(50).ifEmpty { "image" }}"
         binding.replyBar.visibility = View.VISIBLE
     }
 
@@ -292,32 +234,14 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         binding.replyBar.visibility = View.GONE
     }
 
-    private fun jumpTo(messageId: Long) {
-        val v = messageViews[messageId] as? LinearLayout ?: return
-        binding.scroll.post {
-            binding.scroll.smoothScrollTo(0, v.top)
-            val target = v.getChildAt(0)
-            val orig = target.background
-            target.setBackgroundColor(Color.parseColor("#3B60B0"))
-            target.postDelayed({ target.background = orig }, 900)
-        }
-    }
 
     override fun onReaction(scope: String, messageId: Long, reactions: List<com.takeback.app.net.Reaction>) =
-        runOnUiThread {
-            if (scope != "group") return@runOnUiThread
-            reactionState[messageId] = reactions
-            reactionRows[messageId]?.let { row ->
-                ReactionsUi.render(this, row, reactions) { emoji, add -> react(messageId, emoji, add) }
-            }
-        }
-
-    private fun scrollToBottom() = binding.scroll.post { binding.scroll.fullScroll(View.FOCUS_DOWN) }
+        runOnUiThread { if (scope == "group") renderer.updateReactions(messageId, reactions) }
 
     // ---- live events ----
 
     override fun onGroupMessage(message: GroupMessage) = runOnUiThread {
-        if (message.groupId == groupId) { addMessage(message); scrollToBottom() }
+        if (message.groupId == groupId) { render(message); renderer.scrollToBottom() }
     }
 
     override fun onGroupUpdate(gid: Long) = runOnUiThread {

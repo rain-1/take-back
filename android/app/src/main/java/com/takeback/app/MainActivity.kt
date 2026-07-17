@@ -43,7 +43,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         const val EXTRA_ROOM = "room"
 
         /** Ring colour for "this person is speaking". */
-        private val SPEAK_GREEN: Int = Color.parseColor("#22C55E")
+        private val SPEAK_GREEN: Int = Color.parseColor("#34D399")
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -211,7 +211,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         if (others.isEmpty()) {
             binding.volumes.addView(TextView(this).apply {
                 text = getString(R.string.nobody_else)
-                setTextColor(Color.parseColor("#5B6273")); textSize = 12f
+                setTextColor(Color.parseColor("#5A6273")); textSize = 12f
             })
             return
         }
@@ -222,12 +222,12 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             }
             row.addView(TextView(this).apply {
                 text = tiles[peerId]?.label?.text ?: peerId
-                setTextColor(Color.parseColor("#E7E9EE")); textSize = 13f
+                setTextColor(Color.parseColor("#E8EAF0")); textSize = 13f
                 width = (90 * resources.displayMetrics.density).toInt()
                 maxLines = 1
             })
             val valueLabel = TextView(this).apply {
-                setTextColor(Color.parseColor("#8B93A7")); textSize = 12f
+                setTextColor(Color.parseColor("#8A93A6")); textSize = 12f
                 width = (48 * resources.displayMetrics.density).toInt()
                 gravity = Gravity.END
             }

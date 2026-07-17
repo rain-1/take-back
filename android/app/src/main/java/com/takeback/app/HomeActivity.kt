@@ -105,7 +105,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         if (groups.isEmpty()) {
             binding.groups.addView(TextView(this).apply {
                 text = "No groups yet."
-                setTextColor(Color.parseColor("#5B6273"))
+                setTextColor(Color.parseColor("#5A6273"))
                 setPadding(16, 12, 16, 12)
             })
             return
@@ -122,18 +122,18 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 setOnClickListener { openGroup(g) }
             }
             row.addView(TextView(this).apply {
-                text = "#"; setTextColor(Color.parseColor("#8B93A7")); textSize = 16f
+                text = "#"; setTextColor(Color.parseColor("#8A93A6")); textSize = 16f
             })
             row.addView(TextView(this).apply {
                 text = g.name
-                setTextColor(Color.parseColor("#E7E9EE"))
+                setTextColor(Color.parseColor("#E8EAF0"))
                 textSize = 16f
                 if (g.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 20 }
             })
             if (g.unread > 0) row.addView(pip(g.unread)) else row.addView(TextView(this).apply {
                 text = g.memberCount.toString()
-                setTextColor(Color.parseColor("#5B6273")); textSize = 13f
+                setTextColor(Color.parseColor("#5A6273")); textSize = 13f
             })
             binding.groups.addView(row)
         }
@@ -168,7 +168,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         if (accepted.isEmpty()) {
             binding.friends.addView(TextView(this).apply {
                 text = getString(R.string.no_friends)
-                setTextColor(Color.parseColor("#5B6273"))
+                setTextColor(Color.parseColor("#5A6273"))
                 setPadding(16, 24, 16, 16)
             })
         } else {
@@ -184,13 +184,14 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             isClickable = true
             setOnClickListener { openChat(f) }
         }
+        row.addView(Avatars.view(this, f.user.nick, f.user.avatarUrl, 36, endMarginDp = 6))
         row.addView(dot(f.online))
         row.addView(TextView(this).apply {
             text = f.user.nick
-            setTextColor(Color.parseColor("#E7E9EE"))
+            setTextColor(Color.parseColor("#E8EAF0"))
             textSize = 16f
             if (f.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 24 }
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 16 }
         })
         if (f.unread > 0) row.addView(pip(f.unread)) else row.addView(Button(this).apply {
             text = "✕"
@@ -208,7 +209,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         }
         row.addView(TextView(this).apply {
             text = "# ${i.groupName}\ninvited by ${i.invitedBy}"
-            setTextColor(Color.parseColor("#E7E9EE")); textSize = 13f
+            setTextColor(Color.parseColor("#E8EAF0")); textSize = 13f
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
         row.addView(Button(this).apply {
@@ -235,7 +236,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         }
         row.addView(TextView(this).apply {
             text = f.user.nick
-            setTextColor(Color.parseColor("#E7E9EE"))
+            setTextColor(Color.parseColor("#E8EAF0"))
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
         row.addView(Button(this).apply {
@@ -264,7 +265,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
     private fun dot(online: Boolean): View = View(this).apply {
         val size = (10 * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(size, size)
-        setBackgroundColor(if (online) Color.parseColor("#22C55E") else Color.parseColor("#3F4553"))
+        setBackgroundColor(if (online) Color.parseColor("#34D399") else Color.parseColor("#39404F"))
     }
 
     private fun addFriend() {

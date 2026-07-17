@@ -1,33 +1,26 @@
 package com.takeback.app
 
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
-import android.widget.Button
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import coil.load
 import com.takeback.app.databinding.ActivityChatBinding
 import com.takeback.app.net.ApiClient
 import com.takeback.app.net.Events
 import com.takeback.app.net.EventsListener
 import com.takeback.app.net.Message
+import com.takeback.app.net.Reaction
+import com.takeback.app.net.User
 import io.noties.markwon.Markwon
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 /**
- * ChatActivity is a 1:1 direct-message conversation: Markdown text, image
- * sharing with thumbnails, live incoming messages, and a button to start a
- * video call with this friend.
+ * ChatActivity is a 1:1 direct-message conversation, drawn in the same
+ * Slack-style grouped layout as the web client (see [MessageRenderer]).
  */
 class ChatActivity : AppCompatActivity(), EventsListener {
 
@@ -38,13 +31,11 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private lateinit var binding: ActivityChatBinding
-    private lateinit var markwon: Markwon
+    private lateinit var renderer: MessageRenderer
     private var friendId: Long = 0
     private lateinit var friendNick: String
-    private var myId: Long = 0
-    private val reactionRows = HashMap<Long, android.widget.LinearLayout>()
-    private val reactionState = HashMap<Long, List<com.takeback.app.net.Reaction>>()
-    private val messageViews = HashMap<Long, android.view.View>()
+    private var me: User? = null
+    private var friend: User? = null
     private var replyingTo: Message? = null
 
     private val pickImage = registerForActivityResult(
@@ -55,11 +46,18 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         super.onCreate(savedInstanceState)
         binding = ActivityChatBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        markwon = Markwon.create(this)
 
         friendId = intent.getLongExtra(EXTRA_FRIEND_ID, 0)
         friendNick = intent.getStringExtra(EXTRA_FRIEND_NICK) ?: "friend"
         binding.friendNick.text = friendNick
+
+        renderer = MessageRenderer(
+            this, binding.messages, binding.scroll, Markwon.create(this),
+            onReply = { startReply(it.id, it.senderNick, it.body) },
+            onReact = { id, emoji, add -> react(id, emoji, add) },
+            onJoinCall = { joinCall(it) },
+            onOpenImage = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+        )
 
         binding.sendBtn.setOnClickListener { sendText() }
         binding.imgBtn.setOnClickListener { pickImage.launch("image/*") }
@@ -72,7 +70,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onResume() {
         super.onResume()
-        Events.openFriendId = friendId // suppress notifications for this chat
+        Events.openFriendId = friendId
     }
 
     override fun onPause() {
@@ -88,14 +86,35 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     private fun load() {
         lifecycleScope.launch {
             try {
-                myId = ApiClient.me().id
+                me = ApiClient.me()
+                // The friend's avatar comes from the friends list.
+                friend = runCatching { ApiClient.friends().firstOrNull { it.user.id == friendId }?.user }.getOrNull()
                 val msgs = ApiClient.conversation(friendId)
-                binding.messages.removeAllViews()
-                reactionRows.clear(); reactionState.clear(); messageViews.clear()
-                msgs.forEach { addMessage(it) }
-                scrollToBottom()
+                renderer.clear()
+                msgs.forEach { render(it) }
+                renderer.scrollToBottom()
             } catch (_: Exception) { /* transient */ }
         }
+    }
+
+    /** Convert a DM message into the renderer's normalized form. */
+    private fun render(m: Message) {
+        val mine = m.senderId == me?.id
+        val sender = if (mine) me else friend
+        val call = CALL_RE.find(m.body)?.groupValues?.get(1)
+        renderer.add(
+            RMsg(
+                id = m.id, senderId = m.senderId,
+                senderNick = sender?.nick ?: (if (mine) "you" else friendNick),
+                senderAvatar = sender?.avatarUrl ?: "",
+                body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl, created = m.created,
+                reactions = m.reactions,
+                replyTo = m.replyTo,
+                replyNick = if (m.replySender == me?.id) (me?.nick ?: "you") else friendNick,
+                replyBody = m.replyBody,
+                mine = mine, callCode = call,
+            )
+        )
     }
 
     private fun sendText() {
@@ -106,7 +125,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         cancelReply()
         lifecycleScope.launch {
             runCatching { ApiClient.sendText(friendId, body, replyTo) }
-                .onSuccess { addMessage(it); scrollToBottom() }
+                .onSuccess { render(it); renderer.scrollToBottom() }
         }
     }
 
@@ -115,8 +134,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             try {
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
                 val name = (uri.lastPathSegment ?: "image").substringAfterLast('/')
-                val msg = ApiClient.sendImage(friendId, name, bytes, "")
-                addMessage(msg); scrollToBottom()
+                render(ApiClient.sendImage(friendId, name, bytes, "")); renderer.scrollToBottom()
             } catch (_: Exception) { /* ignore */ }
         }
     }
@@ -124,106 +142,21 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     private fun startCall() {
         val code = randomCode()
         lifecycleScope.launch {
-            // Send a joinable call message so the friend can tap to join.
             runCatching { ApiClient.sendText(friendId, "📞 call:$code") }
-                .onSuccess { addMessage(it); scrollToBottom() }
+                .onSuccess { render(it); renderer.scrollToBottom() }
         }
         joinCall(code)
     }
 
     private fun joinCall(code: String) {
-        startActivity(Intent(this, MainActivity::class.java).apply {
-            putExtra(MainActivity.EXTRA_ROOM, code)
-        })
-    }
-
-    // ---- rendering ----
-
-    private fun addMessage(m: Message) {
-        val mine = m.senderId == myId
-
-        val call = CALL_RE.find(m.body)
-        val bubble = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 16)
-            background = bubbleBg(mine)
-        }
-
-        // Quote block for a reply — tap to jump to the original.
-        if (m.replyTo != 0L) {
-            val who = if (m.replySender == myId) "you" else friendNick
-            bubble.addView(ReactionsUi.quoteBlock(this, who, m.replyBody) { jumpTo(m.replyTo) })
-        }
-
-        if (call != null) {
-            val code = call.groupValues[1]
-            bubble.addView(TextView(this).apply {
-                text = "📞 Video call"; setTextColor(Color.WHITE)
-            })
-            bubble.addView(Button(this).apply {
-                text = "Join call $code"
-                setOnClickListener { joinCall(code) }
-            })
-        } else {
-            if (m.body.isNotEmpty()) {
-                val tv = TextView(this).apply { setTextColor(Color.parseColor("#E7E9EE")) }
-                markwon.setMarkdown(tv, m.body)
-                bubble.addView(tv)
-            }
-            if (m.thumbUrl != null) {
-                bubble.addView(ImageView(this).apply {
-                    adjustViewBounds = true
-                    maxWidth = (240 * resources.displayMetrics.density).toInt()
-                    load(m.thumbUrl)
-                    setOnClickListener {
-                        m.imageUrl?.let { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
-                    }
-                    val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = 8; layoutParams = lp
-                })
-            }
-        }
-
-        // Reactions row under the bubble; long-press the bubble to react.
-        val rxRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = 4; layoutParams = lp
-        }
-        reactionRows[m.id] = rxRow
-        reactionState[m.id] = m.reactions
-        ReactionsUi.render(this, rxRow, m.reactions) { emoji, add -> react(m.id, emoji, add) }
-        bubble.setOnLongClickListener {
-            ReactionsUi.showActions(this,
-                onReply = { startReply(m) },
-                onReact = {
-                    ReactionsUi.showPicker(this) { emoji ->
-                        val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
-                        react(m.id, emoji, !(existing?.mine ?: false))
-                    }
-                })
-            true
-        }
-
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = if (mine) Gravity.END else Gravity.START
-            addView(bubble)
-            addView(rxRow)
-        }
-        messageViews[m.id] = column // for jump-to-original
-        val row = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(-1, -2).also { it.topMargin = 8 }
-            gravity = if (mine) Gravity.END else Gravity.START
-            addView(column)
-        }
-        binding.messages.addView(row)
+        startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_ROOM, code))
     }
 
     // ---- replies ----
 
-    private fun startReply(m: Message) {
-        replyingTo = m
-        val who = if (m.senderId == myId) "you" else friendNick
-        binding.replyBarText.text = "Replying to $who: ${m.body.take(50).ifEmpty { "image" }}"
+    private fun startReply(id: Long, nick: String, body: String) {
+        replyingTo = Message(id, 0, 0, body, null, null, 0) // only id is used on send
+        binding.replyBarText.text = "Replying to $nick: ${body.take(50).ifEmpty { "image" }}"
         binding.replyBar.visibility = View.VISIBLE
     }
 
@@ -232,37 +165,12 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         binding.replyBar.visibility = View.GONE
     }
 
-    /** Scroll to a message and flash it briefly. */
-    private fun jumpTo(messageId: Long) {
-        val v = messageViews[messageId] ?: return
-        binding.scroll.post {
-            binding.scroll.smoothScrollTo(0, v.top)
-            val orig = (v as LinearLayout).getChildAt(0).background
-            v.getChildAt(0).setBackgroundColor(Color.parseColor("#3B60B0"))
-            v.postDelayed({ v.getChildAt(0).background = orig }, 900)
-        }
-    }
-
     private fun react(messageId: Long, emoji: String, add: Boolean) {
         lifecycleScope.launch { runCatching { ApiClient.react("dm", messageId, emoji, add) } }
     }
 
-    override fun onReaction(scope: String, messageId: Long, reactions: List<com.takeback.app.net.Reaction>) =
-        runOnUiThread {
-            if (scope != "dm") return@runOnUiThread
-            reactionState[messageId] = reactions
-            reactionRows[messageId]?.let { row ->
-                ReactionsUi.render(this, row, reactions) { emoji, add -> react(messageId, emoji, add) }
-            }
-        }
-
-    private fun bubbleBg(mine: Boolean): GradientDrawable = GradientDrawable().apply {
-        cornerRadius = 28f
-        setColor(Color.parseColor(if (mine) "#274690" else "#1C2029"))
-    }
-
-    private fun scrollToBottom() = binding.scroll.post {
-        binding.scroll.fullScroll(View.FOCUS_DOWN)
+    override fun onReaction(scope: String, messageId: Long, reactions: List<Reaction>) = runOnUiThread {
+        if (scope == "dm") renderer.updateReactions(messageId, reactions)
     }
 
     private fun randomCode(): String {
@@ -270,9 +178,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         return (1..6).map { a[Random.nextInt(a.length)] }.joinToString("")
     }
 
-    // ---- live events ----
-
     override fun onMessage(message: Message) = runOnUiThread {
-        if (message.senderId == friendId) { addMessage(message); scrollToBottom() }
+        if (message.senderId == friendId) { render(message); renderer.scrollToBottom() }
     }
 }

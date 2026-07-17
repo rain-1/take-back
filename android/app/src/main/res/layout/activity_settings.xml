@@ -3,14 +3,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0F1115"
+    android:background="#0B0D11"
     android:padding="24dp">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/server_settings"
-        android:textColor="#E7E9EE"
+        android:textColor="#E8EAF0"
         android:textSize="20sp"
         android:textStyle="bold"
         android:paddingBottom="6dp" />
@@ -19,15 +19,43 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/server_hint"
-        android:textColor="#8B93A7"
+        android:textColor="#8A93A6"
         android:textSize="13sp"
         android:paddingBottom="16dp" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:text="@string/profile_picture"
+        android:textColor="#8A93A6"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="16dp">
+
+        <FrameLayout
+            android:id="@+id/avatarPreview"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="12dp" />
+
+        <Button
+            android:id="@+id/setAvatarBtn"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/set_picture" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:text="@string/server_url"
-        android:textColor="#8B93A7"
+        android:textColor="#8A93A6"
         android:textSize="12sp" />
 
     <EditText
@@ -35,8 +63,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="https://takeback.chain-of-thought.org"
-        android:textColor="#E7E9EE"
-        android:textColorHint="#5B6273"
+        android:textColor="#E8EAF0"
+        android:textColorHint="#5A6273"
         android:inputType="textUri"
         android:importantForAutofill="no" />
 
@@ -78,7 +106,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/server_note"
-        android:textColor="#5B6273"
+        android:textColor="#5A6273"
         android:textSize="12sp"
         android:paddingTop="18dp" />
 </LinearLayout>

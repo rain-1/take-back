@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#0F1115">
+    android:background="#0B0D11">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -15,7 +15,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/app_name"
-            android:textColor="#E7E9EE"
+            android:textColor="#E8EAF0"
             android:textSize="20sp"
             android:textStyle="bold" />
 
@@ -23,7 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="webrtc nat-passthrough prototype"
-            android:textColor="#8B93A7"
+            android:textColor="#8A93A6"
             android:paddingBottom="12dp" />
 
         <!-- Step 1: nickname -->
@@ -37,15 +37,15 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/enter_nickname"
-                android:textColor="#8B93A7" />
+                android:textColor="#8A93A6" />
 
             <EditText
                 android:id="@+id/nickInput"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="e.g. river"
-                android:textColor="#E7E9EE"
-                android:textColorHint="#5B6273"
+                android:textColor="#E8EAF0"
+                android:textColorHint="#5A6273"
                 android:inputType="text"
                 android:importantForAutofill="no" />
 
@@ -74,7 +74,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/join_with_code"
-                android:textColor="#8B93A7"
+                android:textColor="#8A93A6"
                 android:paddingTop="12dp" />
 
             <EditText
@@ -82,8 +82,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="ABCD12"
-                android:textColor="#E7E9EE"
-                android:textColorHint="#5B6273"
+                android:textColor="#E8EAF0"
+                android:textColorHint="#5A6273"
                 android:inputType="textCapCharacters"
                 android:importantForAutofill="no" />
 
@@ -112,7 +112,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/call_code"
-                    android:textColor="#8B93A7" />
+                    android:textColor="#8A93A6" />
 
                 <TextView
                     android:id="@+id/callCode"
@@ -120,7 +120,7 @@
                     android:layout_height="wrap_content"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
-                    android:textColor="#E7E9EE"
+                    android:textColor="#E8EAF0"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:fontFamily="monospace" />
@@ -137,7 +137,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/connecting"
-                android:textColor="#8B93A7" />
+                android:textColor="#8A93A6" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -193,13 +193,13 @@
                 android:visibility="gone"
                 android:padding="12dp"
                 android:layout_marginTop="8dp"
-                android:background="#12151C">
+                android:background="#0E1117">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/audio_source"
-                    android:textColor="#8B93A7"
+                    android:textColor="#8A93A6"
                     android:textSize="12sp" />
 
                 <Spinner
@@ -211,7 +211,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/mic_level"
-                    android:textColor="#8B93A7"
+                    android:textColor="#8A93A6"
                     android:textSize="12sp"
                     android:paddingTop="8dp" />
 
@@ -243,7 +243,7 @@
                         android:layout_width="48dp"
                         android:layout_height="wrap_content"
                         android:text="100%"
-                        android:textColor="#8B93A7"
+                        android:textColor="#8A93A6"
                         android:textSize="12sp"
                         android:gravity="end" />
                 </LinearLayout>
@@ -252,7 +252,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/volumes"
-                    android:textColor="#8B93A7"
+                    android:textColor="#8A93A6"
                     android:textSize="12sp"
                     android:paddingTop="8dp" />
 
@@ -266,7 +266,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/camera"
-                    android:textColor="#8B93A7"
+                    android:textColor="#8A93A6"
                     android:textSize="12sp"
                     android:paddingTop="8dp" />
 
@@ -280,14 +280,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/mirror_my_video"
-                    android:textColor="#E7E9EE"
+                    android:textColor="#E8EAF0"
                     android:paddingTop="8dp" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/mirror_note"
-                    android:textColor="#5B6273"
+                    android:textColor="#5A6273"
                     android:textSize="11sp" />
             </LinearLayout>
 

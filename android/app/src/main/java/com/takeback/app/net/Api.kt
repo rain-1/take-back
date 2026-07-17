@@ -24,7 +24,7 @@ class ApiException(message: String) : Exception(message)
 
 // ---- Models (mirror the server's JSON) ----
 
-data class User(val id: Long, val nick: String)
+data class User(val id: Long, val nick: String, val avatarUrl: String = "")
 
 /** Server identity + wire-protocol version, from GET /api/version. */
 data class ServerVersion(val name: String, val version: String, val protocol: Int) {
@@ -68,7 +68,7 @@ data class Group(
     val lastActivity: Long = 0,
 )
 
-data class GroupMember(val id: Long, val nick: String, val online: Boolean, val owner: Boolean)
+data class GroupMember(val id: Long, val nick: String, val online: Boolean, val owner: Boolean, val avatarUrl: String = "")
 
 /** A pending group invitation awaiting my answer. */
 data class GroupInvite(val groupId: Long, val groupName: String, val invitedBy: String)
@@ -237,6 +237,15 @@ object ApiClient {
         return parseMessage(post("/api/messages/image", body))
     }
 
+    /** Upload a new profile picture (thumbnailed server-side). Returns its URL. */
+    suspend fun setAvatar(filename: String, bytes: ByteArray): String {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("image", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
+            .build()
+        val o = JSONObject(post("/api/me/avatar", body))
+        return o.optString("avatarUrl").let { if (it.isEmpty()) "" else mediaUrl(it) }
+    }
+
     // ---- groups ----
 
     suspend fun createGroup(name: String): Group =
@@ -253,7 +262,8 @@ object ApiClient {
         val arr = JSONArray(get(url))
         return (0 until arr.length()).map {
             val o = arr.getJSONObject(it)
-            GroupMember(o.getLong("id"), o.getString("nick"), o.optBoolean("online"), o.optBoolean("owner"))
+            GroupMember(o.getLong("id"), o.getString("nick"), o.optBoolean("online"), o.optBoolean("owner"),
+                o.optString("avatarUrl").ifEmpty { "" }.let { a -> if (a.isEmpty()) "" else mediaUrl(a) })
         }
     }
 
@@ -325,12 +335,15 @@ object ApiClient {
 
     // ---- parsing ----
 
-    private fun parseUser(json: String) = JSONObject(json).let { User(it.getLong("id"), it.getString("nick")) }
+    private fun parseUser(json: String) = JSONObject(json).let {
+        User(it.getLong("id"), it.getString("nick"), it.optString("avatarUrl").ifEmpty { "" }.let { u -> if (u.isEmpty()) "" else mediaUrl(u) })
+    }
 
     private fun parseFriend(o: JSONObject): Friend {
         val u = o.getJSONObject("user")
         return Friend(
-            user = User(u.getLong("id"), u.getString("nick")),
+            user = User(u.getLong("id"), u.getString("nick"),
+                u.optString("avatarUrl").ifEmpty { "" }.let { a -> if (a.isEmpty()) "" else mediaUrl(a) }),
             status = o.getString("status"),
             direction = o.optString("direction"),
             online = o.optBoolean("online"),

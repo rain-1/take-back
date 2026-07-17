@@ -32,12 +32,12 @@ object ReactionsUi {
             val pill = TextView(ctx).apply {
                 text = "${r.emoji} ${r.count}"
                 textSize = 12f
-                setTextColor(Color.parseColor("#E7E9EE"))
+                setTextColor(Color.parseColor("#E8EAF0"))
                 setPadding((10 * density).toInt(), (3 * density).toInt(), (10 * density).toInt(), (3 * density).toInt())
                 background = GradientDrawable().apply {
                     cornerRadius = 999f
-                    setColor(Color.parseColor(if (r.mine) "#274690" else "#1C2029"))
-                    setStroke((1 * density).toInt(), Color.parseColor(if (r.mine) "#3B60B0" else "#2A303C"))
+                    setColor(Color.parseColor(if (r.mine) "#2F4A8F" else "#171B24"))
+                    setStroke((1 * density).toInt(), Color.parseColor(if (r.mine) "#2F4A8F" else "#232936"))
                 }
                 setOnClickListener { onToggle(r.emoji, !r.mine) }
                 setOnLongClickListener { showWho(ctx, r); true }

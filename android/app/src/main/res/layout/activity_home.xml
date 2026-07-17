@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0F1115">
+    android:background="#0B0D11">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,13 +11,13 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:padding="14dp"
-        android:background="#151821">
+        android:background="#11141B">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/app_name"
-            android:textColor="#E7E9EE"
+            android:textColor="#E8EAF0"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -28,7 +28,7 @@
             android:layout_weight="1"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
-            android:textColor="#8B93A7" />
+            android:textColor="#8A93A6" />
 
         <Button
             android:id="@+id/logout"
@@ -50,8 +50,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="@string/add_friend"
-            android:textColor="#E7E9EE"
-            android:textColorHint="#5B6273"
+            android:textColor="#E8EAF0"
+            android:textColorHint="#5A6273"
             android:inputType="text"
             android:importantForAutofill="no" />
 
@@ -85,8 +85,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="new group name"
-            android:textColor="#E7E9EE"
-            android:textColorHint="#5B6273"
+            android:textColor="#E8EAF0"
+            android:textColorHint="#5A6273"
             android:inputType="text"
             android:importantForAutofill="no" />
 
@@ -113,7 +113,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/requests"
-                android:textColor="#5B6273"
+                android:textColor="#5A6273"
                 android:textSize="12sp"
                 android:padding="6dp"
                 android:visibility="gone" />
@@ -128,7 +128,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/groups"
-                android:textColor="#5B6273"
+                android:textColor="#5A6273"
                 android:textSize="12sp"
                 android:padding="6dp" />
 
@@ -142,7 +142,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/friends"
-                android:textColor="#5B6273"
+                android:textColor="#5A6273"
                 android:textSize="12sp"
                 android:padding="6dp" />
 

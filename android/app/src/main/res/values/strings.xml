@@ -38,6 +38,8 @@
     <string name="video_call">Video call</string>
     <string name="image">Image</string>
     <string name="server_settings">Server settings</string>
+    <string name="profile_picture">Profile picture</string>
+    <string name="set_picture">Set picture</string>
     <string name="server_hint">Choose which take-back server this app connects to.</string>
     <string name="server_url">Server URL</string>
     <string name="save">Save</string>
