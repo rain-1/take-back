@@ -24,6 +24,24 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.5.0
+
+Backwards compatible (protocol 1). Adds an `edited_at` column via an idempotent
+migration — verified against a copy of the production database (33 messages, 5
+users preserved; safe to re-run).
+
+**Added**
+- **Edit your own messages** (web), in DMs and groups. Hover your message and
+  click ✎ edit; Enter saves, Escape cancels. Edited messages carry an "· edited"
+  marker with the edit time on hover, and the change pushes live to the other
+  side (`message_edited` / `group_message_edited`).
+- Editing is author-only, enforced server-side (not just hidden in the UI), and
+  restricted to text — an image message keeps its attachment.
+
+**Not yet on Android**: message editing is web-only for now.
+
+---
+
 ## 1.4.0
 
 Call reliability fixes from web-client user reports. Backwards compatible

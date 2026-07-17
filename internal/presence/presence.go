@@ -127,6 +127,11 @@ func (h *Hub) NotifyMessage(recipientID int64, msg json.RawMessage) {
 	h.sendTo(recipientID, Event{Type: "message", Message: msg})
 }
 
+// NotifyMessageEdited tells the recipient a DM they already have was edited.
+func (h *Hub) NotifyMessageEdited(recipientID int64, msg json.RawMessage) {
+	h.sendTo(recipientID, Event{Type: "message_edited", Message: msg})
+}
+
 // NotifyUser pushes an arbitrary event to a single user's live sockets (if any).
 // Used for out-of-band notifications like incoming friend requests.
 func (h *Hub) NotifyUser(userID int64, ev Event) {

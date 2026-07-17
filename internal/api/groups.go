@@ -152,12 +152,13 @@ type groupMsgView struct {
 	ImageURL string `json:"imageUrl,omitempty"`
 	ThumbURL string `json:"thumbUrl,omitempty"`
 	Created  int64  `json:"created"`
+	EditedAt int64  `json:"editedAt,omitempty"`
 }
 
 func toGroupView(m store.GroupMessage) groupMsgView {
 	v := groupMsgView{
 		ID: m.ID, GroupID: m.GroupID, SenderID: m.SenderID,
-		Body: m.Body, Created: m.Created.Unix(),
+		Body: m.Body, Created: m.Created.Unix(), EditedAt: m.EditedAt,
 	}
 	if m.ImageFile != "" {
 		v.ImageURL = "/media/" + m.ImageFile

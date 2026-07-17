@@ -45,6 +45,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/messages", a.auth(a.handleMessages)) // GET list, POST send text
 	mux.HandleFunc("/api/messages/image", a.auth(a.handleImageMessage))
 	mux.HandleFunc("/api/read", a.auth(a.handleRead)) // mark a conversation read
+	mux.HandleFunc("/api/messages/edit", a.auth(a.handleEditMessage))
 	mux.HandleFunc("/api/events", a.auth(a.handleEvents)) // presence + message stream (WS)
 
 	a.groupRoutes(mux)

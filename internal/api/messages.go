@@ -1,9 +1,13 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
+	"github.com/rain1/take-back/internal/presence"
 	"github.com/rain1/take-back/internal/store"
 )
 
@@ -17,12 +21,13 @@ type msgView struct {
 	ImageURL    string `json:"imageUrl,omitempty"`
 	ThumbURL    string `json:"thumbUrl,omitempty"`
 	Created     int64  `json:"created"`
+	EditedAt    int64  `json:"editedAt,omitempty"`
 }
 
 func toView(m store.Message) msgView {
 	v := msgView{
 		ID: m.ID, SenderID: m.SenderID, RecipientID: m.RecipientID,
-		Body: m.Body, Created: m.Created.Unix(),
+		Body: m.Body, Created: m.Created.Unix(), EditedAt: m.EditedAt,
 	}
 	if m.ImageFile != "" {
 		v.ImageURL = "/media/" + m.ImageFile
@@ -120,6 +125,59 @@ func (a *API) storeAndPush(w http.ResponseWriter, m store.Message) {
 		a.Presence.NotifyMessage(saved.RecipientID, raw)
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// handleEditMessage rewrites the body of a message the caller sent.
+// POST {id, body} — works for both DMs and group messages via `scope`.
+func (a *API) handleEditMessage(w http.ResponseWriter, r *http.Request, user *store.User) {
+	var body struct {
+		ID    int64  `json:"id"`
+		Scope string `json:"scope"` // "dm" (default) | "group"
+		Body  string `json:"body"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Body) == "" {
+		writeErr(w, http.StatusBadRequest, "empty message")
+		return
+	}
+
+	if body.Scope == "group" {
+		saved, err := a.Store.EditGroupMessage(user.ID, body.ID, body.Body)
+		if err != nil {
+			writeEditErr(w, err)
+			return
+		}
+		view := toGroupView(saved)
+		if raw, err := json.Marshal(view); err == nil {
+			a.notifyGroup(saved.GroupID, presence.Event{Type: "group_message_edited", Message: raw}, user.ID)
+		}
+		writeJSON(w, http.StatusOK, view)
+		return
+	}
+
+	saved, err := a.Store.EditMessage(user.ID, body.ID, body.Body)
+	if err != nil {
+		writeEditErr(w, err)
+		return
+	}
+	view := toView(saved)
+	if raw, err := json.Marshal(view); err == nil {
+		a.Presence.NotifyMessageEdited(saved.RecipientID, raw)
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func writeEditErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, store.ErrNotSender):
+		writeErr(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, sql.ErrNoRows):
+		writeErr(w, http.StatusNotFound, "no such message")
+	default:
+		writeErr(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 // requireFriend enforces that a DM is between accepted friends.

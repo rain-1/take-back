@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -64,12 +65,24 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("apply schema extra: %w", err)
 		}
 	}
+	// Migrations run against existing databases (the deployed one has real
+	// data, so these must ALTER in place). SQLite has no
+	// "ADD COLUMN IF NOT EXISTS", so a column that's already there reports
+	// "duplicate column name" — which just means this migration already ran.
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return nil, fmt.Errorf("migrate %q: %w", m, err)
+		}
+	}
 	return &Store{db: db}, nil
 }
 
 // schemaExtras holds DDL contributed by other files in this package (e.g.
 // messages.go) via init(); Open applies them after the base schema.
 var schemaExtras []string
+
+// migrations holds idempotent ALTER statements applied to existing databases.
+var migrations []string
 
 func (s *Store) Close() error { return s.db.Close() }
 

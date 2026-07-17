@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_pair
 
 // Message is one direct message. Body holds raw Markdown; ImageFile/ThumbFile
 // are storage keys (empty when the message is text-only). Clients receive them
-// as URLs assembled by the API layer.
+// as URLs assembled by the API layer. EditedAt is 0 when never edited.
 type Message struct {
 	ID          int64     `json:"id"`
 	SenderID    int64     `json:"senderId"`
@@ -33,6 +33,7 @@ type Message struct {
 	ImageFile   string    `json:"imageFile,omitempty"`
 	ThumbFile   string    `json:"thumbFile,omitempty"`
 	Created     time.Time `json:"created"`
+	EditedAt    int64     `json:"editedAt,omitempty"`
 }
 
 // AddMessage stores a DM and returns it with its assigned id.
@@ -61,7 +62,7 @@ func (s *Store) Conversation(meID, otherID int64, beforeID int64, limit int) ([]
 		beforeID = 1 << 62
 	}
 	rows, err := s.db.Query(
-		`SELECT id, sender_id, recipient_id, body, image_file, thumb_file, created_at
+		`SELECT id, sender_id, recipient_id, body, image_file, thumb_file, created_at, edited_at
 		   FROM messages
 		  WHERE id < ?
 		    AND ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))
@@ -92,7 +93,7 @@ func scanMessage(rows *sql.Rows) (Message, error) {
 	var m Message
 	var created int64
 	if err := rows.Scan(&m.ID, &m.SenderID, &m.RecipientID, &m.Body,
-		&m.ImageFile, &m.ThumbFile, &created); err != nil {
+		&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt); err != nil {
 		return Message{}, err
 	}
 	m.Created = time.Unix(created, 0)

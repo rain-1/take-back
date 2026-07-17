@@ -209,7 +209,30 @@
     margin-top: .1rem; opacity: .55; transition: opacity .15s ease;
   }
   .msg:hover .time { opacity: 1; }
+  .msg .edited { font-style: italic; }
   .callmsg button { margin-top: .35rem; }
+
+  /* Edit affordance lives INSIDE the bubble's footer row: an absolutely
+     positioned control outside the bubble gets clipped by the scrolling
+     message list. Revealed on hover, and only on your own messages. */
+  .msg .timerow {
+    display: flex; align-items: center; justify-content: flex-end; gap: .4rem;
+    margin-top: .1rem;
+  }
+  .msg .editbtn {
+    opacity: 0; transition: opacity .12s ease;
+    font-size: .68rem; padding: 0 .25rem; line-height: 1.3;
+    background: transparent; border: 0; color: var(--dim);
+    border-radius: 5px; cursor: pointer; font-weight: 500;
+  }
+  .msg.me:hover .editbtn, .msg .editbtn:focus-visible { opacity: 1; }
+  .msg .editbtn:hover { color: #fff; background: rgba(255,255,255,.12); }
+  .msg .editbox {
+    width: 100%; min-width: 220px; font: inherit; font-size: .9rem;
+    background: #0d1016; color: var(--text);
+    border: 1px solid var(--accent-dim); border-radius: 8px; padding: .35rem .5rem;
+  }
+  .msg .edithint { font-size: .62rem; color: var(--dim); margin-top: .25rem; }
 
   #empty {
     flex: 1; display: flex; flex-direction: column; gap: .4rem;
@@ -797,8 +820,106 @@ function appendMessage(m) {
   const t = document.createElement("div");
   t.className = "time";
   t.textContent = new Date(m.created * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  div.append(t);
+  if (m.editedAt) {
+    const e = document.createElement("span");
+    e.className = "edited";
+    e.textContent = " · edited";
+    e.title = "Edited " + new Date(m.editedAt * 1000).toLocaleString();
+    t.append(e);
+  }
+  // Footer row: edit control (yours only) then the timestamp.
+  const row = document.createElement("div");
+  row.className = "timerow";
+
+  // Only your own text messages are editable (an image keeps its attachment;
+  // call invites aren't text you'd want to rewrite).
+  if (mine && !call && m.body) {
+    const btn = document.createElement("button");
+    btn.className = "editbtn";
+    btn.textContent = "✎ edit";
+    btn.title = "Edit message";
+    btn.onclick = () => startEdit(div, m);
+    row.append(btn);
+  }
+  row.append(t);
+  div.append(row);
+
+  div.dataset.msgId = m.id;
   $("messages").append(div);
+}
+
+// startEdit swaps the bubble's body for an inline editor.
+// Enter saves, Escape cancels — the shortcuts people expect.
+function startEdit(div, m) {
+  if (div.querySelector(".editbox")) return; // already editing
+  const bodyEl = div.querySelector(".body");
+  const original = bodyEl ? bodyEl.innerHTML : "";
+
+  const box = document.createElement("textarea");
+  box.className = "editbox";
+  box.rows = Math.min(6, m.body.split("\n").length);
+  box.value = m.body;
+
+  const hint = document.createElement("div");
+  hint.className = "edithint";
+  hint.textContent = "Enter to save · Esc to cancel";
+
+  if (bodyEl) bodyEl.replaceWith(box); else div.prepend(box);
+  box.after(hint);
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
+
+  const restore = (html) => {
+    const b = document.createElement("div");
+    b.className = "body";
+    b.innerHTML = html;
+    box.replaceWith(b);
+    hint.remove();
+  };
+
+  box.addEventListener("keydown", async (e) => {
+    if (e.key === "Escape") { restore(original); return; }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const text = box.value.trim();
+      if (!text || text === m.body) { restore(original); return; }
+      try {
+        const updated = await api("/api/messages/edit", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: m.id, scope: openGroup ? "group" : "dm", body: text }),
+        });
+        m.body = updated.body;
+        m.editedAt = updated.editedAt;
+        restore(renderMarkdown(updated.body));
+        markEdited(div, updated.editedAt);
+      } catch (err) {
+        restore(original);
+        alert("Couldn't edit: " + err.message);
+      }
+    }
+  });
+}
+
+// markEdited appends/refreshes the "· edited" marker on a bubble.
+function markEdited(div, editedAt) {
+  const t = div.querySelector(".time");
+  if (!t || !editedAt) return;
+  if (!t.querySelector(".edited")) {
+    const e = document.createElement("span");
+    e.className = "edited";
+    e.textContent = " · edited";
+    t.append(e);
+  }
+  t.querySelector(".edited").title = "Edited " + new Date(editedAt * 1000).toLocaleString();
+}
+
+// applyEdit updates a message already on screen (someone else edited theirs).
+function applyEdit(m) {
+  const div = [...$("messages").children].find((d) => d.dataset.msgId == m.id);
+  if (!div) return;
+  const bodyEl = div.querySelector(".body");
+  if (bodyEl) bodyEl.innerHTML = renderMarkdown(m.body);
+  markEdited(div, m.editedAt);
 }
 function scrollMessages() { const m = $("messages"); m.scrollTop = m.scrollHeight; }
 
@@ -868,6 +989,11 @@ function connectEvents() {
     } else if (e.type === "friend_update") {
       // A request we sent was accepted/declined, or a friend removed us.
       loadFriends();
+    } else if (e.type === "message_edited") {
+      // The other side rewrote a DM we already have on screen.
+      if (openFriend && e.message.senderId === openFriend.id) applyEdit(e.message);
+    } else if (e.type === "group_message_edited") {
+      if (openGroup && e.message.groupId === openGroup.id) applyEdit(e.message);
     } else if (e.type === "group_message") {
       const m = e.message;
       touchActivity("group", m.groupId, m.created);

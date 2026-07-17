@@ -49,7 +49,7 @@ type Group struct {
 	MemberCount int    `json:"memberCount"`
 }
 
-// GroupMessage is one message posted to a group.
+// GroupMessage is one message posted to a group. EditedAt is 0 when never edited.
 type GroupMessage struct {
 	ID        int64     `json:"id"`
 	GroupID   int64     `json:"groupId"`
@@ -58,6 +58,7 @@ type GroupMessage struct {
 	ImageFile string    `json:"imageFile,omitempty"`
 	ThumbFile string    `json:"thumbFile,omitempty"`
 	Created   time.Time `json:"created"`
+	EditedAt  int64     `json:"editedAt,omitempty"`
 }
 
 // CreateGroup makes a group owned by ownerID (who becomes its first member) and
@@ -217,7 +218,7 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 		beforeID = 1 << 62
 	}
 	rows, err := s.db.Query(
-		`SELECT id, group_id, sender_id, body, image_file, thumb_file, created_at
+		`SELECT id, group_id, sender_id, body, image_file, thumb_file, created_at, edited_at
 		   FROM group_messages WHERE group_id = ? AND id < ?
 		  ORDER BY id DESC LIMIT ?`, groupID, beforeID, limit,
 	)
@@ -230,7 +231,7 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 		var m GroupMessage
 		var created int64
 		if err := rows.Scan(&m.ID, &m.GroupID, &m.SenderID, &m.Body,
-			&m.ImageFile, &m.ThumbFile, &created); err != nil {
+			&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt); err != nil {
 			return nil, err
 		}
 		m.Created = time.Unix(created, 0)
