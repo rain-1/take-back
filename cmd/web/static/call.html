@@ -109,6 +109,20 @@
     position:absolute; left:.5rem; bottom:.5rem; background:rgba(0,0,0,.6);
     padding:.15rem .5rem; border-radius:6px; font-size:.78rem;
   }
+  /* Settings panel */
+  #settingsPanel {
+    margin-top:.9rem; padding:.9rem 1rem; border:1px solid var(--border);
+    border-radius:12px; background:#0e1117; display:grid; gap:.7rem;
+  }
+  .setrow { display:grid; grid-template-columns:130px 1fr; align-items:center; gap:.75rem; }
+  .setrow label { margin:0; color: var(--muted); font-size:.82rem; }
+  .setrow select {
+    font: inherit; font-size:.85rem; padding:.4rem .5rem; border-radius:8px;
+    border:1px solid var(--border); background:#0d1016; color: var(--text); width:100%;
+  }
+  .setnote { display:flex; align-items:center; gap:.5rem; color: var(--dim); font-size:.75rem; }
+  @media (max-width:640px) { .setrow { grid-template-columns:1fr; gap:.3rem; } }
+
   .status { font-size:.8rem; color: var(--dim); }
   .pill { font-size:.72rem; padding:.15rem .55rem; border-radius:999px; background:rgba(34,197,94,.13); color:#4ade80; }
 </style>
@@ -161,10 +175,30 @@
       <button id="audioGate" class="hidden">🔊 Enable audio</button>
       <button id="micBtn" class="secondary">🎤 Mic on</button>
       <button id="camBtn" class="secondary">📷 Camera on</button>
-      <button id="flipBtn" class="secondary" title="Mirror your own video">🔁 Flip mine</button>
-      <button id="shareBtn" class="secondary">Share screen</button>
+      <button id="shareBtn">🖥 Share screen</button>
+      <button id="settingsBtn" class="secondary" title="Devices &amp; preferences">⚙</button>
       <button id="leaveBtn" class="secondary">Leave</button>
     </div>
+
+    <!-- Devices & preferences: things you set once and keep. -->
+    <div id="settingsPanel" class="hidden">
+      <div class="setrow">
+        <label for="micSelect">Microphone</label>
+        <select id="micSelect"></select>
+      </div>
+      <div class="setrow">
+        <label for="camSelect">Camera</label>
+        <select id="camSelect"></select>
+      </div>
+      <div class="setrow">
+        <label for="mirrorChk">Mirror my video</label>
+        <span class="setnote">
+          <input type="checkbox" id="mirrorChk" style="width:auto;">
+          Only changes your own preview — peers always see you un-mirrored.
+        </span>
+      </div>
+    </div>
+
     <div id="grid"></div>
   </section>
 
@@ -182,7 +216,6 @@ let nick = "";
 let ws = null;
 let myId = null;
 let roomCode = "";
-let localStream = null;    // what we send to peers (camera or screen)
 let cameraStream = null;   // the original camera+mic, kept so we can revert
 let screenStream = null;   // active screen capture, if any
 const peers = new Map(); // peerId -> { pc, nick }
@@ -219,8 +252,12 @@ $("joinBtn").onclick = () => {
 async function startCall(code) {
   roomCode = code;
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    cameraStream = localStream;
+    // Honour the saved device choices, falling back if that device is gone.
+    const micId = localStorage.getItem(PREF_MIC), camId = localStorage.getItem(PREF_CAM);
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      audio: micId ? { deviceId: { ideal: micId } } : true,
+      video: camId ? { deviceId: { ideal: camId } } : true,
+    });
   } catch (err) {
     log("Could not access camera/microphone: " + err.message);
     return;
@@ -228,7 +265,8 @@ async function startCall(code) {
   $("lobbyStep").classList.add("hidden");
   $("callStep").classList.remove("hidden");
   $("callCode").textContent = code;
-  addTile("local", nick + " (you)", localStream, true);
+  addTile("local", nick + " (you)", cameraStream, true);
+  applyMirror();
   connectSignaling();
 }
 
@@ -237,17 +275,105 @@ $("copyBtn").onclick = () => {
 };
 $("leaveBtn").onclick = () => { leaving = true; location.reload(); };
 
-// ---- Flip my own video ----
-// Mirrors only your own preview (what you're used to seeing in a mirror); what
-// peers receive is untouched.
-let mirrored = true; // self-view starts mirrored, like most video apps
-$("flipBtn").onclick = () => {
-  mirrored = !mirrored;
+// ---- Settings: devices & preferences ----
+// Set-once-and-keep choices, so they live in a panel and persist across calls.
+const PREF_MIRROR = "tb.mirror", PREF_MIC = "tb.micId", PREF_CAM = "tb.camId";
+
+let mirrored = localStorage.getItem(PREF_MIRROR) !== "0"; // default: mirrored
+
+$("settingsBtn").onclick = async () => {
+  const panel = $("settingsPanel");
+  panel.classList.toggle("hidden");
+  if (!panel.classList.contains("hidden")) await loadDevices();
+};
+
+$("mirrorChk").onchange = () => {
+  mirrored = $("mirrorChk").checked;
+  localStorage.setItem(PREF_MIRROR, mirrored ? "1" : "0");
   applyMirror();
 };
+
+// applyMirror only touches your own camera tile — never the screen tile (a
+// mirrored screen share would be unreadable) and never what peers receive.
 function applyMirror() {
   const tile = document.getElementById("tile-local");
   if (tile) tile.classList.toggle("mirror", mirrored);
+  $("mirrorChk").checked = mirrored;
+}
+
+// loadDevices fills the pickers. Device labels only populate once permission
+// has been granted — which it has by the time we're in a call.
+async function loadDevices() {
+  let devices = [];
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (e) { return; }
+  fillSelect($("micSelect"), devices.filter((d) => d.kind === "audioinput"),
+    currentTrackDeviceId("audio"), "Microphone");
+  fillSelect($("camSelect"), devices.filter((d) => d.kind === "videoinput"),
+    currentTrackDeviceId("video"), "Camera");
+}
+
+function fillSelect(sel, devices, activeId, fallbackLabel) {
+  sel.innerHTML = "";
+  devices.forEach((d, i) => {
+    const o = document.createElement("option");
+    o.value = d.deviceId;
+    o.textContent = d.label || `${fallbackLabel} ${i + 1}`;
+    if (d.deviceId === activeId) o.selected = true;
+    sel.append(o);
+  });
+  if (!devices.length) {
+    const o = document.createElement("option");
+    o.textContent = "none found";
+    sel.append(o);
+  }
+}
+
+function currentTrackDeviceId(kind) {
+  const t = kind === "audio" ? cameraStream.getAudioTracks()[0] : cameraStream.getVideoTracks()[0];
+  return t ? (t.getSettings().deviceId || "") : "";
+}
+
+$("micSelect").onchange = () => switchDevice("audio", $("micSelect").value);
+$("camSelect").onchange = () => switchDevice("video", $("camSelect").value);
+
+// switchDevice swaps a capture device mid-call. replaceTrack reuses the
+// existing senders, so no renegotiation and peers see no interruption.
+async function switchDevice(kind, deviceId) {
+  if (!deviceId) return;
+  let fresh;
+  try {
+    fresh = await navigator.mediaDevices.getUserMedia(
+      kind === "audio" ? { audio: { deviceId: { exact: deviceId } } }
+                       : { video: { deviceId: { exact: deviceId } } });
+  } catch (err) {
+    log("Couldn't switch " + kind + ": " + err.message);
+    return;
+  }
+  const newTrack = kind === "audio" ? fresh.getAudioTracks()[0] : fresh.getVideoTracks()[0];
+
+  for (const entry of peers.values()) {
+    const sender = entry.pc.getSenders().find(
+      (s) => s.track && s.track.kind === kind && s !== entry.screenSender);
+    if (sender) await sender.replaceTrack(newTrack);
+  }
+
+  const old = kind === "audio" ? cameraStream.getAudioTracks()[0] : cameraStream.getVideoTracks()[0];
+  if (old) { cameraStream.removeTrack(old); old.stop(); }
+  cameraStream.addTrack(newTrack);
+  newTrack.enabled = kind === "audio" ? micOn : camOn;
+
+  localStorage.setItem(kind === "audio" ? PREF_MIC : PREF_CAM, deviceId);
+
+  if (kind === "audio") {
+    // The analyser is bound to the OLD track, so the speaking ring would go
+    // dead after a mic change unless we rebuild it against the new stream.
+    detachVAD("tile-local");
+    attachVAD("tile-local", cameraStream);
+  } else {
+    const v = document.querySelector("#tile-local video");
+    if (v) { v.srcObject = cameraStream; v.play().catch(() => {}); }
+  }
+  log(kind === "audio" ? "Microphone switched." : "Camera switched.");
 }
 
 // ---- Audio recovery ----
@@ -286,26 +412,37 @@ $("micBtn").onclick = () => {
 
 $("camBtn").onclick = () => {
   camOn = !camOn;
-  // Don't clobber an active screen share with the camera toggle.
-  if (!screenStream) cameraStream.getVideoTracks().forEach((t) => (t.enabled = camOn));
+  // Camera and screen are separate tracks now, so this only affects the camera.
+  cameraStream.getVideoTracks().forEach((t) => (t.enabled = camOn));
   $("camBtn").textContent = camOn ? "📷 Camera on" : "📷 Camera off";
-  setTileVideo("local", camOn || !!screenStream);
+  setTileVideo("local", camOn);
   broadcastState();
 };
 
 function broadcastState() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  send({ type: "state", payload: JSON.stringify({ video: camOn || !!screenStream, audio: micOn }) });
+  send({ type: "state", payload: JSON.stringify({
+    video: camOn,
+    audio: micOn,
+    // A peer can't tell a screen track from a camera track, so name the stream.
+    screenId: screenStream ? screenStream.id : "",
+  }) });
 }
 
 function applyState(id, s) {
   setTileVideo(id, !!s.video);
   setTileMuted(id, !s.audio);
+  if (!s.screenId) { // they stopped sharing
+    const t = document.getElementById("tile-" + id + "-screen");
+    if (t) t.remove();
+  }
 }
 
 // ---- Screen sharing ----
-// Swaps the outgoing video track on every peer connection via replaceTrack, so
-// no SDP renegotiation is needed. Audio keeps flowing from the mic throughout.
+// The screen goes out as an ADDITIONAL video track, so your camera keeps
+// streaming alongside it — people expect to see your face while you present.
+// Adding a track triggers renegotiation, handled by the perfect-negotiation
+// logic in createPeer.
 $("shareBtn").onclick = () => (screenStream ? stopScreenShare() : startScreenShare());
 
 async function startScreenShare() {
@@ -313,22 +450,27 @@ async function startScreenShare() {
   try {
     capture = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   } catch (err) {
-    log("Screen share cancelled: " + err.message);
+    log("Screen share cancelled: " + (err && err.message ? err.message : err));
     return;
   }
   screenStream = capture;
   const screenTrack = capture.getVideoTracks()[0];
-  replaceOutgoingVideo(screenTrack);
 
-  // Reflect it in our own preview (screen video + existing mic audio).
-  const preview = new MediaStream([screenTrack, ...cameraStream.getAudioTracks()]);
-  localStream = preview;
-  addTile("local", nick + " (you, sharing)", preview, true);
+  // Tell peers which stream id is the screen BEFORE the track arrives, so they
+  // can tell it apart from a camera when ontrack fires.
+  broadcastState();
 
-  // The browser's native "Stop sharing" bar ends the track directly.
+  for (const entry of peers.values()) {
+    entry.screenSender = entry.pc.addTrack(screenTrack, screenStream);
+  }
+
+  // Our own screen preview sits next to (not instead of) our camera tile.
+  addTile("local-screen", "Your screen", screenStream, true);
+
+  // The browser's own "Stop sharing" bar ends the track directly.
   screenTrack.onended = stopScreenShare;
-  $("shareBtn").textContent = "Stop sharing";
-  log("Sharing your screen.");
+  $("shareBtn").textContent = "🖥 Stop sharing";
+  log("Sharing your screen — your camera is still on.");
 }
 
 function stopScreenShare() {
@@ -336,20 +478,19 @@ function stopScreenShare() {
   screenStream.getTracks().forEach((t) => t.stop());
   screenStream = null;
 
-  const camTrack = cameraStream.getVideoTracks()[0];
-  replaceOutgoingVideo(camTrack);
-  localStream = cameraStream;
-  addTile("local", nick + " (you)", cameraStream, true);
-  $("shareBtn").textContent = "Share screen";
-  log("Stopped sharing; back to camera.");
-}
-
-// replaceOutgoingVideo points every peer's video sender at `track`.
-function replaceOutgoingVideo(track) {
-  for (const { pc } of peers.values()) {
-    const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
-    if (sender) sender.replaceTrack(track);
+  // Drop the extra sender from each peer; this renegotiates too.
+  for (const entry of peers.values()) {
+    if (entry.screenSender) {
+      try { entry.pc.removeTrack(entry.screenSender); } catch (e) { /* already gone */ }
+      entry.screenSender = null;
+    }
   }
+  const tile = document.getElementById("tile-local-screen");
+  if (tile) tile.remove();
+
+  $("shareBtn").textContent = "🖥 Share screen";
+  broadcastState();
+  log("Stopped sharing.");
 }
 
 let leaving = false;
@@ -449,23 +590,35 @@ async function handleSignal(msg) {
       break;
     }
     case "offer": {
-      const pc = await createPeer(msg.from, msg.nick, false);
+      await createPeer(msg.from, msg.nick, false);
+      const entry = peers.get(msg.from);
+      const pc = entry.pc;
+
+      // Perfect negotiation: only the polite peer gives way on a collision.
+      // Without this, two people sharing a screen at once would wedge the call.
+      const collision = entry.makingOffer || pc.signalingState !== "stable";
+      entry.ignoreOffer = !entry.polite && collision;
+      if (entry.ignoreOffer) break;
+
+      // setRemoteDescription implicitly rolls back our own offer when polite.
       await pc.setRemoteDescription(JSON.parse(msg.payload));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      send({ type: "answer", to: msg.from, nick, payload: JSON.stringify(answer) });
+      await pc.setLocalDescription(); // implicit createAnswer
+      send({ type: "answer", to: msg.from, nick, payload: JSON.stringify(pc.localDescription) });
       break;
     }
     case "answer": {
       const entry = peers.get(msg.from);
-      if (entry) await entry.pc.setRemoteDescription(JSON.parse(msg.payload));
+      if (!entry) break;
+      try { await entry.pc.setRemoteDescription(JSON.parse(msg.payload)); }
+      catch (e) { console.warn("setRemoteDescription(answer)", e); }
       break;
     }
     case "candidate": {
       const entry = peers.get(msg.from);
       if (entry && msg.payload) {
         try { await entry.pc.addIceCandidate(JSON.parse(msg.payload)); }
-        catch (e) { console.warn("addIceCandidate", e); }
+        // Candidates for an offer we deliberately ignored are expected noise.
+        catch (e) { if (!entry.ignoreOffer) console.warn("addIceCandidate", e); }
       }
       break;
     }
@@ -480,16 +633,43 @@ async function createPeer(peerId, peerNick, initiator) {
   if (entry) return entry.pc;
 
   const pc = new RTCPeerConnection(ICE_CONFIG);
-  entry = { pc, nick: peerNick || "peer" };
+  entry = {
+    pc,
+    nick: peerNick || "peer",
+    // "Perfect negotiation": either side may add/remove tracks at any time
+    // (that's what lets a screen share join as a SECOND video track instead of
+    // replacing the camera). If both offer at once, the impolite peer ignores
+    // the incoming offer and the polite one gives way. The tiebreak must be
+    // deterministic and opposite on each side, so compare peer ids.
+    polite: String(myId) < String(peerId),
+    makingOffer: false,
+    ignoreOffer: false,
+    screenSender: null,
+  };
   peers.set(peerId, entry);
 
-  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+  cameraStream.getTracks().forEach((t) => pc.addTrack(t, cameraStream));
+  // Already sharing when this peer arrives? Send them the screen too.
+  if (screenStream) {
+    entry.screenSender = pc.addTrack(screenStream.getVideoTracks()[0], screenStream);
+  }
 
+  pc.onnegotiationneeded = async () => {
+    try {
+      entry.makingOffer = true;
+      await pc.setLocalDescription(); // implicit createOffer
+      send({ type: "offer", to: peerId, nick, payload: JSON.stringify(pc.localDescription) });
+    } catch (err) {
+      console.warn("negotiationneeded", err);
+    } finally {
+      entry.makingOffer = false;
+    }
+  };
   pc.onicecandidate = (e) => {
     if (e.candidate) send({ type: "candidate", to: peerId, payload: JSON.stringify(e.candidate) });
   };
   pc.ontrack = (e) => {
-    addTile(peerId, entry.nick, e.streams[0], false);
+    routeRemoteTrack(peerId, entry, e);
     updateCallPill();
   };
   pc.onconnectionstatechange = () => {
@@ -498,12 +678,23 @@ async function createPeer(peerId, peerNick, initiator) {
     if (pc.connectionState === "failed" || pc.connectionState === "closed") removePeer(peerId);
   };
 
-  if (initiator) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    send({ type: "offer", to: peerId, nick, payload: JSON.stringify(offer) });
-  }
+  // addTrack above fires negotiationneeded, which sends the offer for us.
+  void initiator;
   return pc;
+}
+
+// routeRemoteTrack decides whether an incoming stream is a peer's camera or
+// their screen. The track alone doesn't say, so peers announce their screen's
+// stream id in their `state` message.
+function routeRemoteTrack(peerId, entry, e) {
+  const stream = e.streams[0];
+  if (!stream) return;
+  const st = peerState.get(peerId);
+  if (st && st.screenId && stream.id === st.screenId) {
+    addTile(peerId + "-screen", entry.nick + "'s screen", stream, false);
+  } else {
+    addTile(peerId, entry.nick, stream, false);
+  }
 }
 
 function removePeer(peerId) {
@@ -533,14 +724,14 @@ function removePeer(peerId) {
 // RMS crosses a threshold we ring their tile green. This doubles as a "is my mic
 // actually picking me up?" check for yourself.
 let audioCtx = null;
-const vadAttached = new Set();
+const vadTimers = new Map(); // tileId -> interval id (also "is attached?")
 
 const SPEAK_ON = 0.035;   // RMS to start showing as speaking
 const SPEAK_OFF = 0.020;  // drop below this to stop (hysteresis avoids flicker)
 const HANG_MS = 350;      // keep the ring this long after you stop talking
 
 function attachVAD(tileId, stream) {
-  if (vadAttached.has(tileId) || !stream.getAudioTracks().length) return;
+  if (vadTimers.has(tileId) || !stream.getAudioTracks().length) return;
   audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === "suspended") audioCtx.resume();
 
@@ -548,7 +739,6 @@ function attachVAD(tileId, stream) {
   analyser.fftSize = 512;
   analyser.smoothingTimeConstant = 0.4;
   audioCtx.createMediaStreamSource(stream).connect(analyser);
-  vadAttached.add(tileId);
 
   const buf = new Uint8Array(analyser.fftSize);
   let speaking = false, quietSince = 0;
@@ -579,12 +769,22 @@ function attachVAD(tileId, stream) {
   // in background tabs, which froze the ring mid-state until you looked back.
   const timer = setInterval(() => {
     if (!document.getElementById(tileId)) { // tile gone: stop polling
-      clearInterval(timer);
-      vadAttached.delete(tileId);
+      detachVAD(tileId);
       return;
     }
     tick();
   }, 100);
+  vadTimers.set(tileId, timer);
+}
+
+// detachVAD stops a tile's level poll. Needed when the audio source changes:
+// the analyser is bound to the old track and would otherwise go silent forever.
+function detachVAD(tileId) {
+  const t = vadTimers.get(tileId);
+  if (t) clearInterval(t);
+  vadTimers.delete(tileId);
+  const tile = document.getElementById(tileId);
+  if (tile) tile.classList.remove("speaking");
 }
 
 // ---- Avatars (match the chat client's initials style) ----

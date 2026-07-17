@@ -24,6 +24,36 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.6.0
+
+Backwards compatible (protocol 1). The `state` message gains an additive
+`screenId` field; older clients ignore it.
+
+**Added**
+- **Screen sharing now runs alongside your camera** instead of replacing it —
+  people expect to see your face while you present. The screen goes out as a
+  second video track, so peers get a separate "<name>'s screen" tile next to
+  their camera tile. This needed real renegotiation, so the call now implements
+  the **perfect negotiation** pattern (deterministic polite/impolite tiebreak on
+  peer id), which also makes simultaneous shares safe instead of wedging the
+  connection.
+- **Settings panel (⚙)** for set-once-and-keep preferences, which persist in
+  localStorage across calls:
+  - **Microphone** and **camera** pickers. Switching uses `replaceTrack`, so
+    there's no renegotiation and peers see no interruption. Saved devices are
+    reused on the next call (falling back if unplugged).
+  - **Mirror my video** moved here from the toolbar. Self-view only — peers
+    always see you un-mirrored, and the screen share is never mirrored.
+
+**Changed**
+- Share screen is now a primary toolbar action; it was easy to miss in a
+  crowded, wrapping bar.
+
+**Not yet on Android**: the settings panel, device pickers, and simultaneous
+camera+screen are web-only; Android still swaps the camera for the screen.
+
+---
+
 ## 1.5.0
 
 Backwards compatible (protocol 1). Adds an `edited_at` column via an idempotent
