@@ -9,6 +9,8 @@ import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,7 +54,11 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private var camOn = true
 
     private val tiles = HashMap<String, Tile>()
-    private val peerState = HashMap<String, Pair<Boolean, Boolean>>() // id -> (video, audio)
+    // peerId -> (video, audio, screenId). screenId names the stream carrying
+    // their screen share, so we can tell it apart from their camera.
+    private val peerState = HashMap<String, Triple<Boolean, Boolean, String>>()
+    // peerId -> their video tracks and the stream each arrived on.
+    private val remoteTracks = HashMap<String, MutableList<Pair<VideoTrack, String>>>()
 
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -93,6 +99,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.flipBtn.setOnClickListener { engine?.switchCamera() }
         binding.shareBtn.setOnClickListener { if (sharing) stopScreenShare() else requestScreenShare() }
         binding.leaveBtn.setOnClickListener { leaveCall() }
+        binding.settingsBtn.setOnClickListener { toggleSettings() }
+        setupSettingsPanel()
 
         binding.micBtn.setOnClickListener {
             micOn = !micOn
@@ -104,9 +112,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         }
         binding.camBtn.setOnClickListener {
             camOn = !camOn
-            if (!sharing) engine?.setCameraEnabled(camOn)
+            engine?.setCameraEnabled(camOn)
             binding.camBtn.text = if (camOn) "📷" else "🚫"
-            tiles[LOCAL_ID]?.videoOn = camOn || sharing
+            tiles[LOCAL_ID]?.videoOn = camOn
             refreshTile(LOCAL_ID)
             broadcastState()
         }
@@ -149,9 +157,63 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         tiles.values.forEach { it.renderer.release() }
         tiles.clear()
         peerState.clear()
+        remoteTracks.clear()
         binding.videoGrid.removeAllViews()
         binding.callStep.visibility = View.GONE
         binding.lobbyStep.visibility = View.VISIBLE
+    }
+
+    // ---- Settings panel ----
+
+    private fun toggleSettings() {
+        val p = binding.settingsPanel
+        p.visibility = if (p.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+    }
+
+    private fun setupSettingsPanel() {
+        // Mirror: self-view only, remembered across calls.
+        binding.mirrorChk.isChecked = CallSettings.mirror(this)
+        binding.mirrorChk.setOnCheckedChangeListener { _, on ->
+            CallSettings.setMirror(this, on)
+            applyMirror()
+        }
+
+        // Cameras.
+        val cams = CallSettings.cameras(this)
+        binding.cameraSelect.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, cams.map { it.second })
+        val savedCam = CallSettings.cameraName(this)
+        cams.indexOfFirst { it.first == savedCam }.takeIf { it >= 0 }
+            ?.let { binding.cameraSelect.setSelection(it) }
+        binding.cameraSelect.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val name = cams.getOrNull(pos)?.first ?: return
+                if (name == CallSettings.cameraName(this@MainActivity)) return
+                CallSettings.setCameraName(this@MainActivity, name)
+                engine?.setCameraDevice(name)
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        // Audio route (Android 12+ only; see CallSettings).
+        val audio = CallSettings.audioOptions(this)
+        binding.audioSelect.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, audio.map { it.label })
+        binding.audioSelect.isEnabled = audio.size > 1
+        binding.audioSelect.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val opt = audio.getOrNull(pos) ?: return
+                if (!CallSettings.applyAudioOption(this@MainActivity, opt.id) && opt.id >= 0) {
+                    toast("Couldn't switch audio device")
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+    }
+
+    /** Mirror only our own camera tile — never the screen, never what peers get. */
+    private fun applyMirror() {
+        tiles[LOCAL_ID]?.renderer?.setMirror(CallSettings.mirror(this))
     }
 
     // ---- Screen sharing ----
@@ -169,22 +231,27 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val capturer = ScreenCapturerAndroid(data, object : android.media.projection.MediaProjection.Callback() {
             override fun onStop() = runOnUiThread { stopScreenShare() }
         })
-        engine?.switchToScreen(capturer)
+        // Tell peers our screen's stream id BEFORE the track arrives, so they can
+        // tell it apart from our camera when it does.
         sharing = true
+        broadcastState()
+        engine?.startScreenShare(capturer) // adds a 2nd track; camera keeps running
         binding.shareBtn.text = getString(R.string.stop_sharing)
     }
 
     private fun stopScreenShare() {
         if (!sharing) return
-        engine?.switchToCamera()
+        engine?.stopScreenShare()
         stopService(Intent(this, ScreenCaptureService::class.java))
         sharing = false
         binding.shareBtn.text = getString(R.string.share_screen)
+        broadcastState()
     }
 
     // ---- SignalingListener (WebSocket thread) ----
 
     override fun onWelcome(selfId: String, peers: List<RemotePeer>) = runOnUiThread {
+        engine?.selfId = selfId // needed for the renegotiation polite tiebreak
         broadcastState() // announce our initial mic/camera state to the room
         peers.forEach { engine?.offerTo(it.id, it.nick) }
         binding.status.text = if (peers.isEmpty()) getString(R.string.waiting) else getString(R.string.connecting)
@@ -195,10 +262,18 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         broadcastState()
     }
 
-    override fun onState(fromId: String, video: Boolean, audio: Boolean) = runOnUiThread {
-        peerState[fromId] = video to audio
-        applyState(fromId, video, audio)
-    }
+    override fun onState(fromId: String, video: Boolean, audio: Boolean, screenId: String) =
+        runOnUiThread {
+            peerState[fromId] = Triple(video, audio, screenId)
+            applyState(fromId, video, audio)
+            // The screen id may have only just arrived — re-route their tracks.
+            routeTracks(fromId, tiles[fromId]?.label?.text?.toString() ?: "peer")
+            if (screenId.isEmpty()) { // they stopped sharing
+                tiles.remove("$fromId-screen")?.let { t ->
+                    binding.videoGrid.removeView(t.root); t.renderer.release()
+                }
+            }
+        }
 
     override fun onSpeaking(id: String, speaking: Boolean) = runOnUiThread {
         tiles[id]?.speaking = speaking
@@ -206,7 +281,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     }
 
     private fun broadcastState() {
-        signaling?.sendState(camOn || sharing, micOn)
+        // Camera and screen are independent tracks now, so `video` is just the
+        // camera; the screen is identified by its stream id.
+        signaling?.sendState(camOn, micOn, if (sharing) SCREEN_STREAM_ID else "")
     }
 
     override fun onOffer(fromId: String, nick: String, sdpJson: JSONObject) =
@@ -228,9 +305,36 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         attachRenderer(LOCAL_ID, nick, track)
     }
 
-    override fun onRemoteVideo(peerId: String, nick: String, track: VideoTrack) = runOnUiThread {
-        attachRenderer(peerId, nick, track)
-        binding.status.text = getString(R.string.connected)
+    override fun onRemoteVideo(peerId: String, nick: String, track: VideoTrack, streamId: String) =
+        runOnUiThread {
+            // Remember it: a peer's `state` (which names their screen stream) can
+            // arrive after the track, so we may need to re-decide later.
+            remoteTracks.getOrPut(peerId) { mutableListOf() }.add(track to streamId)
+            routeTracks(peerId, nick)
+            binding.status.text = getString(R.string.connected)
+        }
+
+    /** Decide which of a peer's tracks is their camera and which is their screen. */
+    private fun routeTracks(peerId: String, nick: String) {
+        val screenId = peerState[peerId]?.third.orEmpty()
+        for ((track, streamId) in remoteTracks[peerId].orEmpty()) {
+            if (streamId.isNotEmpty() && streamId == screenId) {
+                attachRenderer("$peerId-screen", "$nick's screen", track)
+            } else {
+                attachRenderer(peerId, nick, track)
+            }
+        }
+    }
+
+    override fun onLocalScreen(track: VideoTrack) = runOnUiThread {
+        attachRenderer(LOCAL_SCREEN_ID, "Your screen", track)
+    }
+
+    override fun onLocalScreenEnded() = runOnUiThread {
+        tiles.remove(LOCAL_SCREEN_ID)?.let { t ->
+            binding.videoGrid.removeView(t.root)
+            t.renderer.release()
+        }
     }
 
     override fun onPeerClosed(peerId: String) = runOnUiThread {
@@ -238,7 +342,12 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             binding.videoGrid.removeView(t.root)
             t.renderer.release()
         }
+        tiles.remove("$peerId-screen")?.let { t ->
+            binding.videoGrid.removeView(t.root)
+            t.renderer.release()
+        }
         peerState.remove(peerId)
+        remoteTracks.remove(peerId)
     }
 
     // ---- Video grid ----
@@ -266,7 +375,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val renderer = SurfaceViewRenderer(this).apply {
             init(eglBase.eglBaseContext, null)
             setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-            setMirror(key == LOCAL_ID)
+            setMirror(key == LOCAL_ID && CallSettings.mirror(this@MainActivity))
         }
         val avatar = TextView(this).apply {
             text = initialsOf(nick)
@@ -311,7 +420,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         track.addSink(renderer)
 
         // State may have arrived before this peer's track did.
-        peerState[key]?.let { (video, audio) -> applyState(key, video, audio) }
+        peerState[key]?.let { (video, audio, _) -> applyState(key, video, audio) }
         refreshTile(key)
     }
 

@@ -16,7 +16,9 @@ import org.webrtc.MediaConstraints
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnection.IceServer
+import org.webrtc.MediaStream
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
@@ -43,15 +45,32 @@ interface Signaler {
  */
 interface RtcEvents {
     fun onLocalVideo(track: VideoTrack)
-    fun onRemoteVideo(peerId: String, nick: String, track: VideoTrack)
+
+    /**
+     * A remote video arrived. [streamId] identifies which of the peer's streams
+     * it belongs to — the caller matches it against the screen id the peer
+     * announced to tell a screen share apart from a camera.
+     */
+    fun onRemoteVideo(peerId: String, nick: String, track: VideoTrack, streamId: String)
     fun onPeerClosed(peerId: String)
 
     /** Someone started/stopped speaking. [id] is [LOCAL_ID] or a peer id. */
     fun onSpeaking(id: String, speaking: Boolean) {}
+
+    /** Our own screen capture started / stopped. */
+    fun onLocalScreen(track: VideoTrack) {}
+    fun onLocalScreenEnded() {}
 }
 
-/** Tile id used for our own video/audio. */
+/** Tile id used for our own camera/audio. */
 const val LOCAL_ID = "local"
+
+/** Tile id used for our own screen share. */
+const val LOCAL_SCREEN_ID = "local-screen"
+
+/** Stream ids we publish. The screen one is announced to peers in `state`. */
+const val CAM_STREAM_ID = "tb-cam"
+const val SCREEN_STREAM_ID = "tb-screen"
 
 /**
  * RtcEngine owns the shared local media and one [PeerConnection] per remote
@@ -80,7 +99,30 @@ class RtcEngine(
     private val peers = ConcurrentHashMap<String, PeerBox>()
     private val nicks = ConcurrentHashMap<String, String>()
 
-    private class PeerBox(val pc: PeerConnection)
+    /** Our own peer id, from the server's welcome. Used for the polite tiebreak. */
+    var selfId: String? = null
+
+    // The screen is a SECOND video track, so the camera keeps streaming while
+    // you present (rather than being swapped out).
+    private var screenSource: VideoSource? = null
+    private var screenTrack: VideoTrack? = null
+    private var screenHelper: SurfaceTextureHelper? = null
+    private var screenCapturer: VideoCapturer? = null
+
+    /** True while we're sharing our screen. */
+    val sharingScreen: Boolean get() = screenTrack != null
+
+    private class PeerBox(val pc: PeerConnection) {
+        /**
+         * Glare handling for renegotiation ("perfect negotiation"): if both
+         * sides offer at once, only the impolite peer ignores the incoming
+         * offer. The tiebreak must be deterministic and opposite on each side.
+         */
+        var polite = false
+        var makingOffer = false
+        var ignoreOffer = false
+        var screenSender: org.webrtc.RtpSender? = null
+    }
 
     // Speaking detection. Local level comes from the mic's raw samples; remote
     // levels come from each peer connection's inbound-rtp stats (Android WebRTC
@@ -197,16 +239,41 @@ class RtcEngine(
         }, MediaConstraints())
     }
 
-    /** As responder: apply the remote offer and answer it. */
+    /**
+     * As responder: apply the remote offer and answer it. This handles both the
+     * initial offer and later re-offers (e.g. a peer adding a screen track).
+     */
     fun onRemoteOffer(peerId: String, nick: String, sdpJson: JSONObject) {
         val box = createPeer(peerId, nick)
-        box.pc.setRemoteDescription(SdpAdapter(), sdpJson.toSdp())
-        box.pc.createAnswer(object : SdpAdapter() {
-            override fun onCreateSuccess(sdp: SessionDescription) {
-                box.pc.setLocalDescription(SdpAdapter(), sdp)
-                signaler.sendAnswer(peerId, sdp.toJson())
-            }
-        }, MediaConstraints())
+
+        // Glare: if we're mid-offer ourselves, only the polite peer gives way.
+        val collision = box.makingOffer ||
+            box.pc.signalingState() != PeerConnection.SignalingState.STABLE
+        box.ignoreOffer = !box.polite && collision
+        if (box.ignoreOffer) return
+
+        val applyRemote = {
+            box.pc.setRemoteDescription(object : SdpAdapter() {
+                override fun onSetSuccess() {
+                    box.pc.createAnswer(object : SdpAdapter() {
+                        override fun onCreateSuccess(sdp: SessionDescription) {
+                            box.pc.setLocalDescription(SdpAdapter(), sdp)
+                            signaler.sendAnswer(peerId, sdp.toJson())
+                        }
+                    }, MediaConstraints())
+                }
+            }, sdpJson.toSdp())
+        }
+
+        if (collision) {
+            // Polite peer: roll our own offer back first, then take theirs.
+            box.pc.setLocalDescription(object : SdpAdapter() {
+                override fun onSetSuccess() = applyRemote()
+                override fun onSetFailure(error: String?) = applyRemote()
+            }, SessionDescription(SessionDescription.Type.ROLLBACK, ""))
+        } else {
+            applyRemote()
+        }
     }
 
     fun onRemoteAnswer(peerId: String, sdpJson: JSONObject) {
@@ -239,10 +306,13 @@ class RtcEngine(
             override fun onIceCandidate(candidate: IceCandidate) {
                 signaler.sendCandidate(peerId, candidate.toJson())
             }
-            override fun onTrack(transceiver: org.webrtc.RtpTransceiver) {
-                val t = transceiver.receiver.track()
+            // onAddTrack (not onTrack) because it hands us the MediaStreams —
+            // we need the stream id to tell a screen share from a camera.
+            override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
+                val t = receiver.track()
                 if (t is VideoTrack) {
-                    events.onRemoteVideo(peerId, nicks[peerId] ?: "peer", t)
+                    val streamId = streams.firstOrNull()?.id ?: ""
+                    events.onRemoteVideo(peerId, nicks[peerId] ?: "peer", t, streamId)
                 }
             }
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
@@ -252,11 +322,16 @@ class RtcEngine(
             }
         }) ?: error("failed to create peer connection")
 
-        val streamIds = listOf("stream0")
-        localAudio?.let { pc.addTrack(it, streamIds) }
-        localVideo?.let { pc.addTrack(it, streamIds) }
-
         val box = PeerBox(pc)
+        // Deterministic, opposite on each side — see PeerBox.polite.
+        box.polite = (selfId ?: "") < peerId
+
+        val camStream = listOf(CAM_STREAM_ID)
+        localAudio?.let { pc.addTrack(it, camStream) }
+        localVideo?.let { pc.addTrack(it, camStream) }
+        // Already sharing when this peer joins? Send them the screen too.
+        screenTrack?.let { box.screenSender = pc.addTrack(it, listOf(SCREEN_STREAM_ID)) }
+
         peers[peerId] = box
         return box
     }
@@ -264,31 +339,84 @@ class RtcEngine(
     // ---- Screen sharing: swap the capturer feeding the shared video source ----
 
     /**
-     * Start feeding video from [screenCapturer] (a ScreenCapturerAndroid built
-     * by the activity from the MediaProjection permission result). The same
-     * VideoSource/track is reused, so peers see the switch with no renegotiation.
+     * Start sharing [capturer] (a ScreenCapturerAndroid built by the activity
+     * from the MediaProjection result) as an ADDITIONAL video track, so the
+     * camera keeps streaming alongside it. Adding a track means the connection
+     * must be renegotiated, which we do explicitly per peer.
      */
-    fun switchToScreen(screenCapturer: VideoCapturer) {
-        swapCapturer(screenCapturer, 1280, 720, 15)
+    fun startScreenShare(capturer: VideoCapturer) {
+        if (screenTrack != null) return
+
+        val src = factory.createVideoSource(true) // isScreencast
+        val helper = SurfaceTextureHelper.create("ScreenCapture", eglBase.eglBaseContext)
+        capturer.initialize(helper, appContext, src.capturerObserver)
+        capturer.startCapture(1280, 720, 15)
+
+        val track = factory.createVideoTrack("screen0", src)
+        screenSource = src
+        screenHelper = helper
+        screenCapturer = capturer
+        screenTrack = track
+
+        for ((peerId, box) in peers) {
+            box.screenSender = box.pc.addTrack(track, listOf(SCREEN_STREAM_ID))
+            renegotiate(peerId, box)
+        }
+        events.onLocalScreen(track)
     }
 
-    /** Revert to the camera capturer. */
-    fun switchToCamera() {
-        val cam = cameraCapturer ?: return
-        // The camera capturer was disposed of only on close(); it can be
-        // re-started here because we never dispose it while the call is live.
-        swapCapturer(cam, 1280, 720, 30)
-    }
-
-    private fun swapCapturer(next: VideoCapturer, w: Int, h: Int, fps: Int) {
-        val helper = surfaceHelper ?: return
+    /** Stop sharing and drop the extra track from every peer. */
+    fun stopScreenShare() {
+        if (screenTrack == null) return
+        for ((peerId, box) in peers) {
+            box.screenSender?.let { sender ->
+                runCatching { box.pc.removeTrack(sender) }
+                renegotiate(peerId, box)
+            }
+            box.screenSender = null
+        }
         try {
-            currentCapturer?.stopCapture()
+            screenCapturer?.stopCapture()
         } catch (_: InterruptedException) {
         }
-        next.initialize(helper, appContext, videoSource.capturerObserver)
-        next.startCapture(w, h, fps)
-        currentCapturer = next
+        screenCapturer?.dispose()
+        screenHelper?.dispose()
+        screenSource?.dispose()
+        screenCapturer = null
+        screenHelper = null
+        screenSource = null
+        screenTrack = null
+        events.onLocalScreenEnded()
+    }
+
+    /**
+     * renegotiate re-offers to one peer after our track set changed. We only
+     * initiate this for screen add/remove; incoming re-offers (e.g. a web peer
+     * starting their own share) are handled by [onRemoteOffer].
+     */
+    private fun renegotiate(peerId: String, box: PeerBox) {
+        box.makingOffer = true
+        box.pc.createOffer(object : SdpAdapter() {
+            override fun onCreateSuccess(sdp: SessionDescription) {
+                box.pc.setLocalDescription(object : SdpAdapter() {
+                    override fun onSetSuccess() {
+                        signaler.sendOffer(peerId, sdp.toJson())
+                        box.makingOffer = false
+                    }
+                    override fun onSetFailure(error: String?) {
+                        box.makingOffer = false
+                    }
+                }, sdp)
+            }
+            override fun onCreateFailure(error: String?) {
+                box.makingOffer = false
+            }
+        }, MediaConstraints())
+    }
+
+    /** Switch to a specific camera by enumerator device name. */
+    fun setCameraDevice(deviceName: String) {
+        (cameraCapturer as? CameraVideoCapturer)?.switchCamera(null, deviceName)
     }
 
     fun switchCamera() {

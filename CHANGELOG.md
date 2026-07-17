@@ -24,6 +24,33 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.7.0
+
+Android reaches parity with the web client's 1.6.0 call features. Backwards
+compatible (protocol 1); the two interoperate — an Android screen share shows as
+a separate tile to a web peer and vice versa.
+
+**Added (Android)**
+- **Screen sharing alongside the camera**, as on web: the screen is a second
+  video track and peers get a separate "<name>'s screen" tile. Android already
+  answered incoming re-offers, so renegotiation is initiated explicitly only when
+  the screen track is added/removed — with the same polite/impolite glare
+  tiebreak as the web, and SDP rollback for the polite side.
+- Track routing now uses `onAddTrack` (not `onTrack`) because it supplies the
+  MediaStreams — the stream id is what tells a screen apart from a camera. State
+  can arrive after the track, so tracks are re-routed when it does.
+- **In-call settings panel (⚙)**: camera picker, audio source, and a **mirror**
+  toggle that persists across calls (self-view only; the screen share is never
+  mirrored).
+
+**Note on Android audio source**: WebRTC's audio device module always captures
+from the system *communication* device, so unlike the web there's no direct mic
+picker — the setting chooses the communication **route** (built-in, wired,
+Bluetooth…) via `AudioManager`. That API is Android 12+; older devices show
+"System default" only.
+
+---
+
 ## 1.6.0
 
 Backwards compatible (protocol 1). The `state` message gains an additive

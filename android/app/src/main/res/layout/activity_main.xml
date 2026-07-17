@@ -145,6 +145,13 @@
                 android:orientation="horizontal">
 
                 <Button
+                    android:id="@+id/settingsBtn"
+                    style="?android:attr/buttonStyleSmall"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⚙" />
+
+                <Button
                     android:id="@+id/micBtn"
                     style="?android:attr/buttonStyleSmall"
                     android:layout_width="wrap_content"
@@ -175,6 +182,58 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/leave" />
+            </LinearLayout>
+
+            <!-- Devices & preferences: set once and keep. -->
+            <LinearLayout
+                android:id="@+id/settingsPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:padding="12dp"
+                android:layout_marginTop="8dp"
+                android:background="#12151C">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/audio_source"
+                    android:textColor="#8B93A7"
+                    android:textSize="12sp" />
+
+                <Spinner
+                    android:id="@+id/audioSelect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/camera"
+                    android:textColor="#8B93A7"
+                    android:textSize="12sp"
+                    android:paddingTop="8dp" />
+
+                <Spinner
+                    android:id="@+id/cameraSelect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <CheckBox
+                    android:id="@+id/mirrorChk"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/mirror_my_video"
+                    android:textColor="#E7E9EE"
+                    android:paddingTop="8dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/mirror_note"
+                    android:textColor="#5B6273"
+                    android:textSize="11sp" />
             </LinearLayout>
 
             <GridLayout
