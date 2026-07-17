@@ -519,6 +519,102 @@ func cmdAccept(c *client, args []string) error {
 	return nil
 }
 
+// cmdWait blocks on the events socket until the next incoming message (or
+// friend request / group invite), prints one line describing it, and exits.
+//
+// It's meant to be run in the background: when a message arrives the process
+// exits, which wakes the agent, who reads the line, replies with `tb send`, and
+// re-arms another `tb wait`. That makes replies event-driven and near-instant
+// without any polling. An optional -timeout lets a supervisor re-arm on a
+// heartbeat even during silence.
+func cmdWait(c *client, args []string) error {
+	fs := flag.NewFlagSet("wait", flag.ExitOnError)
+	timeout := fs.Duration("timeout", 0, "exit after this long even with no message (0 = wait forever)")
+	fs.Parse(args)
+
+	u, err := url.Parse(c.cfg.Server)
+	if err != nil {
+		return err
+	}
+	scheme := "wss"
+	if u.Scheme == "http" {
+		scheme = "ws"
+	}
+	hdr := http.Header{}
+	hdr.Set("Cookie", "tb_session="+c.cfg.Session)
+	conn, resp, err := websocket.DefaultDialer.Dial(scheme+"://"+u.Host+"/api/events", hdr)
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			return errors.New("session expired — run `tb login`")
+		}
+		return err
+	}
+	defer conn.Close()
+
+	var me user
+	_ = c.do("GET", "/api/me", nil, &me)
+
+	if *timeout > 0 {
+		conn.SetReadDeadline(time.Now().Add(*timeout))
+	}
+	for {
+		var ev struct {
+			Type    string          `json:"type"`
+			Nick    string          `json:"nick"`
+			Message json.RawMessage `json:"message"`
+		}
+		if err := conn.ReadJSON(&ev); err != nil {
+			// A read timeout is a clean "nothing arrived" exit, not an error.
+			if *timeout > 0 {
+				fmt.Println("(idle)")
+				return nil
+			}
+			return err
+		}
+		switch ev.Type {
+		case "message", "group_message":
+			var m message
+			if json.Unmarshal(ev.Message, &m) != nil || m.SenderID == me.ID {
+				continue // our own echo; keep waiting
+			}
+			who, isGroup := c.resolveConvo(m.SenderID, m.GroupID)
+			target := who
+			if isGroup {
+				target = who // already "#name"
+			}
+			body := m.Body
+			if body == "" && m.ImageURL != "" {
+				body = "[image]"
+			}
+			fmt.Printf("NEW from %s: %s\n", target, body)
+			return nil
+		case "friend_request":
+			fmt.Printf("FRIEND-REQUEST from %s\n", ev.Nick)
+			return nil
+		case "group_invite":
+			fmt.Printf("GROUP-INVITE from %s\n", ev.Nick)
+			return nil
+		}
+	}
+}
+
+// resolveConvo names the conversation a pushed message belongs to.
+func (c *client) resolveConvo(senderID, groupID int64) (name string, isGroup bool) {
+	all, err := c.convos()
+	if err != nil {
+		return fmt.Sprintf("user %d", senderID), false
+	}
+	for _, cv := range all {
+		if cv.isGroup && cv.id == groupID {
+			return cv.name, true
+		}
+		if !cv.isGroup && cv.id == senderID {
+			return cv.name, false
+		}
+	}
+	return fmt.Sprintf("user %d", senderID), groupID != 0
+}
+
 // cmdWatch live-tails incoming messages over the same events socket the apps use.
 func cmdWatch(c *client, args []string) error {
 	u, err := url.Parse(c.cfg.Server)
@@ -592,6 +688,7 @@ func usage() {
   tb send <nick|#group> <message...>          send a message
   tb add <nick>                               send a friend request
   tb accept [nick]                            accept incoming friend request(s)
+  tb wait [-timeout D]                        block until ONE new message, print it, exit
   tb watch                                    live-tail incoming messages
   tb whoami                                   show the logged-in account
 
@@ -623,6 +720,8 @@ func main() {
 		err = cmdAdd(c, args)
 	case "accept":
 		err = cmdAccept(c, args)
+	case "wait":
+		err = cmdWait(c, args)
 	case "watch":
 		err = cmdWatch(c, args)
 	case "whoami":
