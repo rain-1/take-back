@@ -42,6 +42,8 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     private var friendId: Long = 0
     private lateinit var friendNick: String
     private var myId: Long = 0
+    private val reactionRows = HashMap<Long, android.widget.LinearLayout>()
+    private val reactionState = HashMap<Long, List<com.takeback.app.net.Reaction>>()
 
     private val pickImage = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -86,6 +88,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
                 myId = ApiClient.me().id
                 val msgs = ApiClient.conversation(friendId)
                 binding.messages.removeAllViews()
+                reactionRows.clear(); reactionState.clear()
                 msgs.forEach { addMessage(it) }
                 scrollToBottom()
             } catch (_: Exception) { /* transient */ }
@@ -169,13 +172,48 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             }
         }
 
+        // Reactions row under the bubble; long-press the bubble to react.
+        val rxRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = 4; layoutParams = lp
+        }
+        reactionRows[m.id] = rxRow
+        reactionState[m.id] = m.reactions
+        ReactionsUi.render(this, rxRow, m.reactions) { emoji, add -> react(m.id, emoji, add) }
+        bubble.setOnLongClickListener {
+            ReactionsUi.showPicker(this) { emoji ->
+                val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
+                react(m.id, emoji, !(existing?.mine ?: false))
+            }
+            true
+        }
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (mine) Gravity.END else Gravity.START
+            addView(bubble)
+            addView(rxRow)
+        }
         val row = LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).also { it.topMargin = 8 }
             gravity = if (mine) Gravity.END else Gravity.START
-            addView(bubble)
+            addView(column)
         }
         binding.messages.addView(row)
     }
+
+    private fun react(messageId: Long, emoji: String, add: Boolean) {
+        lifecycleScope.launch { runCatching { ApiClient.react("dm", messageId, emoji, add) } }
+    }
+
+    override fun onReaction(scope: String, messageId: Long, reactions: List<com.takeback.app.net.Reaction>) =
+        runOnUiThread {
+            if (scope != "dm") return@runOnUiThread
+            reactionState[messageId] = reactions
+            reactionRows[messageId]?.let { row ->
+                ReactionsUi.render(this, row, reactions) { emoji, add -> react(messageId, emoji, add) }
+            }
+        }
 
     private fun bubbleBg(mine: Boolean): GradientDrawable = GradientDrawable().apply {
         cornerRadius = 28f

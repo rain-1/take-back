@@ -36,10 +36,14 @@ Message reactions (web + backend). Backwards compatible (protocol 1); the new
 - Reactions sync live over `/api/events`, and are embedded in message listings
   so they're there on load.
 
+**Android** has reactions too: reaction chips under each bubble, long-press a
+message to pick an emoji, tap a chip to toggle yours, and long-press a chip to
+see who reacted (mobile has no hover). Same wire format as web, so a reaction
+from one shows on the other.
+
 Reactions are scoped (dm/group, since the two message tables have separate id
 spaces), authorized (you can only react where you can see the message — DM
-participants or group members), and toggling is idempotent. Android reactions
-are still to come.
+participants or group members), and toggling is idempotent.
 
 ---
 

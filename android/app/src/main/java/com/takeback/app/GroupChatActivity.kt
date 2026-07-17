@@ -47,6 +47,8 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     private lateinit var callCode: String
     private var myId: Long = 0
     private var members: List<GroupMember> = emptyList()
+    private val reactionRows = HashMap<Long, android.widget.LinearLayout>()
+    private val reactionState = HashMap<Long, List<com.takeback.app.net.Reaction>>()
 
     private val pickImage = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -95,6 +97,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 renderMembers()
                 val msgs = ApiClient.groupConversation(groupId)
                 binding.messages.removeAllViews()
+                reactionRows.clear(); reactionState.clear()
                 msgs.forEach { addMessage(it) }
                 scrollToBottom()
             } catch (_: Exception) { /* transient */ }
@@ -228,12 +231,47 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             }
         }
 
+        val rxRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = 4; layoutParams = lp
+        }
+        reactionRows[m.id] = rxRow
+        reactionState[m.id] = m.reactions
+        ReactionsUi.render(this, rxRow, m.reactions) { emoji, add -> react(m.id, emoji, add) }
+
+        bubble.setOnLongClickListener {
+            ReactionsUi.showPicker(this) { emoji ->
+                val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
+                react(m.id, emoji, !(existing?.mine ?: false))
+            }
+            true
+        }
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (mine) Gravity.END else Gravity.START
+            addView(bubble)
+            addView(rxRow)
+        }
         binding.messages.addView(LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).also { it.topMargin = 8 }
             gravity = if (mine) Gravity.END else Gravity.START
-            addView(bubble)
+            addView(column)
         })
     }
+
+    private fun react(messageId: Long, emoji: String, add: Boolean) = lifecycleScope.launch {
+        runCatching { ApiClient.react("group", messageId, emoji, add) }
+    }
+
+    override fun onReaction(scope: String, messageId: Long, reactions: List<com.takeback.app.net.Reaction>) =
+        runOnUiThread {
+            if (scope != "group") return@runOnUiThread
+            reactionState[messageId] = reactions
+            reactionRows[messageId]?.let { row ->
+                ReactionsUi.render(this, row, reactions) { emoji, add -> react(messageId, emoji, add) }
+            }
+        }
 
     private fun scrollToBottom() = binding.scroll.post { binding.scroll.fullScroll(View.FOCUS_DOWN) }
 

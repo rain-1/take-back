@@ -41,6 +41,9 @@ data class Friend(
     val lastActivity: Long = 0, // unix time of the last message, 0 if none
 )
 
+/** One emoji aggregated across everyone who used it on a message. */
+data class Reaction(val emoji: String, val count: Int, val nicks: List<String>, val mine: Boolean)
+
 data class Message(
     val id: Long,
     val senderId: Long,
@@ -49,6 +52,7 @@ data class Message(
     val imageUrl: String?,   // absolute URL, or null
     val thumbUrl: String?,
     val created: Long,
+    val reactions: List<Reaction> = emptyList(),
 )
 
 data class Group(
@@ -74,6 +78,7 @@ data class GroupMessage(
     val imageUrl: String?,
     val thumbUrl: String?,
     val created: Long,
+    val reactions: List<Reaction> = emptyList(),
 )
 
 /**
@@ -160,7 +165,31 @@ object ApiClient {
         cookieJar.clear()
     }
 
-    suspend fun me(): User = parseUser(get("/api/me"))
+    /** Our own user id, cached so reaction events can compute the `mine` flag. */
+    @Volatile var myId: Long = 0
+        private set
+
+    suspend fun me(): User = parseUser(get("/api/me")).also { myId = it.id }
+
+    /**
+     * Aggregate a raw per-user reaction list (as pushed in a reaction event)
+     * into per-emoji groups, matching the server's message-view shape.
+     */
+    fun aggregateReactions(arr: JSONArray?): List<Reaction> {
+        if (arr == null) return emptyList()
+        val order = mutableListOf<String>()
+        data class Acc(var count: Int, val nicks: MutableList<String>, var mine: Boolean)
+        val byEmoji = HashMap<String, Acc>()
+        for (i in 0 until arr.length()) {
+            val r = arr.getJSONObject(i)
+            val emoji = r.getString("emoji")
+            val acc = byEmoji.getOrPut(emoji) { order.add(emoji); Acc(0, mutableListOf(), false) }
+            acc.count++
+            acc.nicks.add(r.optString("nick"))
+            if (r.optLong("userId") == myId) acc.mine = true
+        }
+        return order.map { e -> byEmoji[e]!!.let { Reaction(e, it.count, it.nicks, it.mine) } }
+    }
 
     // ---- friends ----
 
@@ -261,6 +290,12 @@ object ApiClient {
         return parseGroupMessage(JSONObject(post("/api/groups/messages/image", body)))
     }
 
+    /** Add or remove your emoji on a message. scope is "dm" or "group". */
+    suspend fun react(scope: String, messageId: Long, emoji: String, add: Boolean) =
+        post("/api/reactions", jsonBody(JSONObject()
+            .put("scope", scope).put("messageId", messageId)
+            .put("emoji", emoji).put("add", add))).let {}
+
     // ---- low-level ----
 
     private suspend fun get(path: String): String = get(base.toHttpUrl(path))
@@ -307,7 +342,22 @@ object ApiClient {
         imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { mediaUrl(it) },
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
         created = o.getLong("created"),
+        reactions = parseReactions(o.optJSONArray("reactions")),
     )
+
+    private fun parseReactions(arr: JSONArray?): List<Reaction> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).map {
+            val r = arr.getJSONObject(it)
+            val nicksArr = r.optJSONArray("nicks") ?: JSONArray()
+            Reaction(
+                emoji = r.getString("emoji"),
+                count = r.optInt("count"),
+                nicks = (0 until nicksArr.length()).map { i -> nicksArr.getString(i) },
+                mine = r.optBoolean("mine"),
+            )
+        }
+    }
 
     private fun parseGroup(o: JSONObject) = Group(
         id = o.getLong("id"), name = o.getString("name"),
@@ -325,6 +375,7 @@ object ApiClient {
         imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { mediaUrl(it) },
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
         created = o.getLong("created"),
+        reactions = parseReactions(o.optJSONArray("reactions")),
     )
 }
 

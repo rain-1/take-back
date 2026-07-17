@@ -22,6 +22,8 @@ interface EventsListener {
     fun onFriendUpdate() {}
     fun onGroupMessage(message: GroupMessage) {}
     fun onGroupUpdate(groupId: Long) {}
+    /** A message's reactions changed. [reactions] is the fresh aggregate. */
+    fun onReaction(scope: String, messageId: Long, reactions: List<Reaction>) {}
     /** Someone invited me to a group — it needs an accept/decline. */
     fun onGroupInvite(groupId: Long, groupName: String, invitedBy: String) {}
 }
@@ -129,6 +131,15 @@ object Events {
             "group_update" -> {
                 val groupId = msg.optLong("userId") // group id is carried in userId
                 listeners.forEach { it.onGroupUpdate(groupId) }
+            }
+            "reaction" -> {
+                val m = msg.getJSONObject("message")
+                val scope = m.optString("scope")
+                val mid = m.optLong("messageId")
+                // The event carries the raw per-user list; aggregate it here so
+                // the UI gets the same shape as the REST message views.
+                val reactions = ApiClient.aggregateReactions(m.optJSONArray("reactions"))
+                listeners.forEach { it.onReaction(scope, mid, reactions) }
             }
         }
     }
