@@ -24,6 +24,24 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.10.0
+
+**Added**
+- **`cmd/tb`, a command-line client.** Reads and sends messages from a terminal,
+  against the same API as the apps:
+
+      tb login [-register] <nick>     log in (session stored 0600 under ~/.config)
+      tb inbox                        conversations, newest first, with unread
+      tb read [-n N] <nick|#group>    show a conversation, marks it read
+      tb send <nick|#group> <text>    send a message
+      tb add / tb accept              friend requests
+      tb watch                        live-tail incoming messages over /api/events
+
+  It re-logs in silently when a session expires, and orders conversations by
+  recency to match the apps.
+
+---
+
 ## 1.9.0
 
 Android gains the 1.8.0 audio controls. Backwards compatible (protocol 1);
