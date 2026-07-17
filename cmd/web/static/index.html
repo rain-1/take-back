@@ -185,7 +185,9 @@
   .grp-av { width: 36px; flex: none; padding-top: .15rem; }
   .grp-av .avatar { width: 36px; height: 36px; font-size: .82rem; }
   .grp-main { flex: 1; min-width: 0; }
-  .grp-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .1rem; }
+  /* padding-left matches .msg's left padding so the name lines up exactly with
+     the message text below it (they'd otherwise be offset by that padding). */
+  .grp-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .1rem; padding-left: .4rem; }
   .grp-head .name { font-weight: 650; font-size: .9rem; color: var(--text); }
   .grp-head .htime { font-size: .68rem; color: var(--dim); }
 

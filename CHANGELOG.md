@@ -24,6 +24,15 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.15.1
+
+**Fixed**
+- The sender name and message text weren't aligned in the new layout — the name
+  sat a few px left of the text because the message body had left padding the
+  group header didn't. Matched them (verified pixel-aligned).
+
+---
+
 ## 1.15.0
 
 Message-layout redesign (web) from Etheri's feedback. Client-only; no wire
