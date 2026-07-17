@@ -7,11 +7,15 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -59,6 +63,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private val peerState = HashMap<String, Triple<Boolean, Boolean, String>>()
     // peerId -> their video tracks and the stream each arrived on.
     private val remoteTracks = HashMap<String, MutableList<Pair<VideoTrack, String>>>()
+    /** peerId -> playback volume (1.0 = as sent). Kept so it survives re-render. */
+    private val peerVolumes = HashMap<String, Double>()
 
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -144,6 +150,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.callCode.text = roomCode
 
         val engine = RtcEngine(applicationContext, eglBase, this, this).also { this.engine = it }
+        // The settings panel is wired up in onCreate, before this engine exists,
+        // so the saved gain has to be applied here or it would never take effect.
+        engine.micGain = CallSettings.micGain(this)
         engine.startLocalMedia()
 
         val signalUrl = BuildConfig.BASE_URL.replaceFirst(Regex("^http"), "ws").trimEnd('/') + "/ws"
@@ -167,10 +176,105 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
     private fun toggleSettings() {
         val p = binding.settingsPanel
-        p.visibility = if (p.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        val show = p.visibility != View.VISIBLE
+        p.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) { renderVolumes(); startMeter() } else stopMeter()
+    }
+
+    // The meter only runs while the panel is open — no point polling otherwise.
+    private val meterHandler = Handler(Looper.getMainLooper())
+    private var meterRunning = false
+
+    private fun startMeter() {
+        if (meterRunning) return
+        meterRunning = true
+        meterHandler.post(object : Runnable {
+            override fun run() {
+                if (!meterRunning) return
+                // Same scaling as the web client so the bars feel alike.
+                val pct = ((engine?.micLevel ?: 0.0) / 0.25 * 100).toInt().coerceIn(0, 100)
+                binding.micMeter.progress = pct
+                meterHandler.postDelayed(this, 80)
+            }
+        })
+    }
+
+    private fun stopMeter() {
+        meterRunning = false
+        meterHandler.removeCallbacksAndMessages(null)
+    }
+
+    /** One volume slider per remote participant. */
+    private fun renderVolumes() {
+        binding.volumes.removeAllViews()
+        val others = tiles.keys.filter { it != LOCAL_ID && it != LOCAL_SCREEN_ID && !it.endsWith("-screen") }
+        if (others.isEmpty()) {
+            binding.volumes.addView(TextView(this).apply {
+                text = getString(R.string.nobody_else)
+                setTextColor(Color.parseColor("#5B6273")); textSize = 12f
+            })
+            return
+        }
+        for (peerId in others) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(TextView(this).apply {
+                text = tiles[peerId]?.label?.text ?: peerId
+                setTextColor(Color.parseColor("#E7E9EE")); textSize = 13f
+                width = (90 * resources.displayMetrics.density).toInt()
+                maxLines = 1
+            })
+            val valueLabel = TextView(this).apply {
+                setTextColor(Color.parseColor("#8B93A7")); textSize = 12f
+                width = (48 * resources.displayMetrics.density).toInt()
+                gravity = Gravity.END
+            }
+            val current = peerVolumes[peerId] ?: 1.0
+            row.addView(SeekBar(this).apply {
+                // 0–200%: WebRTC's AudioTrack takes 0..10, so unlike the web we
+                // can actually boost a quiet talker past 100%.
+                max = 200
+                progress = (current * 100).toInt()
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar?, value: Int, fromUser: Boolean) {
+                        if (!fromUser) return
+                        val v = value / 100.0
+                        peerVolumes[peerId] = v
+                        engine?.setPeerVolume(peerId, v)
+                        valueLabel.text = "$value%"
+                    }
+                    override fun onStartTrackingTouch(sb: SeekBar?) {}
+                    override fun onStopTrackingTouch(sb: SeekBar?) {}
+                })
+            })
+            valueLabel.text = "${(current * 100).toInt()}%"
+            row.addView(valueLabel)
+            binding.volumes.addView(row)
+        }
     }
 
     private fun setupSettingsPanel() {
+        // Mic gain: scales the captured buffer before it's encoded, so this is
+        // what peers actually hear. Remembered across calls.
+        val savedGain = CallSettings.micGain(this)
+        binding.micGain.progress = (savedGain * 100).toInt()
+        binding.micGainVal.text = "${(savedGain * 100).toInt()}%"
+        engine?.micGain = savedGain
+        binding.micGain.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, value: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val g = value / 100f
+                binding.micGainVal.text = "$value%"
+                engine?.micGain = g
+                CallSettings.setMicGain(this@MainActivity, g)
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+
         // Mirror: self-view only, remembered across calls.
         binding.mirrorChk.isChecked = CallSettings.mirror(this)
         binding.mirrorChk.setOnCheckedChangeListener { _, on ->
@@ -337,6 +441,12 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         }
     }
 
+    override fun onRemoteAudio(peerId: String) = runOnUiThread {
+        // Re-apply any volume already chosen for them, then refresh the panel.
+        peerVolumes[peerId]?.let { engine?.setPeerVolume(peerId, it) }
+        if (binding.settingsPanel.visibility == View.VISIBLE) renderVolumes()
+    }
+
     override fun onPeerClosed(peerId: String) = runOnUiThread {
         tiles.remove(peerId)?.let { t ->
             binding.videoGrid.removeView(t.root)
@@ -348,6 +458,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         }
         peerState.remove(peerId)
         remoteTracks.remove(peerId)
+        peerVolumes.remove(peerId)
+        if (binding.settingsPanel.visibility == View.VISIBLE) renderVolumes()
     }
 
     // ---- Video grid ----

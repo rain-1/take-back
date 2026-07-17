@@ -210,6 +210,61 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:text="@string/mic_level"
+                    android:textColor="#8B93A7"
+                    android:textSize="12sp"
+                    android:paddingTop="8dp" />
+
+                <!-- Live level of what peers hear (post-gain). -->
+                <ProgressBar
+                    android:id="@+id/micMeter"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp"
+                    android:max="100"
+                    android:progress="0" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <SeekBar
+                        android:id="@+id/micGain"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:max="200"
+                        android:progress="100" />
+
+                    <TextView
+                        android:id="@+id/micGainVal"
+                        android:layout_width="48dp"
+                        android:layout_height="wrap_content"
+                        android:text="100%"
+                        android:textColor="#8B93A7"
+                        android:textSize="12sp"
+                        android:gravity="end" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/volumes"
+                    android:textColor="#8B93A7"
+                    android:textSize="12sp"
+                    android:paddingTop="8dp" />
+
+                <LinearLayout
+                    android:id="@+id/volumes"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="@string/camera"
                     android:textColor="#8B93A7"
                     android:textSize="12sp"

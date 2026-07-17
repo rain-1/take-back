@@ -20,12 +20,17 @@ object CallSettings {
     private const val PREFS = "tb_call"
     private const val KEY_MIRROR = "mirror"
     private const val KEY_CAMERA = "cameraName"
+    private const val KEY_MIC_GAIN = "micGain"
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     /** Self-view mirroring. Defaults to on, like most video apps. */
     fun mirror(c: Context): Boolean = prefs(c).getBoolean(KEY_MIRROR, true)
     fun setMirror(c: Context, on: Boolean) = prefs(c).edit().putBoolean(KEY_MIRROR, on).apply()
+
+    /** Mic gain (1.0 = untouched). Applied to the captured buffer before encoding. */
+    fun micGain(c: Context): Float = prefs(c).getFloat(KEY_MIC_GAIN, 1.0f)
+    fun setMicGain(c: Context, g: Float) = prefs(c).edit().putFloat(KEY_MIC_GAIN, g).apply()
 
     /** Preferred camera (an enumerator device name), or null for the default. */
     fun cameraName(c: Context): String? = prefs(c).getString(KEY_CAMERA, null)

@@ -57,6 +57,9 @@ interface RtcEvents {
     /** Someone started/stopped speaking. [id] is [LOCAL_ID] or a peer id. */
     fun onSpeaking(id: String, speaking: Boolean) {}
 
+    /** A peer's audio arrived — their volume can now be set. */
+    fun onRemoteAudio(peerId: String) {}
+
     /** Our own screen capture started / stopped. */
     fun onLocalScreen(track: VideoTrack) {}
     fun onLocalScreenEnded() {}
@@ -131,6 +134,18 @@ class RtcEngine(
     private val statsHandler = Handler(Looper.getMainLooper())
     private var micEnabledFlag = true
 
+    /** Mic gain applied to the captured buffer (1.0 = untouched). */
+    @Volatile
+    var micGain: Float = 1.0f
+
+    /** Live mic level (RMS 0..1) of what peers hear — read by the level meter. */
+    @Volatile
+    var micLevel: Double = 0.0
+        private set
+
+    /** Remote audio tracks, so each peer's volume can be set independently. */
+    private val remoteAudio = ConcurrentHashMap<String, org.webrtc.AudioTrack>()
+
     private fun detectorFor(id: String) =
         detectors.getOrPut(id) { SpeakingDetector { on -> events.onSpeaking(id, on) } }
 
@@ -140,10 +155,14 @@ class RtcEngine(
                 .createInitializationOptions()
         )
 
-        // Tap the microphone's captured samples so we can show a level even with
-        // no peers connected ("is my mic working?"). getStats can't do that —
-        // it only reports once media is flowing to someone.
+        // Two mic hooks, doing different jobs:
+        //  - setAudioRecordDataCallback hands us the real capture buffer BEFORE
+        //    it's encoded, so scaling the samples there is a true mic gain —
+        //    it changes what peers actually receive.
+        //  - setSamplesReadyCallback is monitoring only (it gets a copy), which
+        //    is all the level meter needs.
         val adm = JavaAudioDeviceModule.builder(appContext)
+            .setAudioRecordDataCallback { _, _, _, buffer -> applyMicGain(buffer) }
             .setSamplesReadyCallback { samples -> onMicSamples(samples) }
             .createAudioDeviceModule()
 
@@ -156,6 +175,22 @@ class RtcEngine(
             .createPeerConnectionFactory()
 
         startStatsPolling()
+    }
+
+    /**
+     * Scale the captured samples in place — this buffer is what gets encoded and
+     * sent, so this is a real mic gain rather than a local-only meter trick.
+     * Runs on the audio thread for every buffer, so it stays allocation-free,
+     * and clamps to avoid wrapping 16-bit samples into loud distortion.
+     */
+    private fun applyMicGain(buffer: java.nio.ByteBuffer) {
+        val g = micGain
+        if (g == 1.0f) return // no-op at unity: don't touch the audio at all
+        val shorts = buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        for (i in 0 until shorts.limit()) {
+            val scaled = (shorts.get(i) * g).toInt()
+            shorts.put(i, scaled.coerceIn(-32768, 32767).toShort())
+        }
     }
 
     /** Compute RMS over a buffer of 16-bit PCM and feed the local detector. */
@@ -171,7 +206,11 @@ class RtcEngine(
             n++
             i += 2
         }
-        if (n > 0) detectorFor(LOCAL_ID).update(sqrt(sum / n))
+        if (n > 0) {
+            val rms = sqrt(sum / n)
+            micLevel = rms // post-gain: SamplesReady runs after the data callback
+            detectorFor(LOCAL_ID).update(rms)
+        }
     }
 
     /**
@@ -291,6 +330,7 @@ class RtcEngine(
     }
 
     fun removePeer(peerId: String) {
+        remoteAudio.remove(peerId)
         peers.remove(peerId)?.pc?.close()
         events.onPeerClosed(peerId)
     }
@@ -309,10 +349,15 @@ class RtcEngine(
             // onAddTrack (not onTrack) because it hands us the MediaStreams —
             // we need the stream id to tell a screen share from a camera.
             override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
-                val t = receiver.track()
-                if (t is VideoTrack) {
-                    val streamId = streams.firstOrNull()?.id ?: ""
-                    events.onRemoteVideo(peerId, nicks[peerId] ?: "peer", t, streamId)
+                when (val t = receiver.track()) {
+                    is VideoTrack -> {
+                        val streamId = streams.firstOrNull()?.id ?: ""
+                        events.onRemoteVideo(peerId, nicks[peerId] ?: "peer", t, streamId)
+                    }
+                    is org.webrtc.AudioTrack -> {
+                        remoteAudio[peerId] = t // needed for per-peer volume
+                        events.onRemoteAudio(peerId)
+                    }
                 }
             }
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
@@ -431,7 +476,18 @@ class RtcEngine(
     fun setMicEnabled(on: Boolean) {
         micEnabledFlag = on
         localAudio?.setEnabled(on)
-        if (!on) detectors[LOCAL_ID]?.reset()
+        if (!on) {
+            detectors[LOCAL_ID]?.reset()
+            micLevel = 0.0
+        }
+    }
+
+    /**
+     * Set one peer's playback volume. WebRTC's AudioTrack takes 0..10, so unlike
+     * the web (capped at 1.0 by the media element) we can boost a quiet talker.
+     */
+    fun setPeerVolume(peerId: String, volume: Double) {
+        remoteAudio[peerId]?.setVolume(volume.coerceIn(0.0, 10.0))
     }
 
     /**

@@ -24,6 +24,30 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.9.0
+
+Android gains the 1.8.0 audio controls. Backwards compatible (protocol 1);
+client-side only, no wire changes.
+
+**Added (Android)**
+- **Mic gain**, and it's a *real* one: this WebRTC build exposes
+  `setAudioRecordDataCallback`, which hands over the actual capture buffer
+  **before it's encoded**, so scaling the samples there changes what peers
+  receive. (The `setSamplesReadyCallback` used for the meter only gets a copy —
+  useful for monitoring, useless for gain.) At 100% the buffer isn't touched at
+  all, so the default path is byte-for-byte unchanged. Samples are clamped, since
+  wrapping 16-bit values turns loud speech into noise.
+- **Live mic level meter** in the settings panel, reading post-gain (the samples
+  callback runs after the data callback), so it shows what peers hear. Polls only
+  while the panel is open, and reads zero while muted.
+- **Per-participant volume** sliders. WebRTC's `AudioTrack.setVolume` takes
+  0..10, so unlike the web (capped at 1.0 by the media element) Android can
+  actually **boost** a quiet talker — the slider goes to 200%.
+
+Both platforms now use the same meter scaling, so the bars feel alike.
+
+---
+
 ## 1.8.0
 
 Audio controls in the web call settings. Backwards compatible (protocol 1);
