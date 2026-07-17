@@ -17,7 +17,18 @@ func init() {
 	migrations = append(migrations,
 		`ALTER TABLE messages ADD COLUMN edited_at INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE group_messages ADD COLUMN edited_at INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE messages ADD COLUMN reply_to INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE group_messages ADD COLUMN reply_to INTEGER NOT NULL DEFAULT 0`,
 	)
+}
+
+// truncate shortens s to n runes, adding an ellipsis when cut.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // EditMessage rewrites the body of a DM the user sent. Only the author may

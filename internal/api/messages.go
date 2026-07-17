@@ -23,12 +23,16 @@ type msgView struct {
 	Created     int64           `json:"created"`
 	EditedAt    int64           `json:"editedAt,omitempty"`
 	Reactions   []reactionGroup `json:"reactions,omitempty"`
+	ReplyTo     int64           `json:"replyTo,omitempty"`
+	ReplySender int64           `json:"replySender,omitempty"`
+	ReplyBody   string          `json:"replyBody,omitempty"`
 }
 
 func toView(m store.Message) msgView {
 	v := msgView{
 		ID: m.ID, SenderID: m.SenderID, RecipientID: m.RecipientID,
 		Body: m.Body, Created: m.Created.Unix(), EditedAt: m.EditedAt,
+		ReplyTo: m.ReplyTo, ReplySender: m.ReplySender, ReplyBody: m.ReplyBody,
 	}
 	if m.ImageFile != "" {
 		v.ImageURL = "/media/" + m.ImageFile
@@ -61,8 +65,9 @@ func (a *API) handleMessages(w http.ResponseWriter, r *http.Request, user *store
 
 	case http.MethodPost:
 		var body struct {
-			With int64  `json:"with"`
-			Body string `json:"body"`
+			With    int64  `json:"with"`
+			Body    string `json:"body"`
+			ReplyTo int64  `json:"replyTo"`
 		}
 		if !decode(w, r, &body) {
 			return
@@ -72,7 +77,7 @@ func (a *API) handleMessages(w http.ResponseWriter, r *http.Request, user *store
 			return
 		}
 		a.storeAndPush(w, store.Message{
-			SenderID: user.ID, RecipientID: body.With, Body: body.Body,
+			SenderID: user.ID, RecipientID: body.With, Body: body.Body, ReplyTo: body.ReplyTo,
 		})
 
 	default:

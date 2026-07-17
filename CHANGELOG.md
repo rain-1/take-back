@@ -24,6 +24,27 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.13.0
+
+Replies and a keyboard shortcut (web + backend). Backwards compatible
+(protocol 1) — the `replyTo`/`replyBody`/`replySender` fields are additive, so
+older clients ignore them.
+
+**Added**
+- **Reply to a message** (web), in DMs and groups. Hover a message → ↩, and the
+  composer shows what you're replying to. The reply carries a **quote block**;
+  **clicking the quote jumps to the original** and briefly highlights it. The
+  quoted snippet is stored with the reply (joined server-side), so it renders
+  even if the original has scrolled far away.
+- **Press ↑ in an empty composer to edit your last message** — the shell/Slack
+  convention. Only fires when the box is empty, so it never interferes with
+  cursor movement.
+
+`messages` and `group_messages` gain a `reply_to` column via migration. Android
+replies are still to come.
+
+---
+
 ## 1.12.0
 
 Message reactions (web + backend). Backwards compatible (protocol 1); the new

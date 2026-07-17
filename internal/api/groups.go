@@ -200,12 +200,16 @@ type groupMsgView struct {
 	Created  int64           `json:"created"`
 	EditedAt int64           `json:"editedAt,omitempty"`
 	Reactions []reactionGroup `json:"reactions,omitempty"`
+	ReplyTo     int64  `json:"replyTo,omitempty"`
+	ReplySender int64  `json:"replySender,omitempty"`
+	ReplyBody   string `json:"replyBody,omitempty"`
 }
 
 func toGroupView(m store.GroupMessage) groupMsgView {
 	v := groupMsgView{
 		ID: m.ID, GroupID: m.GroupID, SenderID: m.SenderID,
 		Body: m.Body, Created: m.Created.Unix(), EditedAt: m.EditedAt,
+		ReplyTo: m.ReplyTo, ReplySender: m.ReplySender, ReplyBody: m.ReplyBody,
 	}
 	if m.ImageFile != "" {
 		v.ImageURL = "/media/" + m.ImageFile
@@ -233,8 +237,9 @@ func (a *API) handleGroupMessages(w http.ResponseWriter, r *http.Request, user *
 		writeJSON(w, http.StatusOK, views)
 	case http.MethodPost:
 		var body struct {
-			Group int64  `json:"group"`
-			Body  string `json:"body"`
+			Group   int64  `json:"group"`
+			Body    string `json:"body"`
+			ReplyTo int64  `json:"replyTo"`
 		}
 		if !decode(w, r, &body) {
 			return
@@ -246,7 +251,9 @@ func (a *API) handleGroupMessages(w http.ResponseWriter, r *http.Request, user *
 			writeErr(w, http.StatusBadRequest, "empty message")
 			return
 		}
-		a.storeAndFanout(w, store.GroupMessage{GroupID: body.Group, SenderID: user.ID, Body: body.Body}, user.ID)
+		a.storeAndFanout(w, store.GroupMessage{
+			GroupID: body.Group, SenderID: user.ID, Body: body.Body, ReplyTo: body.ReplyTo,
+		}, user.ID)
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, "GET or POST")
 	}

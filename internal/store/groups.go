@@ -71,8 +71,11 @@ type GroupMessage struct {
 	Body      string    `json:"body"`
 	ImageFile string    `json:"imageFile,omitempty"`
 	ThumbFile string    `json:"thumbFile,omitempty"`
-	Created   time.Time `json:"created"`
-	EditedAt  int64     `json:"editedAt,omitempty"`
+	Created     time.Time `json:"created"`
+	EditedAt    int64     `json:"editedAt,omitempty"`
+	ReplyTo     int64     `json:"replyTo,omitempty"`
+	ReplySender int64     `json:"replySender,omitempty"`
+	ReplyBody   string    `json:"replyBody,omitempty"`
 }
 
 // CreateGroup makes a group owned by ownerID (who becomes its first member) and
@@ -273,9 +276,9 @@ func (s *Store) RemoveMember(groupID, userID int64) error {
 func (s *Store) AddGroupMessage(m GroupMessage) (GroupMessage, error) {
 	now := time.Now()
 	res, err := s.db.Exec(
-		`INSERT INTO group_messages (group_id, sender_id, body, image_file, thumb_file, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		m.GroupID, m.SenderID, m.Body, m.ImageFile, m.ThumbFile, now.Unix(),
+		`INSERT INTO group_messages (group_id, sender_id, body, image_file, thumb_file, created_at, reply_to)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		m.GroupID, m.SenderID, m.Body, m.ImageFile, m.ThumbFile, now.Unix(), m.ReplyTo,
 	)
 	if err != nil {
 		return GroupMessage{}, err
@@ -294,9 +297,13 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 		beforeID = 1 << 62
 	}
 	rows, err := s.db.Query(
-		`SELECT id, group_id, sender_id, body, image_file, thumb_file, created_at, edited_at
-		   FROM group_messages WHERE group_id = ? AND id < ?
-		  ORDER BY id DESC LIMIT ?`, groupID, beforeID, limit,
+		`SELECT m.id, m.group_id, m.sender_id, m.body, m.image_file, m.thumb_file,
+		        m.created_at, m.edited_at, m.reply_to,
+		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
+		   FROM group_messages m
+		   LEFT JOIN group_messages rm ON rm.id = m.reply_to
+		  WHERE m.group_id = ? AND m.id < ?
+		  ORDER BY m.id DESC LIMIT ?`, groupID, beforeID, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -307,10 +314,12 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 		var m GroupMessage
 		var created int64
 		if err := rows.Scan(&m.ID, &m.GroupID, &m.SenderID, &m.Body,
-			&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt); err != nil {
+			&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt,
+			&m.ReplyTo, &m.ReplySender, &m.ReplyBody); err != nil {
 			return nil, err
 		}
 		m.Created = time.Unix(created, 0)
+		m.ReplyBody = truncate(m.ReplyBody, 80)
 		msgs = append(msgs, m)
 	}
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {

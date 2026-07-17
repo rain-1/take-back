@@ -34,15 +34,18 @@ type Message struct {
 	ThumbFile   string    `json:"thumbFile,omitempty"`
 	Created     time.Time `json:"created"`
 	EditedAt    int64     `json:"editedAt,omitempty"`
+	ReplyTo     int64     `json:"replyTo,omitempty"`       // id of the message being replied to
+	ReplySender int64     `json:"replySender,omitempty"`   // its sender (for the quote)
+	ReplyBody   string    `json:"replyBody,omitempty"`     // its body, truncated
 }
 
 // AddMessage stores a DM and returns it with its assigned id.
 func (s *Store) AddMessage(m Message) (Message, error) {
 	now := time.Now()
 	res, err := s.db.Exec(
-		`INSERT INTO messages (sender_id, recipient_id, body, image_file, thumb_file, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		m.SenderID, m.RecipientID, m.Body, m.ImageFile, m.ThumbFile, now.Unix(),
+		`INSERT INTO messages (sender_id, recipient_id, body, image_file, thumb_file, created_at, reply_to)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		m.SenderID, m.RecipientID, m.Body, m.ImageFile, m.ThumbFile, now.Unix(), m.ReplyTo,
 	)
 	if err != nil {
 		return Message{}, err
@@ -62,11 +65,14 @@ func (s *Store) Conversation(meID, otherID int64, beforeID int64, limit int) ([]
 		beforeID = 1 << 62
 	}
 	rows, err := s.db.Query(
-		`SELECT id, sender_id, recipient_id, body, image_file, thumb_file, created_at, edited_at
-		   FROM messages
-		  WHERE id < ?
-		    AND ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))
-		  ORDER BY id DESC LIMIT ?`,
+		`SELECT m.id, m.sender_id, m.recipient_id, m.body, m.image_file, m.thumb_file,
+		        m.created_at, m.edited_at, m.reply_to,
+		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
+		   FROM messages m
+		   LEFT JOIN messages rm ON rm.id = m.reply_to
+		  WHERE m.id < ?
+		    AND ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
+		  ORDER BY m.id DESC LIMIT ?`,
 		beforeID, meID, otherID, otherID, meID, limit,
 	)
 	if err != nil {
@@ -93,9 +99,11 @@ func scanMessage(rows *sql.Rows) (Message, error) {
 	var m Message
 	var created int64
 	if err := rows.Scan(&m.ID, &m.SenderID, &m.RecipientID, &m.Body,
-		&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt); err != nil {
+		&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt,
+		&m.ReplyTo, &m.ReplySender, &m.ReplyBody); err != nil {
 		return Message{}, err
 	}
 	m.Created = time.Unix(created, 0)
+	m.ReplyBody = truncate(m.ReplyBody, 80)
 	return m, nil
 }

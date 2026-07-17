@@ -234,6 +234,38 @@
   }
   .msg .edithint { font-size: .62rem; color: var(--dim); margin-top: .25rem; }
 
+  /* Reply quote shown above a message that is a reply */
+  .msg .quote {
+    border-left: 3px solid var(--accent-dim); padding: .1rem .5rem; margin-bottom: .3rem;
+    background: rgba(0,0,0,.18); border-radius: 0 6px 6px 0; cursor: pointer;
+    font-size: .78rem; color: var(--muted); max-width: 100%;
+  }
+  .msg .quote b { color: #bcd0ff; font-weight: 600; }
+  .msg .quote .qt { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .react-add.reply { }
+  /* brief highlight when you jump to a message */
+  .msg.flash { animation: flash 1.1s ease; }
+  @keyframes flash {
+    0%, 30% { background: rgba(91,140,255,.28); }
+    100% { background: var(--surface); }
+  }
+  .msg.me.flash { animation: flashme 1.1s ease; }
+  @keyframes flashme {
+    0%, 30% { background: rgba(91,140,255,.5); }
+    100% { background: var(--accent-dim); }
+  }
+  /* composer reply preview */
+  #replyBar {
+    display: none; align-items: center; gap: .5rem; padding: .35rem .6rem;
+    border-top: 1px solid var(--border-soft); background: #0e1117;
+    font-size: .8rem; color: var(--muted);
+  }
+  #replyBar.show { display: flex; }
+  #replyBar .qt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #replyBar b { color: #bcd0ff; }
+  #replyBar .x { cursor: pointer; color: var(--dim); padding: 0 .3rem; }
+  #replyBar .x:hover { color: var(--text); }
+
   /* Reactions */
   .reactions { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .3rem; }
   .reaction {
@@ -376,6 +408,10 @@
         </div>
         <div id="membersPanel" class="hidden" style="padding:.5rem 1rem;border-bottom:1px solid #262a33;display:flex;flex-wrap:wrap;gap:.5rem;"></div>
         <div id="messages"></div>
+        <div id="replyBar">
+          <span class="qt" id="replyBarText"></span>
+          <span class="x" id="replyBarCancel" title="Cancel reply">✕</span>
+        </div>
         <div id="composer">
           <button class="secondary icon" id="imgBtn" title="Send image">🖼</button>
           <input type="file" id="imgInput" accept="image/*" class="hidden">
@@ -402,6 +438,7 @@ async function api(path, opts = {}) {
 let me = null;
 let openFriend = null;       // { id, nick, online } when a DM is open
 let openGroup = null;        // { id, name, callCode } when a group is open
+let replyingTo = null;       // message being replied to, or null
 let events = null;           // events WebSocket
 const friendState = new Map(); // id -> friend view
 const groupState = new Map();   // id -> group
@@ -517,6 +554,7 @@ function renderGroups() {
 }
 
 async function openGroupChat(g) {
+  cancelReply();
   openFriend = null;
   openGroup = { id: g.id, name: g.name, callCode: g.callCode };
   $("empty").classList.add("hidden");
@@ -791,6 +829,7 @@ async function removeFriend(userId) {
 function showEmpty() { $("empty").classList.remove("hidden"); $("chatPane").classList.add("hidden"); }
 
 async function openChat(user) {
+  cancelReply();
   openFriend = { id: user.id, nick: user.nick };
   openGroup = null;
   $("empty").classList.add("hidden");
@@ -834,21 +873,53 @@ function bumpUnread(kind, id) {
 }
 
 $("sendBtn").onclick = sendText;
-$("msgInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+$("msgInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { sendText(); return; }
+  // Press ↑ in an empty composer to edit your most recent text message —
+  // the shell/Slack convention. Only when empty, so it never eats cursor moves.
+  if (e.key === "ArrowUp" && $("msgInput").value === "") {
+    const mine = [...$("messages").children].reverse().find(
+      (d) => d._msg && d._msg.senderId === me.id && d._msg.body &&
+             !d._msg.body.match(/^📞 call:/));
+    if (mine) { e.preventDefault(); startEdit(mine, mine._msg); }
+  }
+});
+function startReply(m) {
+  replyingTo = m;
+  const who = m.senderId === me.id ? "you"
+    : (openGroup ? (groupMembers.get(m.senderId)?.nick || "someone")
+                 : (openFriend ? openFriend.nick : "someone"));
+  $("replyBarText").innerHTML = `Replying to <b>${esc(who)}</b>: ${esc((m.body || "image").slice(0, 60))}`;
+  $("replyBar").classList.add("show");
+  $("msgInput").focus();
+}
+function cancelReply() { replyingTo = null; $("replyBar").classList.remove("show"); }
+$("replyBarCancel").onclick = cancelReply;
+
+// jumpToMessage scrolls to a message and briefly flashes it.
+function jumpToMessage(id) {
+  const div = [...$("messages").children].find((d) => d.dataset.msgId == id);
+  if (!div) { toast("That message isn't loaded"); return; }
+  div.scrollIntoView({ behavior: "smooth", block: "center" });
+  div.classList.remove("flash"); void div.offsetWidth; div.classList.add("flash");
+}
+
 async function sendText() {
   const body = $("msgInput").value.trim();
   if (!body) return;
   $("msgInput").value = "";
+  const replyTo = replyingTo ? replyingTo.id : 0;
+  cancelReply();
   let msg;
   if (openGroup) {
     msg = await api("/api/groups/messages", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group: openGroup.id, body }),
+      body: JSON.stringify({ group: openGroup.id, body, replyTo }),
     });
   } else if (openFriend) {
     msg = await api("/api/messages", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ with: openFriend.id, body }),
+      body: JSON.stringify({ with: openFriend.id, body, replyTo }),
     });
   } else return;
   appendMessage(msg); scrollMessages();
@@ -885,6 +956,15 @@ function appendMessage(m) {
   if (openGroup && !mine) {
     const who = groupMembers.get(m.senderId);
     if (who) html += `<div class="sender">${esc(who.nick)}</div>`;
+  }
+
+  // Quote block for replies — click to jump to the original.
+  if (m.replyTo) {
+    const who = m.replySender === me.id ? "you"
+      : (openGroup ? (groupMembers.get(m.replySender)?.nick || "someone")
+                   : (openFriend ? openFriend.nick : "someone"));
+    html += `<div class="quote" data-jump="${m.replyTo}"><b>${esc(who)}</b>` +
+            `<span class="qt">${esc(m.replyBody || "message")}</span></div>`;
   }
 
   const call = m.body && m.body.match(/^📞 call:([A-Z0-9]{4,8})$/);
@@ -930,11 +1010,20 @@ function appendMessage(m) {
     btn.onclick = () => startEdit(div, m);
     row.append(btn);
   }
+  const reply = document.createElement("button");
+  reply.className = "react-add reply";
+  reply.textContent = "↩"; reply.title = "Reply";
+  reply.onclick = (e) => { e.stopPropagation(); startReply(m); };
+  row.append(reply);
+
   const react = document.createElement("button");
   react.className = "react-add";
   react.textContent = "☺"; react.title = "Add reaction";
   react.onclick = (e) => { e.stopPropagation(); openEmojiPicker(e.currentTarget, m); };
   row.append(react);
+
+  const q = div.querySelector(".quote");
+  if (q) q.onclick = () => jumpToMessage(q.dataset.jump);
 
   row.append(t);
   div.append(row);
