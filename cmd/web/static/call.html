@@ -64,15 +64,24 @@
   #grid { display:grid; gap:.75rem; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); margin-top:1rem; }
   .tile {
     position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:4/3;
-    display:grid; place-items:center;
     outline:2px solid transparent; outline-offset:-2px;
     transition:outline-color .12s ease;
   }
-  .tile video { width:100%; height:100%; object-fit:cover; }
+  .tile video {
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  }
+  /* "Flip my video": mirror only your own preview, like a real mirror. */
+  .tile.mirror video { transform: scaleX(-1); }
 
-  /* Voice-only (camera off): show the profile picture instead of black video. */
-  .tile.novideo video { display:none; }
-  .tile .avatar { display:none; }
+  /* Voice-only (camera off): show the profile picture over the video.
+     NB: the video element stays rendered (opacity:0, not display:none) — a
+     display:none media element can have its playback torn down by the browser,
+     and we still need the peer's AUDIO in voice-only mode. */
+  .tile.novideo video { opacity:0; }
+  .tile .avatar {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    display:none;
+  }
   .tile.novideo .avatar {
     display:grid; place-items:center;
     width:96px; height:96px; border-radius:50%;
@@ -146,9 +155,13 @@
       <span class="code" id="callCode"></span>
       <button id="copyBtn" class="secondary">Copy</button>
       <span class="pill" id="connPill">connecting…</span>
+      <span class="pill hidden" id="signalWarn" style="background:rgba(248,113,113,.13);color:#f87171;"
+            title="The call keeps running; new peers can't join until this recovers">⚠ signaling</span>
       <span style="flex:1;"></span>
+      <button id="audioGate" class="hidden">🔊 Enable audio</button>
       <button id="micBtn" class="secondary">🎤 Mic on</button>
       <button id="camBtn" class="secondary">📷 Camera on</button>
+      <button id="flipBtn" class="secondary" title="Mirror your own video">🔁 Flip mine</button>
       <button id="shareBtn" class="secondary">Share screen</button>
       <button id="leaveBtn" class="secondary">Leave</button>
     </div>
@@ -222,7 +235,38 @@ async function startCall(code) {
 $("copyBtn").onclick = () => {
   navigator.clipboard.writeText(roomCode).then(() => log("Call code copied."));
 };
-$("leaveBtn").onclick = () => location.reload();
+$("leaveBtn").onclick = () => { leaving = true; location.reload(); };
+
+// ---- Flip my own video ----
+// Mirrors only your own preview (what you're used to seeing in a mirror); what
+// peers receive is untouched.
+let mirrored = true; // self-view starts mirrored, like most video apps
+$("flipBtn").onclick = () => {
+  mirrored = !mirrored;
+  applyMirror();
+};
+function applyMirror() {
+  const tile = document.getElementById("tile-local");
+  if (tile) tile.classList.toggle("mirror", mirrored);
+}
+
+// ---- Audio recovery ----
+// Browsers can block autoplay-with-sound and suspend the AudioContext (which
+// would also silently kill the speaking rings). One tap fixes both.
+$("audioGate").onclick = async () => {
+  if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+  document.querySelectorAll("#grid video").forEach((v) => v.play().catch(() => {}));
+  $("audioGate").classList.add("hidden");
+  log("Audio enabled.");
+};
+// Any click is a user gesture: opportunistically un-suspend.
+document.addEventListener("click", () => {
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+});
+// Coming back to the tab can leave the context suspended; the rings depend on it.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+});
 
 // ---- Mic / camera toggles ----
 // Toggling only flips track.enabled, so the sender/track stays put and no
@@ -308,13 +352,75 @@ function replaceOutgoingVideo(track) {
   }
 }
 
+let leaving = false;
+let reconnectTimer = null;
+let reconnectDelay = 1000;
+
 function connectSignaling() {
   const url = SIGNAL_URL + "?room=" + encodeURIComponent(roomCode) + "&nick=" + encodeURIComponent(nick);
   ws = new WebSocket(url);
-  ws.onopen = () => log("Connected to signaling. Waiting for peers…");
-  ws.onclose = () => { $("connPill").textContent = "disconnected"; log("Signaling closed."); };
-  ws.onerror = () => log("Signaling error — is the server running?");
+
+  ws.onopen = () => {
+    reconnectDelay = 1000;
+    setSignalOK(true);
+    log("Connected to signaling.");
+  };
+  ws.onclose = () => {
+    // The call itself keeps working (media is peer-to-peer), so don't claim the
+    // call dropped — just flag signaling and get the socket back, otherwise the
+    // server drops us from the room and nobody can re-negotiate with us.
+    setSignalOK(false);
+    if (!leaving) scheduleReconnect();
+  };
+  ws.onerror = () => setSignalOK(false);
   ws.onmessage = (ev) => handleSignal(JSON.parse(ev.data));
+}
+
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  log("Signaling lost — reconnecting…");
+  reconnectTimer = setTimeout(() => {
+    // A reconnect gets us a fresh peer id, so drop the old peer connections and
+    // renegotiate from scratch rather than ending up with duplicates.
+    resetPeers();
+    connectSignaling();
+  }, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+}
+
+function resetPeers() {
+  for (const [id, entry] of peers) {
+    entry.pc.close();
+    const tile = document.getElementById("tile-" + id);
+    if (tile) tile.remove();
+  }
+  peers.clear();
+  peerState.clear();
+  updateCallPill();
+}
+
+// ---- Status ----
+// The pill reflects the CALL (peer connections), not the signaling socket: they
+// are independent, and a dropped signaling socket used to make a perfectly good
+// call read as "disconnected".
+function updateCallPill() {
+  const states = [...peers.values()].map((p) => p.pc.connectionState);
+  const pill = $("connPill");
+  if (states.some((s) => s === "connected")) {
+    pill.textContent = "connected";
+    pill.style.color = ""; pill.style.background = "";
+  } else if (peers.size > 0) {
+    pill.textContent = "connecting…";
+  } else {
+    pill.textContent = "waiting for others";
+  }
+}
+
+// Signaling trouble is shown separately and quietly — it doesn't mean the call
+// is down, but it does mean new peers can't join until it recovers.
+function setSignalOK(ok) {
+  const el = $("signalWarn");
+  if (el) el.classList.toggle("hidden", ok);
 }
 
 function send(obj) { ws.send(JSON.stringify(obj)); }
@@ -328,7 +434,7 @@ async function handleSignal(msg) {
       for (const p of msg.peers || []) {
         await createPeer(p.id, p.nick, true);
       }
-      $("connPill").textContent = (msg.peers || []).length ? "connecting…" : "waiting for others";
+      updateCallPill();
       break;
     case "hello":
       // An existing peer sees a newcomer; wait for their offer. Re-announce our
@@ -384,10 +490,11 @@ async function createPeer(peerId, peerNick, initiator) {
   };
   pc.ontrack = (e) => {
     addTile(peerId, entry.nick, e.streams[0], false);
-    $("connPill").textContent = "connected";
+    updateCallPill();
   };
   pc.onconnectionstatechange = () => {
     log("peer " + peerId + ": " + pc.connectionState);
+    updateCallPill();
     if (pc.connectionState === "failed" || pc.connectionState === "closed") removePeer(peerId);
   };
 
@@ -404,7 +511,7 @@ function removePeer(peerId) {
   if (entry) { entry.pc.close(); peers.delete(peerId); }
   const tile = document.getElementById("tile-" + peerId);
   if (tile) tile.remove();
-  if (peers.size === 0) $("connPill").textContent = "waiting for others";
+  updateCallPill();
 }
 
 // Bootstrap: if opened as call.html?room=CODE&nick=NAME (e.g. launched from the
@@ -446,9 +553,9 @@ function attachVAD(tileId, stream) {
   const buf = new Uint8Array(analyser.fftSize);
   let speaking = false, quietSince = 0;
 
-  (function tick() {
+  function tick() {
     const tile = document.getElementById(tileId);
-    if (!tile) { vadAttached.delete(tileId); return; } // tile gone: stop polling
+    if (!tile) return;
 
     analyser.getByteTimeDomainData(buf);
     let sum = 0;
@@ -466,8 +573,18 @@ function attachVAD(tileId, stream) {
     } else if (speaking) quietSince = 0;
 
     tile.classList.toggle("speaking", speaking);
-    requestAnimationFrame(tick);
-  })();
+  }
+
+  // Deliberately setInterval, not requestAnimationFrame: rAF is paused entirely
+  // in background tabs, which froze the ring mid-state until you looked back.
+  const timer = setInterval(() => {
+    if (!document.getElementById(tileId)) { // tile gone: stop polling
+      clearInterval(timer);
+      vadAttached.delete(tileId);
+      return;
+    }
+    tick();
+  }, 100);
 }
 
 // ---- Avatars (match the chat client's initials style) ----
@@ -506,7 +623,12 @@ function addTile(id, name, stream, muted) {
     tile.append(video, av, mic, label);
     $("grid").append(tile);
   }
-  tile.querySelector("video").srcObject = stream;
+  const v = tile.querySelector("video");
+  if (v.srcObject !== stream) v.srcObject = stream;
+  // Autoplay with sound can be blocked (e.g. when the call auto-joins from a
+  // chat link, with no click on this page). Silent failure here = "their audio
+  // just doesn't work", so surface it and offer a one-tap fix.
+  v.play().catch(() => { if (id !== "local") $("audioGate").classList.remove("hidden"); });
   tile.querySelector(".name").textContent = name;
 
   // Profile picture shown whenever the camera is off.
@@ -519,6 +641,7 @@ function addTile(id, name, stream, muted) {
 
   // A peer's state may have arrived before their video track did.
   if (peerState.has(id)) applyState(id, peerState.get(id));
+  if (id === "local") applyMirror();
 }
 
 // baseNick strips the decorations we add to labels ("river (you, sharing)").

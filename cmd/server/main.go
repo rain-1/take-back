@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rain1/take-back/internal/api"
@@ -217,6 +218,17 @@ func (h *hub) serveWS(w http.ResponseWriter, req *http.Request) {
 	c.readPump(h)
 }
 
+// WebSocket keepalive. Signaling goes silent for the whole of a call (media is
+// peer-to-peer), and an idle socket gets culled by proxies — Cloudflare drops
+// them after ~100s. That silently removes the peer from its room, so a peer
+// refreshing the page finds nobody to negotiate with. Pings keep it alive; the
+// read deadline reaps genuinely dead clients.
+const (
+	pongWait   = 60 * time.Second
+	pingPeriod = (pongWait * 9) / 10
+	writeWait  = 10 * time.Second
+)
+
 // readPump reads signaling messages from the browser and routes them.
 func (c *client) readPump(h *hub) {
 	defer func() {
@@ -225,6 +237,11 @@ func (c *client) readPump(h *hub) {
 		close(c.send)
 		log.Printf("%s (%s) left room", c.id, c.nick)
 	}()
+
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error {
+		return c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
 
 	for {
 		var s Signal
@@ -242,11 +259,30 @@ func (c *client) readPump(h *hub) {
 	}
 }
 
-// writePump ships queued signals to the browser.
+// writePump ships queued signals to the browser and pings it periodically so
+// the connection isn't culled while a call is in progress.
 func (c *client) writePump() {
-	for s := range c.send {
-		if err := c.conn.WriteJSON(s); err != nil {
-			return
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+	for {
+		select {
+		case s, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok { // hub closed the channel
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			if err := c.conn.WriteJSON(s); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }

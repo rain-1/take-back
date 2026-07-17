@@ -24,6 +24,37 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.4.0
+
+Call reliability fixes from web-client user reports. Backwards compatible
+(protocol 1).
+
+**Fixed**
+- **Refreshing the page broke the call and the peer never reconnected.** Root
+  cause: signaling had no keepalive. Media is peer-to-peer, so the signaling
+  socket goes silent for the whole call — and an idle socket is culled by
+  proxies (Cloudflare drops them after ~100s). That silently removed the peer
+  from its room server-side, so a refreshing peer's offer reached nobody. The
+  server now pings clients (with read deadlines to reap genuinely dead ones),
+  and the client auto-reconnects with backoff if the socket does drop.
+- **"Disconnected" while the call was working fine.** The indicator was wired to
+  the *signaling socket*, not the call. It now derives from peer connection
+  state; signaling trouble shows separately and quietly (⚠ signaling), since it
+  doesn't interrupt an in-progress call — it only blocks new peers joining.
+- **Talk indicator broke intermittently.** The level poll used
+  `requestAnimationFrame`, which browsers pause entirely in background tabs, so
+  the ring froze mid-state. Now on a timer, with the AudioContext resumed on
+  visibility change / user gesture (a suspended context silently kills all rings).
+- **Audio playback failed intermittently.** Two causes: autoplay-with-sound can
+  be blocked when a call auto-joins from a chat link (no click on that page) —
+  the failure was silent, and now surfaces a one-tap "🔊 Enable audio"; and the
+  camera-off tile used `display:none` on the video element, which can tear down
+  playback — it now stays rendered (`opacity:0`) under the avatar.
+
+**Added**
+- **Flip my video** — mirrors your own self-view only; what peers receive is
+  unchanged. Defaults to mirrored, like most video apps.
+
 ## 1.3.0
 
 Backwards compatible (protocol 1). Android calls reach parity with the web

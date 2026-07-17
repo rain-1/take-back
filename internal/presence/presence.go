@@ -7,8 +7,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+// Keepalive tuning, mirroring the signaling server.
+const (
+	pongWait   = 60 * time.Second
+	pingPeriod = (pongWait * 9) / 10
+	writeWait  = 10 * time.Second
 )
 
 // FriendLookup returns the accepted-friend ids of a user. The hub uses it to
@@ -144,16 +152,37 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, userID int64) {
 	// Tell this socket which friends are already online.
 	c.send <- Event{Type: "hello", Online0: h.onlineFriends(userID)}
 
-	// Writer goroutine.
+	// Writer goroutine: sends events, and pings so an idle events socket isn't
+	// culled by a proxy (Cloudflare drops idle sockets after ~100s, which would
+	// silently mark the user offline to their friends).
 	go func() {
-		for ev := range c.send {
-			if err := ws.WriteJSON(ev); err != nil {
-				return
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case ev, ok := <-c.send:
+				ws.SetWriteDeadline(time.Now().Add(writeWait))
+				if !ok {
+					ws.WriteMessage(websocket.CloseMessage, []byte{})
+					return
+				}
+				if err := ws.WriteJSON(ev); err != nil {
+					return
+				}
+			case <-ticker.C:
+				ws.SetWriteDeadline(time.Now().Add(writeWait))
+				if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
 			}
 		}
 	}()
 
-	// Read loop exists only to detect disconnect (and drain client pings).
+	// Read loop exists only to detect disconnect; pongs extend the deadline.
+	ws.SetReadDeadline(time.Now().Add(pongWait))
+	ws.SetPongHandler(func(string) error {
+		return ws.SetReadDeadline(time.Now().Add(pongWait))
+	})
 	for {
 		if _, _, err := ws.ReadMessage(); err != nil {
 			break
