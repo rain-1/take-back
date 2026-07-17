@@ -20,8 +20,9 @@ type msgView struct {
 	Body        string `json:"body"`
 	ImageURL    string `json:"imageUrl,omitempty"`
 	ThumbURL    string `json:"thumbUrl,omitempty"`
-	Created     int64  `json:"created"`
-	EditedAt    int64  `json:"editedAt,omitempty"`
+	Created     int64           `json:"created"`
+	EditedAt    int64           `json:"editedAt,omitempty"`
+	Reactions   []reactionGroup `json:"reactions,omitempty"`
 }
 
 func toView(m store.Message) msgView {
@@ -55,6 +56,7 @@ func (a *API) handleMessages(w http.ResponseWriter, r *http.Request, user *store
 		for _, m := range msgs {
 			views = append(views, toView(m))
 		}
+		a.attachDMReactions(views, user.ID)
 		writeJSON(w, http.StatusOK, views)
 
 	case http.MethodPost:
@@ -177,6 +179,21 @@ func writeEditErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, "no such message")
 	default:
 		writeErr(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+// attachDMReactions fills each view's Reactions, aggregated for `me`.
+func (a *API) attachDMReactions(views []msgView, me int64) {
+	ids := make([]int64, len(views))
+	for i, v := range views {
+		ids[i] = v.ID
+	}
+	rs, err := a.Store.ReactionsFor(store.KindDM, ids)
+	if err != nil {
+		return
+	}
+	for i := range views {
+		views[i].Reactions = aggregateReactions(rs[views[i].ID], me)
 	}
 }
 

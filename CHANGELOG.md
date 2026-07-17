@@ -24,6 +24,25 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.12.0
+
+Message reactions (web + backend). Backwards compatible (protocol 1); the new
+`reaction` event and `reactions` field are additive.
+
+**Added**
+- **Emoji reactions on messages**, in DMs and groups. Hover a message → ☺ to
+  pick from a small palette, or click an existing pill to add/remove yours.
+- **Hover a reaction to see who reacted** (the pill's tooltip lists the nicks).
+- Reactions sync live over `/api/events`, and are embedded in message listings
+  so they're there on load.
+
+Reactions are scoped (dm/group, since the two message tables have separate id
+spaces), authorized (you can only react where you can see the message — DM
+participants or group members), and toggling is idempotent. Android reactions
+are still to come.
+
+---
+
 ## 1.11.0
 
 Group membership now requires consent. Backwards compatible (protocol 1) —

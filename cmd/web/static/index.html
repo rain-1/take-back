@@ -234,6 +234,42 @@
   }
   .msg .edithint { font-size: .62rem; color: var(--dim); margin-top: .25rem; }
 
+  /* Reactions */
+  .reactions { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .3rem; }
+  .reaction {
+    display: inline-flex; align-items: center; gap: .2rem;
+    font-size: .78rem; line-height: 1; padding: .12rem .4rem;
+    border-radius: 999px; cursor: pointer; user-select: none;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    transition: background .12s ease, border-color .12s ease;
+  }
+  .reaction:hover { border-color: var(--accent-dim); }
+  .reaction.mine { background: rgba(91,140,255,.16); border-color: var(--accent-dim); }
+  .reaction .rc { font-size: .68rem; color: var(--muted); }
+  .reaction.mine .rc { color: #bcd0ff; }
+  /* the add-reaction affordance, revealed on message hover */
+  .react-add {
+    opacity: 0; transition: opacity .12s ease;
+    font-size: .8rem; padding: .1rem .35rem; border-radius: 999px;
+    background: transparent; border: 1px solid transparent; color: var(--dim); cursor: pointer;
+  }
+  .msg:hover .react-add { opacity: 1; }
+  .react-add:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
+
+  /* Emoji picker popover */
+  #emojiPicker {
+    position: fixed; z-index: 30; display: none;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: .4rem; box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    grid-template-columns: repeat(6, 1fr); gap: .1rem;
+  }
+  #emojiPicker.show { display: grid; }
+  #emojiPicker button {
+    background: transparent; border: 0; font-size: 1.1rem; padding: .25rem;
+    border-radius: 8px; cursor: pointer;
+  }
+  #emojiPicker button:hover { background: var(--surface-2); }
+
   #empty {
     flex: 1; display: flex; flex-direction: column; gap: .4rem;
     align-items: center; justify-content: center; color: var(--dim);
@@ -282,6 +318,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="emojiPicker"></div>
 
 <!-- ============ APP ============ -->
 <div id="main" class="hidden">
@@ -873,6 +910,12 @@ function appendMessage(m) {
     e.title = "Edited " + new Date(m.editedAt * 1000).toLocaleString();
     t.append(e);
   }
+  // Reactions row (populated from m.reactions; kept in sync by events).
+  const rx = document.createElement("div");
+  rx.className = "reactions";
+  renderReactions(rx, m);
+  div.append(rx);
+
   // Footer row: edit control (yours only) then the timestamp.
   const row = document.createElement("div");
   row.className = "timerow";
@@ -887,10 +930,17 @@ function appendMessage(m) {
     btn.onclick = () => startEdit(div, m);
     row.append(btn);
   }
+  const react = document.createElement("button");
+  react.className = "react-add";
+  react.textContent = "☺"; react.title = "Add reaction";
+  react.onclick = (e) => { e.stopPropagation(); openEmojiPicker(e.currentTarget, m); };
+  row.append(react);
+
   row.append(t);
   div.append(row);
 
   div.dataset.msgId = m.id;
+  div._msg = m; // keep the message object for live reaction updates
   $("messages").append(div);
 }
 
@@ -944,6 +994,87 @@ function startEdit(div, m) {
       }
     }
   });
+}
+
+// ---- Reactions ----
+const REACTION_CHOICES = ["👍","❤️","😂","🎉","🙏","👀","🔥","😮","😢","💯","✅","🚀"];
+let pickerTarget = null; // the message the open picker will react to
+
+function reactionScope() { return openGroup ? "group" : "dm"; }
+
+// renderReactions (re)builds the pill row for a message from m.reactions.
+function renderReactions(container, m) {
+  container.innerHTML = "";
+  (m.reactions || []).forEach((r) => {
+    const pill = document.createElement("span");
+    pill.className = "reaction" + (r.mine ? " mine" : "");
+    pill.title = (r.nicks || []).join(", "); // hover to see who reacted
+    pill.innerHTML = `${r.emoji} <span class="rc">${r.count}</span>`;
+    pill.onclick = () => toggleReaction(m, r.emoji, !r.mine);
+    container.append(pill);
+  });
+}
+
+async function toggleReaction(m, emoji, add) {
+  // Optimistic: the events socket will confirm with the authoritative aggregate.
+  try {
+    await api("/api/reactions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: reactionScope(), messageId: m.id, emoji, add }),
+    });
+  } catch (e) { toast(e.message); }
+}
+
+function openEmojiPicker(anchor, m) {
+  const p = $("emojiPicker");
+  if (!p.dataset.built) {
+    REACTION_CHOICES.forEach((e) => {
+      const b = document.createElement("button");
+      b.textContent = e;
+      b.onclick = () => {
+        const msg = pickerTarget;
+        const existing = (msg.reactions || []).find((r) => r.emoji === e);
+        toggleReaction(msg, e, !(existing && existing.mine));
+        closeEmojiPicker();
+      };
+      p.append(b);
+    });
+    p.dataset.built = "1";
+  }
+  pickerTarget = m;
+  const rect = anchor.getBoundingClientRect();
+  p.style.left = Math.min(rect.left, window.innerWidth - 220) + "px";
+  p.style.top = (rect.bottom + 6) + "px";
+  p.classList.add("show");
+}
+function closeEmojiPicker() { $("emojiPicker").classList.remove("show"); pickerTarget = null; }
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#emojiPicker") && !e.target.closest(".react-add")) closeEmojiPicker();
+});
+
+// applyReaction updates one on-screen message's reactions from a live event,
+// recomputing our own "mine" flag against the fresh per-user list.
+function applyReaction(ev) {
+  if (reactionScope() !== ev.scope) return;
+  const div = [...$("messages").children].find((d) => d.dataset.msgId == ev.messageId);
+  if (!div || !div._msg) return;
+  div._msg.reactions = aggregateReactionList(ev.reactions);
+  const row = div.querySelector(".reactions");
+  if (row) renderReactions(row, div._msg);
+}
+
+// aggregateReactionList mirrors the server aggregation so a live event (raw
+// per-user reactions) becomes the grouped shape the UI renders.
+function aggregateReactionList(raw) {
+  const order = [];
+  const byEmoji = {};
+  (raw || []).forEach((r) => {
+    let g = byEmoji[r.emoji];
+    if (!g) { g = byEmoji[r.emoji] = { emoji: r.emoji, count: 0, nicks: [], mine: false }; order.push(r.emoji); }
+    g.count++; g.nicks.push(r.nick);
+    if (r.userId === me.id) g.mine = true;
+  });
+  return order.map((e) => byEmoji[e]);
 }
 
 // markEdited appends/refreshes the "· edited" marker on a bubble.
@@ -1040,6 +1171,8 @@ function connectEvents() {
       if (openFriend && e.message.senderId === openFriend.id) applyEdit(e.message);
     } else if (e.type === "group_message_edited") {
       if (openGroup && e.message.groupId === openGroup.id) applyEdit(e.message);
+    } else if (e.type === "reaction") {
+      applyReaction(e.message);
     } else if (e.type === "group_message") {
       const m = e.message;
       touchActivity("group", m.groupId, m.created);

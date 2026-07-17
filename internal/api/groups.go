@@ -197,8 +197,9 @@ type groupMsgView struct {
 	Body     string `json:"body"`
 	ImageURL string `json:"imageUrl,omitempty"`
 	ThumbURL string `json:"thumbUrl,omitempty"`
-	Created  int64  `json:"created"`
-	EditedAt int64  `json:"editedAt,omitempty"`
+	Created  int64           `json:"created"`
+	EditedAt int64           `json:"editedAt,omitempty"`
+	Reactions []reactionGroup `json:"reactions,omitempty"`
 }
 
 func toGroupView(m store.GroupMessage) groupMsgView {
