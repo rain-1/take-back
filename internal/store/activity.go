@@ -29,6 +29,7 @@ func (s *Store) LastGroupActivity(userID int64) (map[int64]int64, error) {
 		   FROM group_messages gm
 		   JOIN group_members mem
 		     ON mem.group_id = gm.group_id AND mem.user_id = ?
+		    AND mem.status = 'joined' 
 		  GROUP BY gm.group_id`,
 		userID,
 	)

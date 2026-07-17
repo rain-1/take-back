@@ -22,6 +22,8 @@ interface EventsListener {
     fun onFriendUpdate() {}
     fun onGroupMessage(message: GroupMessage) {}
     fun onGroupUpdate(groupId: Long) {}
+    /** Someone invited me to a group — it needs an accept/decline. */
+    fun onGroupInvite(groupId: Long, groupName: String, invitedBy: String) {}
 }
 
 /**
@@ -116,6 +118,13 @@ object Events {
                 val m = ApiClient.parseGroupMessage(msg.getJSONObject("message"))
                 listeners.forEach { it.onGroupMessage(m) }
                 if (openGroupId != m.groupId) notifyGroupMessage(m)
+            }
+            "group_invite" -> {
+                val gid = msg.optLong("groupId")
+                val name = msg.optString("groupName")
+                val by = msg.optString("nick")
+                listeners.forEach { it.onGroupInvite(gid, name, by) }
+                post(NOTIF_FRIEND + 1, "Group invite", "$by invited you to $name")
             }
             "group_update" -> {
                 val groupId = msg.optLong("userId") // group id is carried in userId

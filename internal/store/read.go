@@ -60,6 +60,7 @@ func (s *Store) UnreadGroupCounts(userID int64) (map[int64]int, error) {
 		   FROM group_messages gm
 		   JOIN group_members mem
 		     ON mem.group_id = gm.group_id AND mem.user_id = ?
+		    AND mem.status = 'joined' 
 		   LEFT JOIN read_state r
 		     ON r.user_id = ? AND r.kind = 'group' AND r.target_id = gm.group_id
 		  WHERE gm.sender_id != ? AND gm.id > COALESCE(r.last_read, 0)

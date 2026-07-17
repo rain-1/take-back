@@ -13,7 +13,12 @@ import (
 func (a *API) groupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/groups", a.auth(a.handleGroups))                    // GET list, POST create
 	mux.HandleFunc("/api/groups/members", a.auth(a.handleGroupMembers))      // GET member list
-	mux.HandleFunc("/api/groups/add", a.auth(a.handleGroupAdd))              // POST add member
+	// Kept as /add for older clients; it now sends an invite rather than
+	// dropping someone into the group.
+	mux.HandleFunc("/api/groups/add", a.auth(a.handleGroupInvite))
+	mux.HandleFunc("/api/groups/invite", a.auth(a.handleGroupInvite))
+	mux.HandleFunc("/api/groups/invites", a.auth(a.handleGroupInvites))  // GET pending
+	mux.HandleFunc("/api/groups/respond", a.auth(a.handleGroupRespond)) // POST accept/decline
 	mux.HandleFunc("/api/groups/leave", a.auth(a.handleGroupLeave))          // POST leave
 	mux.HandleFunc("/api/groups/messages", a.auth(a.handleGroupMessages))    // GET list, POST send
 	mux.HandleFunc("/api/groups/messages/image", a.auth(a.handleGroupImage)) // POST image
@@ -106,7 +111,9 @@ func (a *API) handleGroupMembers(w http.ResponseWriter, r *http.Request, user *s
 	writeJSON(w, http.StatusOK, views)
 }
 
-func (a *API) handleGroupAdd(w http.ResponseWriter, r *http.Request, user *store.User) {
+// handleGroupInvite invites someone to a group. They join only if they accept —
+// nobody gets added to a group against their will.
+func (a *API) handleGroupInvite(w http.ResponseWriter, r *http.Request, user *store.User) {
 	var body struct {
 		Group int64  `json:"group"`
 		Nick  string `json:"nick"`
@@ -117,14 +124,53 @@ func (a *API) handleGroupAdd(w http.ResponseWriter, r *http.Request, user *store
 	if !a.requireMember(w, body.Group, user.ID) {
 		return
 	}
-	added, err := a.Store.AddMember(body.Group, strings.TrimSpace(body.Nick))
+	invited, err := a.Store.InviteMember(body.Group, user.ID, strings.TrimSpace(body.Nick))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "no such user")
 		return
 	}
-	// Let members (incl. the newcomer) know the roster changed.
-	a.notifyGroup(body.Group, presence.Event{Type: "group_update", UserID: body.Group}, 0)
-	a.Presence.NotifyUser(added.ID, presence.Event{Type: "group_update", UserID: body.Group})
+	g, err := a.Store.GroupByID(body.Group)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	// Tell the invitee so it lands in their requests tray.
+	a.Presence.NotifyUser(invited.ID, presence.Event{
+		Type: "group_invite", GroupID: g.ID, GroupName: g.Name, Nick: user.Nick,
+	})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleGroupInvites lists the invites awaiting this user's answer.
+func (a *API) handleGroupInvites(w http.ResponseWriter, _ *http.Request, user *store.User) {
+	invites, err := a.Store.PendingInvites(user.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if invites == nil {
+		invites = []store.GroupInvite{}
+	}
+	writeJSON(w, http.StatusOK, invites)
+}
+
+// handleGroupRespond accepts or declines a pending invite.
+func (a *API) handleGroupRespond(w http.ResponseWriter, r *http.Request, user *store.User) {
+	var body struct {
+		Group  int64 `json:"group"`
+		Accept bool  `json:"accept"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if err := a.Store.RespondInvite(body.Group, user.ID, body.Accept); err != nil {
+		writeErr(w, http.StatusBadRequest, "no pending invite for that group")
+		return
+	}
+	if body.Accept {
+		// Now a member: the roster changed for everyone.
+		a.notifyGroup(body.Group, presence.Event{Type: "group_update", UserID: body.Group}, 0)
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

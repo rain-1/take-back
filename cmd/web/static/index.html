@@ -249,6 +249,14 @@
   #composer .icon { padding: .45rem .6rem; font-size: 1rem; }
 
   #log { position: fixed; bottom: .4rem; left: .8rem; font-size: .72rem; color: var(--dim); }
+  #toast {
+    position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    padding: .5rem .85rem; border-radius: 999px; font-size: .82rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 20;
+    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+  }
+  #toast.show { opacity: 1; }
 
   /* ---- Small screens ---- */
   @media (max-width: 720px) {
@@ -272,6 +280,8 @@
     <div class="toggle" id="authToggle">No account? <a>Register</a></div>
   </div>
 </div>
+
+<div id="toast"></div>
 
 <!-- ============ APP ============ -->
 <div id="main" class="hidden">
@@ -359,6 +369,7 @@ let events = null;           // events WebSocket
 const friendState = new Map(); // id -> friend view
 const groupState = new Map();   // id -> group
 const groupMembers = new Map(); // userId -> { nick, online } for the open group
+let groupInvites = [];          // pending invites awaiting my answer
 
 // ---------- Auth ----------
 let registerMode = false;
@@ -418,6 +429,22 @@ async function loadGroups() {
   groupState.clear();
   list.forEach((g) => groupState.set(g.id, g));
   renderGroups();
+  await loadGroupInvites();
+}
+
+// Group invites sit in the same tray as friend requests: being added to a group
+// is something you agree to, not something done to you.
+async function loadGroupInvites() {
+  groupInvites = await api("/api/groups/invites").catch(() => []);
+  renderFriends(); // the requests tray lives in the friends render
+}
+
+async function respondGroupInvite(groupId, accept) {
+  await api("/api/groups/respond", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ group: groupId, accept }),
+  });
+  await loadGroups();
 }
 
 function renderGroups() {
@@ -490,13 +517,16 @@ function renderMembersPanel() {
   }
   const add = document.createElement("span");
   add.style.cssText = "display:flex;gap:.3rem;align-items:center;";
-  add.innerHTML = `<input id="addMemberNick" placeholder="add by nick" style="width:130px;padding:.2rem .5rem;font-size:.78rem;">`;
+  add.innerHTML = `<input id="addMemberNick" placeholder="invite by nick" style="width:130px;padding:.2rem .5rem;font-size:.78rem;">`;
   const btn = mkBtn("+", "", async () => {
     const nick = $("addMemberNick").value.trim();
     if (!nick) return;
-    try { await api("/api/groups/add", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group: openGroup.id, nick }) });
-      await loadMembers(openGroup.id); await loadGroups();
+    try {
+      await api("/api/groups/invite", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ group: openGroup.id, nick }) });
+      $("addMemberNick").value = "";
+      // They don't appear until they accept — say so rather than looking broken.
+      toast(`Invited ${nick} — they'll join once they accept.`);
     } catch (e) { alert(e.message); }
   });
   btn.style.padding = ".2rem .5rem";
@@ -573,7 +603,23 @@ function renderFriends() {
   // Incoming requests
   const reqBox = $("requests");
   reqBox.innerHTML = "";
-  $("requestsSection").classList.toggle("hidden", requests.length === 0);
+  $("requestsSection").classList.toggle("hidden",
+    requests.length === 0 && groupInvites.length === 0);
+
+  // Group invites first — they're the newer, more surprising thing.
+  groupInvites.forEach((inv) => {
+    const row = document.createElement("div");
+    row.className = "req";
+    row.append(avatar(inv.groupName, true));
+    const name = document.createElement("span");
+    name.className = "name";
+    name.innerHTML = `${esc(inv.groupName)}<div style="font-size:.7rem;color:var(--dim);">invited by ${esc(inv.invitedBy)}</div>`;
+    row.append(name);
+    row.append(mkBtn("Join", "", () => respondGroupInvite(inv.groupId, true)));
+    row.append(mkBtn("Decline", "ghost", () => respondGroupInvite(inv.groupId, false)));
+    reqBox.append(row);
+  });
+
   requests.forEach((f) => {
     const row = document.createElement("div");
     row.className = "req";
@@ -1006,6 +1052,9 @@ function connectEvents() {
         const preview = m.body ? m.body.slice(0, 80) : "📷 image";
         notify("Message in " + (g ? g.name : "a group"), preview);
       }
+    } else if (e.type === "group_invite") {
+      loadGroupInvites();
+      notify("Group invite", `${e.nick} invited you to ${e.groupName}`);
     } else if (e.type === "group_update") {
       // Roster/membership changed (userId carries the group id here).
       loadGroups();
@@ -1016,6 +1065,15 @@ function connectEvents() {
 }
 
 // ---------- Helpers ----------
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
 function mkBtn(label, cls, onclick) {
   const b = document.createElement("button");
   b.textContent = label; if (cls) b.className = cls; b.onclick = onclick; return b;

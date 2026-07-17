@@ -22,6 +22,7 @@ import com.takeback.app.net.Events
 import com.takeback.app.net.EventsListener
 import com.takeback.app.net.Friend
 import com.takeback.app.net.Group
+import com.takeback.app.net.GroupInvite
 import kotlinx.coroutines.launch
 
 /**
@@ -33,6 +34,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
     private lateinit var binding: ActivityHomeBinding
     private var friends: List<Friend> = emptyList()
     private var groups: List<Group> = emptyList()
+    private var invites: List<GroupInvite> = emptyList()
 
     private val notifPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -79,6 +81,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 binding.meNick.text = "signed in as ${me.nick}"
                 friends = ApiClient.friends()
                 groups = ApiClient.groups()
+                invites = runCatching { ApiClient.groupInvites() }.getOrDefault(emptyList())
                 render()
                 renderGroups()
             } catch (_: Exception) { /* transient */ }
@@ -154,8 +157,11 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 compareByDescending<Friend> { it.lastActivity }.thenBy { it.user.nick.lowercase() }
             )
 
-        binding.requestsHeader.visibility = if (requests.isEmpty()) View.GONE else View.VISIBLE
+        binding.requestsHeader.visibility =
+            if (requests.isEmpty() && invites.isEmpty()) View.GONE else View.VISIBLE
         binding.requests.removeAllViews()
+        // Group invites first — being pulled into a group is the more surprising ask.
+        for (i in invites) binding.requests.addView(inviteRow(i))
         for (f in requests) binding.requests.addView(requestRow(f))
 
         binding.friends.removeAllViews()
@@ -191,6 +197,34 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             setOnClickListener { remove(f) }
         })
         return row
+    }
+
+    /** A pending group invite: join or decline, like a friend request. */
+    private fun inviteRow(i: GroupInvite): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(16, 12, 16, 12)
+        }
+        row.addView(TextView(this).apply {
+            text = "# ${i.groupName}\ninvited by ${i.invitedBy}"
+            setTextColor(Color.parseColor("#E7E9EE")); textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        })
+        row.addView(Button(this).apply {
+            text = "Join"
+            setOnClickListener { respondInvite(i, true) }
+        })
+        row.addView(Button(this).apply {
+            text = getString(R.string.decline)
+            setOnClickListener { respondInvite(i, false) }
+        })
+        return row
+    }
+
+    private fun respondInvite(i: GroupInvite, accept: Boolean) = lifecycleScope.launch {
+        runCatching { ApiClient.respondGroupInvite(i.groupId, accept) }
+        refresh()
     }
 
     private fun requestRow(f: Friend): View {
@@ -305,4 +339,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
     override fun onFriendUpdate() = runOnUiThread { refresh() }
 
     override fun onGroupUpdate(groupId: Long) = runOnUiThread { refresh() }
+
+    override fun onGroupInvite(groupId: Long, groupName: String, invitedBy: String) =
+        runOnUiThread { refresh() }
 }

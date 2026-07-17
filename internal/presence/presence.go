@@ -25,9 +25,11 @@ type FriendLookup func(userID int64) ([]int64, error)
 
 // Event is a message pushed to a client's events socket.
 type Event struct {
-	Type    string          `json:"type"` // "presence" | "message" | "hello" | "friend_request"
-	UserID  int64           `json:"userId,omitempty"`
-	Nick    string          `json:"nick,omitempty"` // actor's nick (e.g. friend requester)
+	Type      string `json:"type"` // "presence" | "message" | "hello" | "friend_request" | "group_invite"
+	UserID    int64  `json:"userId,omitempty"`
+	Nick      string `json:"nick,omitempty"` // actor's nick (e.g. friend requester, inviter)
+	GroupID   int64  `json:"groupId,omitempty"`
+	GroupName string `json:"groupName,omitempty"`
 	Online  bool            `json:"online,omitempty"`
 	Online0 []int64         `json:"onlineFriends,omitempty"` // sent once on connect
 	Message json.RawMessage `json:"message,omitempty"`

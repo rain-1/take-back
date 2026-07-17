@@ -24,6 +24,30 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.11.0
+
+Group membership now requires consent. Backwards compatible (protocol 1) —
+`/api/groups/add` still exists and simply sends an invite now, so older clients
+keep working and get the safer behaviour for free.
+
+**Changed**
+- **You can no longer be added to a group against your will.** Adding someone
+  now sends an **invite**, which lands in their requests tray next to friend
+  requests, to accept or decline. Until they accept they are not a member: the
+  group doesn't appear in their list, they can't read it, they aren't counted in
+  the member count, and it produces no unread for them.
+
+**Added**
+- `GET /api/groups/invites`, `POST /api/groups/invite`, `POST /api/groups/respond`,
+  and a `group_invite` event (carrying the group name and who invited you) so it
+  appears live and notifies.
+
+`group_members` gains `status` (invited/joined) via a migration that defaults
+existing rows to **joined** — verified against a copy of the production database
+so nobody currently in a group is bumped back to a pending invite.
+
+---
+
 ## 1.10.0
 
 **Added**

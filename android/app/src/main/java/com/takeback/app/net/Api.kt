@@ -63,6 +63,9 @@ data class Group(
 
 data class GroupMember(val id: Long, val nick: String, val online: Boolean, val owner: Boolean)
 
+/** A pending group invitation awaiting my answer. */
+data class GroupInvite(val groupId: Long, val groupName: String, val invitedBy: String)
+
 data class GroupMessage(
     val id: Long,
     val groupId: Long,
@@ -218,8 +221,20 @@ object ApiClient {
         }
     }
 
-    suspend fun addGroupMember(groupId: Long, nick: String) =
-        post("/api/groups/add", jsonBody(JSONObject().put("group", groupId).put("nick", nick))).let {}
+    /** Invite someone: they join only if they accept. */
+    suspend fun inviteGroupMember(groupId: Long, nick: String) =
+        post("/api/groups/invite", jsonBody(JSONObject().put("group", groupId).put("nick", nick))).let {}
+
+    suspend fun groupInvites(): List<GroupInvite> {
+        val arr = JSONArray(get("/api/groups/invites"))
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            GroupInvite(o.getLong("groupId"), o.getString("groupName"), o.optString("invitedBy"))
+        }
+    }
+
+    suspend fun respondGroupInvite(groupId: Long, accept: Boolean) =
+        post("/api/groups/respond", jsonBody(JSONObject().put("group", groupId).put("accept", accept))).let {}
 
     suspend fun leaveGroup(groupId: Long) =
         post("/api/groups/leave", jsonBody(JSONObject().put("group", groupId))).let {}

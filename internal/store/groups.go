@@ -12,7 +12,21 @@ var (
 	ErrNoSuchGroup = errors.New("no such group")
 )
 
+// Group membership states.
+const (
+	// MemberInvited: asked to join, not in the group yet. They can't read the
+	// group or be counted as a member until they accept.
+	MemberInvited = "invited"
+	MemberJoined  = "joined"
+)
+
 func init() {
+	// Existing rows predate invites, so they default to joined — nobody already
+	// in a group should be bumped back to a pending invite.
+	migrations = append(migrations,
+		`ALTER TABLE group_members ADD COLUMN status TEXT NOT NULL DEFAULT 'joined'`,
+		`ALTER TABLE group_members ADD COLUMN invited_by INTEGER NOT NULL DEFAULT 0`,
+	)
 	schemaExtras = append(schemaExtras, `
 CREATE TABLE IF NOT EXISTS groups (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,8 +89,8 @@ func (s *Store) CreateGroup(ownerID int64, name string) (*Group, error) {
 	}
 	id, _ := res.LastInsertId()
 	if _, err := s.db.Exec(
-		`INSERT INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)`,
-		id, ownerID, now,
+		`INSERT INTO group_members (group_id, user_id, joined_at, status) VALUES (?, ?, ?, ?)`,
+		id, ownerID, now, MemberJoined,
 	); err != nil {
 		return nil, err
 	}
@@ -87,7 +101,8 @@ func (s *Store) CreateGroup(ownerID int64, name string) (*Group, error) {
 func (s *Store) IsMember(groupID, userID int64) bool {
 	var one int
 	err := s.db.QueryRow(
-		`SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?`, groupID, userID,
+		`SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ? AND status = ?`,
+		groupID, userID, MemberJoined,
 	).Scan(&one)
 	return err == nil
 }
@@ -97,7 +112,8 @@ func (s *Store) GroupByID(groupID int64) (*Group, error) {
 	g := &Group{}
 	err := s.db.QueryRow(
 		`SELECT g.id, g.name, g.owner_id, g.call_code,
-		        (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)
+		        (SELECT COUNT(*) FROM group_members m
+		          WHERE m.group_id = g.id AND m.status = 'joined')
 		   FROM groups g WHERE g.id = ?`, groupID,
 	).Scan(&g.ID, &g.Name, &g.OwnerID, &g.CallCode, &g.MemberCount)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -110,10 +126,11 @@ func (s *Store) GroupByID(groupID int64) (*Group, error) {
 func (s *Store) GroupsForUser(userID int64) ([]Group, error) {
 	rows, err := s.db.Query(
 		`SELECT g.id, g.name, g.owner_id, g.call_code,
-		        (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)
+		        (SELECT COUNT(*) FROM group_members m
+		          WHERE m.group_id = g.id AND m.status = 'joined')
 		   FROM groups g
 		   JOIN group_members gm ON gm.group_id = g.id
-		  WHERE gm.user_id = ?
+		  WHERE gm.user_id = ? AND gm.status = 'joined'
 		  ORDER BY g.name`, userID,
 	)
 	if err != nil {
@@ -133,7 +150,9 @@ func (s *Store) GroupsForUser(userID int64) ([]Group, error) {
 
 // GroupMemberIDs returns the user ids of every member (used for event fanout).
 func (s *Store) GroupMemberIDs(groupID int64) ([]int64, error) {
-	rows, err := s.db.Query(`SELECT user_id FROM group_members WHERE group_id = ?`, groupID)
+	rows, err := s.db.Query(
+		`SELECT user_id FROM group_members WHERE group_id = ? AND status = ?`,
+		groupID, MemberJoined)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +173,7 @@ func (s *Store) GroupMembers(groupID int64) ([]User, error) {
 	rows, err := s.db.Query(
 		`SELECT u.id, u.nick, u.created_at
 		   FROM group_members gm JOIN users u ON u.id = gm.user_id
-		  WHERE gm.group_id = ? ORDER BY u.nick`, groupID,
+		  WHERE gm.group_id = ? AND gm.status = ? ORDER BY u.nick`, groupID, MemberJoined,
 	)
 	if err != nil {
 		return nil, err
@@ -173,18 +192,75 @@ func (s *Store) GroupMembers(groupID int64) ([]User, error) {
 	return out, rows.Err()
 }
 
-// AddMember adds the user with the given nick to the group. The caller must
-// already be a member (enforced by the API layer).
-func (s *Store) AddMember(groupID int64, nick string) (*User, error) {
+// InviteMember invites the user with the given nick to a group. They are NOT a
+// member until they accept — being added to a group against your will isn't a
+// thing here, the same as friend requests. The caller must already be a member
+// (enforced by the API layer).
+func (s *Store) InviteMember(groupID, inviterID int64, nick string) (*User, error) {
 	u, _, err := s.UserByNick(nick)
 	if err != nil {
 		return nil, err
 	}
+	// Don't downgrade someone who already joined back to "invited".
 	_, err = s.db.Exec(
-		`INSERT OR IGNORE INTO group_members (group_id, user_id, joined_at) VALUES (?, ?, ?)`,
-		groupID, u.ID, time.Now().Unix(),
+		`INSERT INTO group_members (group_id, user_id, joined_at, status, invited_by)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(group_id, user_id) DO NOTHING`,
+		groupID, u.ID, time.Now().Unix(), MemberInvited, inviterID,
 	)
 	return u, err
+}
+
+// RespondInvite accepts or declines a pending invite.
+func (s *Store) RespondInvite(groupID, userID int64, accept bool) error {
+	if !accept {
+		_, err := s.db.Exec(
+			`DELETE FROM group_members WHERE group_id = ? AND user_id = ? AND status = ?`,
+			groupID, userID, MemberInvited)
+		return err
+	}
+	res, err := s.db.Exec(
+		`UPDATE group_members SET status = ?, joined_at = ?
+		  WHERE group_id = ? AND user_id = ? AND status = ?`,
+		MemberJoined, time.Now().Unix(), groupID, userID, MemberInvited)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNoSuchGroup // no pending invite for them
+	}
+	return nil
+}
+
+// GroupInvite is a pending invitation shown to the invitee.
+type GroupInvite struct {
+	GroupID   int64  `json:"groupId"`
+	GroupName string `json:"groupName"`
+	InvitedBy string `json:"invitedBy"`
+}
+
+// PendingInvites lists the group invites awaiting this user's answer.
+func (s *Store) PendingInvites(userID int64) ([]GroupInvite, error) {
+	rows, err := s.db.Query(
+		`SELECT g.id, g.name, COALESCE(u.nick, '')
+		   FROM group_members gm
+		   JOIN groups g ON g.id = gm.group_id
+		   LEFT JOIN users u ON u.id = gm.invited_by
+		  WHERE gm.user_id = ? AND gm.status = ?
+		  ORDER BY g.name`, userID, MemberInvited)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GroupInvite
+	for rows.Next() {
+		var i GroupInvite
+		if err := rows.Scan(&i.GroupID, &i.GroupName, &i.InvitedBy); err != nil {
+			return nil, err
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
 }
 
 // RemoveMember drops userID from the group.

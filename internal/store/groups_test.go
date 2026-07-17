@@ -22,18 +22,36 @@ func TestGroupCreateAndMembership(t *testing.T) {
 		t.Fatal("non-added user should not be a member")
 	}
 
-	// Add by nick.
-	added, err := s.AddMember(g.ID, "target")
+	// Inviting by nick does NOT make them a member — they must accept.
+	invited, err := s.InviteMember(g.ID, owner.ID, "target")
 	if err != nil {
-		t.Fatalf("AddMember: %v", err)
+		t.Fatalf("InviteMember: %v", err)
 	}
-	if !s.IsMember(g.ID, added.ID) {
-		t.Fatal("added user should be a member")
+	if s.IsMember(g.ID, invited.ID) {
+		t.Fatal("an invited user must not be a member until they accept")
+	}
+	pending, err := s.PendingInvites(invited.ID)
+	if err != nil || len(pending) != 1 || pending[0].GroupID != g.ID {
+		t.Fatalf("PendingInvites = %+v (err %v)", pending, err)
+	}
+	if pending[0].InvitedBy != "owner" {
+		t.Fatalf("invite should name the inviter, got %q", pending[0].InvitedBy)
 	}
 
-	// Adding again is idempotent (INSERT OR IGNORE).
-	if _, err := s.AddMember(g.ID, "target"); err != nil {
-		t.Fatalf("re-add: %v", err)
+	// Accepting joins them.
+	if err := s.RespondInvite(g.ID, invited.ID, true); err != nil {
+		t.Fatalf("RespondInvite: %v", err)
+	}
+	if !s.IsMember(g.ID, invited.ID) {
+		t.Fatal("should be a member after accepting")
+	}
+
+	// Re-inviting someone who already joined must not demote them.
+	if _, err := s.InviteMember(g.ID, owner.ID, "target"); err != nil {
+		t.Fatalf("re-invite: %v", err)
+	}
+	if !s.IsMember(g.ID, invited.ID) {
+		t.Fatal("re-inviting a joined member must not demote them to invited")
 	}
 	got, err := s.GroupByID(g.ID)
 	if err != nil || got.MemberCount != 2 {
@@ -46,11 +64,63 @@ func TestGroupCreateAndMembership(t *testing.T) {
 	}
 
 	// Leaving drops membership.
-	if err := s.RemoveMember(g.ID, added.ID); err != nil {
+	if err := s.RemoveMember(g.ID, invited.ID); err != nil {
 		t.Fatalf("RemoveMember: %v", err)
 	}
-	if s.IsMember(g.ID, added.ID) {
+	if s.IsMember(g.ID, invited.ID) {
 		t.Fatal("removed user should not be a member")
+	}
+}
+
+func TestGroupInviteDeclined(t *testing.T) {
+	s := newTestStore(t)
+	owner := mustUser(t, s, "gowner")
+	mustUser(t, s, "guest")
+
+	g, _ := s.CreateGroup(owner.ID, "Crew")
+	u, err := s.InviteMember(g.ID, owner.ID, "guest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RespondInvite(g.ID, u.ID, false); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	if s.IsMember(g.ID, u.ID) {
+		t.Fatal("declining must not join the group")
+	}
+	if p, _ := s.PendingInvites(u.ID); len(p) != 0 {
+		t.Fatalf("declined invite should be gone, got %+v", p)
+	}
+	// A declined invite can't be accepted after the fact.
+	if err := s.RespondInvite(g.ID, u.ID, true); err == nil {
+		t.Fatal("accepting a non-existent invite should fail")
+	}
+}
+
+// An invited-but-not-joined user must not see the group at all.
+func TestInvitedUserSeesNothing(t *testing.T) {
+	s := newTestStore(t)
+	owner := mustUser(t, s, "iowner")
+	mustUser(t, s, "invitee")
+
+	g, _ := s.CreateGroup(owner.ID, "Secret")
+	u, _ := s.InviteMember(g.ID, owner.ID, "invitee")
+	if _, err := s.AddGroupMessage(GroupMessage{GroupID: g.ID, SenderID: owner.ID, Body: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+
+	groups, _ := s.GroupsForUser(u.ID)
+	if len(groups) != 0 {
+		t.Fatalf("invited user should not list the group yet, got %+v", groups)
+	}
+	unread, _ := s.UnreadGroupCounts(u.ID)
+	if len(unread) != 0 {
+		t.Fatalf("invited user should have no unread for it, got %+v", unread)
+	}
+	// The owner still sees it, and the member count excludes the invitee.
+	got, _ := s.GroupByID(g.ID)
+	if got.MemberCount != 1 {
+		t.Fatalf("member count = %d, want 1 (invitee not counted)", got.MemberCount)
 	}
 }
 
@@ -61,7 +131,10 @@ func TestGroupsForUserAndMessages(t *testing.T) {
 
 	g1, _ := s.CreateGroup(a.ID, "One")
 	g2, _ := s.CreateGroup(a.ID, "Two")
-	if _, err := s.AddMember(g1.ID, "gb"); err != nil {
+	if _, err := s.InviteMember(g1.ID, a.ID, "gb"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RespondInvite(g1.ID, b.ID, true); err != nil {
 		t.Fatal(err)
 	}
 

@@ -131,14 +131,18 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     private fun promptAddMember() {
         val input = EditText(this).apply { hint = "nickname" }
         AlertDialog.Builder(this)
-            .setTitle("Add member")
+            .setTitle("Invite to group")
             .setView(input)
-            .setPositiveButton("Add") { _, _ ->
+            .setPositiveButton("Invite") { _, _ ->
                 val nick = input.text.toString().trim()
                 if (nick.isNotEmpty()) lifecycleScope.launch {
-                    runCatching { ApiClient.addGroupMember(groupId, nick) }
-                    members = runCatching { ApiClient.groupMembers(groupId) }.getOrDefault(members)
-                    renderMembers()
+                    runCatching { ApiClient.inviteGroupMember(groupId, nick) }
+                        .onSuccess {
+                            // They won't appear until they accept — say so, or it
+                            // looks like nothing happened.
+                            toast("Invited $nick — they'll join once they accept")
+                        }
+                        .onFailure { toast(it.message ?: "Couldn't invite") }
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -177,6 +181,9 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     private fun joinCall(code: String) {
         startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_ROOM, code))
     }
+
+    private fun toast(msg: String) =
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     // ---- rendering ----
 
