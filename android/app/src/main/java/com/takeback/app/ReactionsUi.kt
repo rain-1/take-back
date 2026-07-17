@@ -71,6 +71,40 @@ object ReactionsUi {
         dialog.show()
     }
 
+    /** A quote block shown above a reply; tap to jump to the original. */
+    fun quoteBlock(ctx: Context, who: String, body: String, onJump: () -> Unit): LinearLayout {
+        val d = ctx.resources.displayMetrics.density
+        val strip = android.view.View(ctx).apply {
+            setBackgroundColor(Color.parseColor("#5B8CFF"))
+            layoutParams = LinearLayout.LayoutParams((3 * d).toInt(), -1)
+        }
+        val text = TextView(ctx).apply {
+            text = "$who: ${body.ifEmpty { "message" }}"
+            setTextColor(Color.parseColor("#9BB4E8"))
+            textSize = 12f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding((8 * d).toInt(), (2 * d).toInt(), (8 * d).toInt(), (2 * d).toInt())
+        }
+        return LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val lp = LinearLayout.LayoutParams(-2, -2); lp.bottomMargin = (4 * d).toInt(); layoutParams = lp
+            setBackgroundColor(Color.parseColor("#22000000"))
+            addView(strip); addView(text)
+            setOnClickListener { onJump() }
+        }
+    }
+
+    /** Long-press action sheet for a message. */
+    fun showActions(ctx: Context, onReply: () -> Unit, onReact: () -> Unit) {
+        AlertDialog.Builder(ctx)
+            .setItems(arrayOf("Reply", "React")) { _, which ->
+                if (which == 0) onReply() else onReact()
+            }
+            .show()
+    }
+
     private fun showWho(ctx: Context, r: Reaction) {
         AlertDialog.Builder(ctx)
             .setTitle("${r.emoji}  ${r.count}")

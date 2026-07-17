@@ -49,6 +49,8 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     private var members: List<GroupMember> = emptyList()
     private val reactionRows = HashMap<Long, android.widget.LinearLayout>()
     private val reactionState = HashMap<Long, List<com.takeback.app.net.Reaction>>()
+    private val messageViews = HashMap<Long, android.view.View>()
+    private var replyingTo: GroupMessage? = null
 
     private val pickImage = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -68,6 +70,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         binding.sendBtn.setOnClickListener { sendText() }
         binding.imgBtn.setOnClickListener { pickImage.launch("image/*") }
         binding.callBtn.setOnClickListener { startCall() }
+        binding.replyCancel.setOnClickListener { cancelReply() }
         binding.addMemberBtn.setOnClickListener { promptAddMember() }
 
         Events.addListener(this)
@@ -97,7 +100,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 renderMembers()
                 val msgs = ApiClient.groupConversation(groupId)
                 binding.messages.removeAllViews()
-                reactionRows.clear(); reactionState.clear()
+                reactionRows.clear(); reactionState.clear(); messageViews.clear()
                 msgs.forEach { addMessage(it) }
                 scrollToBottom()
             } catch (_: Exception) { /* transient */ }
@@ -156,8 +159,10 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         val body = binding.input.text.toString().trim()
         if (body.isEmpty()) return
         binding.input.setText("")
+        val replyTo = replyingTo?.id ?: 0
+        cancelReply()
         lifecycleScope.launch {
-            runCatching { ApiClient.sendGroupText(groupId, body) }
+            runCatching { ApiClient.sendGroupText(groupId, body, replyTo) }
                 .onSuccess { addMessage(it); scrollToBottom() }
         }
     }
@@ -207,6 +212,12 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             })
         }
 
+        // Quote block for a reply — tap to jump to the original.
+        if (m.replyTo != 0L) {
+            val who = if (m.replySender == myId) "you" else (nickOf(m.replySender) ?: "someone")
+            bubble.addView(ReactionsUi.quoteBlock(this, who, m.replyBody) { jumpTo(m.replyTo) })
+        }
+
         val call = CALL_RE.find(m.body)
         if (call != null) {
             val code = call.groupValues[1]
@@ -240,10 +251,14 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         ReactionsUi.render(this, rxRow, m.reactions) { emoji, add -> react(m.id, emoji, add) }
 
         bubble.setOnLongClickListener {
-            ReactionsUi.showPicker(this) { emoji ->
-                val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
-                react(m.id, emoji, !(existing?.mine ?: false))
-            }
+            ReactionsUi.showActions(this,
+                onReply = { startReply(m) },
+                onReact = {
+                    ReactionsUi.showPicker(this) { emoji ->
+                        val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
+                        react(m.id, emoji, !(existing?.mine ?: false))
+                    }
+                })
             true
         }
 
@@ -253,6 +268,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             addView(bubble)
             addView(rxRow)
         }
+        messageViews[m.id] = column
         binding.messages.addView(LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).also { it.topMargin = 8 }
             gravity = if (mine) Gravity.END else Gravity.START
@@ -262,6 +278,29 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
 
     private fun react(messageId: Long, emoji: String, add: Boolean) = lifecycleScope.launch {
         runCatching { ApiClient.react("group", messageId, emoji, add) }
+    }
+
+    private fun startReply(m: GroupMessage) {
+        replyingTo = m
+        val who = if (m.senderId == myId) "you" else (nickOf(m.senderId) ?: "someone")
+        binding.replyBarText.text = "Replying to $who: ${m.body.take(50).ifEmpty { "image" }}"
+        binding.replyBar.visibility = View.VISIBLE
+    }
+
+    private fun cancelReply() {
+        replyingTo = null
+        binding.replyBar.visibility = View.GONE
+    }
+
+    private fun jumpTo(messageId: Long) {
+        val v = messageViews[messageId] as? LinearLayout ?: return
+        binding.scroll.post {
+            binding.scroll.smoothScrollTo(0, v.top)
+            val target = v.getChildAt(0)
+            val orig = target.background
+            target.setBackgroundColor(Color.parseColor("#3B60B0"))
+            target.postDelayed({ target.background = orig }, 900)
+        }
     }
 
     override fun onReaction(scope: String, messageId: Long, reactions: List<com.takeback.app.net.Reaction>) =

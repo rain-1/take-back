@@ -44,6 +44,8 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     private var myId: Long = 0
     private val reactionRows = HashMap<Long, android.widget.LinearLayout>()
     private val reactionState = HashMap<Long, List<com.takeback.app.net.Reaction>>()
+    private val messageViews = HashMap<Long, android.view.View>()
+    private var replyingTo: Message? = null
 
     private val pickImage = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -62,6 +64,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         binding.sendBtn.setOnClickListener { sendText() }
         binding.imgBtn.setOnClickListener { pickImage.launch("image/*") }
         binding.callBtn.setOnClickListener { startCall() }
+        binding.replyCancel.setOnClickListener { cancelReply() }
 
         Events.addListener(this)
         load()
@@ -88,7 +91,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
                 myId = ApiClient.me().id
                 val msgs = ApiClient.conversation(friendId)
                 binding.messages.removeAllViews()
-                reactionRows.clear(); reactionState.clear()
+                reactionRows.clear(); reactionState.clear(); messageViews.clear()
                 msgs.forEach { addMessage(it) }
                 scrollToBottom()
             } catch (_: Exception) { /* transient */ }
@@ -99,8 +102,10 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         val body = binding.input.text.toString().trim()
         if (body.isEmpty()) return
         binding.input.setText("")
+        val replyTo = replyingTo?.id ?: 0
+        cancelReply()
         lifecycleScope.launch {
-            runCatching { ApiClient.sendText(friendId, body) }
+            runCatching { ApiClient.sendText(friendId, body, replyTo) }
                 .onSuccess { addMessage(it); scrollToBottom() }
         }
     }
@@ -144,6 +149,12 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             background = bubbleBg(mine)
         }
 
+        // Quote block for a reply — tap to jump to the original.
+        if (m.replyTo != 0L) {
+            val who = if (m.replySender == myId) "you" else friendNick
+            bubble.addView(ReactionsUi.quoteBlock(this, who, m.replyBody) { jumpTo(m.replyTo) })
+        }
+
         if (call != null) {
             val code = call.groupValues[1]
             bubble.addView(TextView(this).apply {
@@ -181,10 +192,14 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         reactionState[m.id] = m.reactions
         ReactionsUi.render(this, rxRow, m.reactions) { emoji, add -> react(m.id, emoji, add) }
         bubble.setOnLongClickListener {
-            ReactionsUi.showPicker(this) { emoji ->
-                val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
-                react(m.id, emoji, !(existing?.mine ?: false))
-            }
+            ReactionsUi.showActions(this,
+                onReply = { startReply(m) },
+                onReact = {
+                    ReactionsUi.showPicker(this) { emoji ->
+                        val existing = reactionState[m.id]?.firstOrNull { it.emoji == emoji }
+                        react(m.id, emoji, !(existing?.mine ?: false))
+                    }
+                })
             true
         }
 
@@ -194,12 +209,38 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             addView(bubble)
             addView(rxRow)
         }
+        messageViews[m.id] = column // for jump-to-original
         val row = LinearLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).also { it.topMargin = 8 }
             gravity = if (mine) Gravity.END else Gravity.START
             addView(column)
         }
         binding.messages.addView(row)
+    }
+
+    // ---- replies ----
+
+    private fun startReply(m: Message) {
+        replyingTo = m
+        val who = if (m.senderId == myId) "you" else friendNick
+        binding.replyBarText.text = "Replying to $who: ${m.body.take(50).ifEmpty { "image" }}"
+        binding.replyBar.visibility = View.VISIBLE
+    }
+
+    private fun cancelReply() {
+        replyingTo = null
+        binding.replyBar.visibility = View.GONE
+    }
+
+    /** Scroll to a message and flash it briefly. */
+    private fun jumpTo(messageId: Long) {
+        val v = messageViews[messageId] ?: return
+        binding.scroll.post {
+            binding.scroll.smoothScrollTo(0, v.top)
+            val orig = (v as LinearLayout).getChildAt(0).background
+            v.getChildAt(0).setBackgroundColor(Color.parseColor("#3B60B0"))
+            v.postDelayed({ v.getChildAt(0).background = orig }, 900)
+        }
     }
 
     private fun react(messageId: Long, emoji: String, add: Boolean) {

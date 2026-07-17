@@ -53,6 +53,9 @@ data class Message(
     val thumbUrl: String?,
     val created: Long,
     val reactions: List<Reaction> = emptyList(),
+    val replyTo: Long = 0,
+    val replySender: Long = 0,
+    val replyBody: String = "",
 )
 
 data class Group(
@@ -79,6 +82,9 @@ data class GroupMessage(
     val thumbUrl: String?,
     val created: Long,
     val reactions: List<Reaction> = emptyList(),
+    val replyTo: Long = 0,
+    val replySender: Long = 0,
+    val replyBody: String = "",
 )
 
 /**
@@ -218,8 +224,9 @@ object ApiClient {
         return (0 until arr.length()).map { parseMessage(arr.getJSONObject(it)) }
     }
 
-    suspend fun sendText(withUser: Long, body: String): Message =
-        parseMessage(post("/api/messages", jsonBody(JSONObject().put("with", withUser).put("body", body))))
+    suspend fun sendText(withUser: Long, body: String, replyTo: Long = 0): Message =
+        parseMessage(post("/api/messages", jsonBody(
+            JSONObject().put("with", withUser).put("body", body).put("replyTo", replyTo))))
 
     suspend fun sendImage(withUser: Long, filename: String, bytes: ByteArray, caption: String): Message {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -277,9 +284,9 @@ object ApiClient {
         return (0 until arr.length()).map { parseGroupMessage(arr.getJSONObject(it)) }
     }
 
-    suspend fun sendGroupText(groupId: Long, body: String): GroupMessage =
+    suspend fun sendGroupText(groupId: Long, body: String, replyTo: Long = 0): GroupMessage =
         parseGroupMessage(JSONObject(post("/api/groups/messages",
-            jsonBody(JSONObject().put("group", groupId).put("body", body)))))
+            jsonBody(JSONObject().put("group", groupId).put("body", body).put("replyTo", replyTo)))))
 
     suspend fun sendGroupImage(groupId: Long, filename: String, bytes: ByteArray, caption: String): GroupMessage {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -343,6 +350,9 @@ object ApiClient {
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
         created = o.getLong("created"),
         reactions = parseReactions(o.optJSONArray("reactions")),
+        replyTo = o.optLong("replyTo"),
+        replySender = o.optLong("replySender"),
+        replyBody = o.optString("replyBody"),
     )
 
     private fun parseReactions(arr: JSONArray?): List<Reaction> {
@@ -376,6 +386,9 @@ object ApiClient {
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
         created = o.getLong("created"),
         reactions = parseReactions(o.optJSONArray("reactions")),
+        replyTo = o.optLong("replyTo"),
+        replySender = o.optLong("replySender"),
+        replyBody = o.optString("replyBody"),
     )
 }
 

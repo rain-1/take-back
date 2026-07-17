@@ -40,8 +40,12 @@ older clients ignore them.
   convention. Only fires when the box is empty, so it never interferes with
   cursor movement.
 
-`messages` and `group_messages` gain a `reply_to` column via migration. Android
-replies are still to come.
+**Android** has replies too: long-press a message → **Reply** (or React), the
+composer shows what you're replying to, the sent message shows a quote block, and
+tapping the quote scrolls to the original and flashes it. `messages` and
+`group_messages` gain a `reply_to` column via migration.
+
+(↑-to-edit is a desktop-keyboard convention and stays web-only.)
 
 ---
 
