@@ -24,6 +24,15 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.16.0
+
+**Added (web)**
+- **Blockquote markdown.** Lines beginning with `> ` now render as a styled
+  blockquote in the chat (consecutive `>` lines join into one quote). Bold,
+  italic, code and links still work inside a quote.
+
+---
+
 ## 1.15.1
 
 **Changed (Android)**

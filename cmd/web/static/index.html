@@ -204,6 +204,10 @@
     font-family: ui-monospace, SFMono-Regular, monospace; font-size: .85em;
   }
   .msg .body a { color: #9dc0ff; }
+  .msg .body blockquote {
+    margin: .15rem 0; padding: .05rem .6rem; border-left: 3px solid var(--border);
+    color: var(--muted);
+  }
   .msg img.thumb {
     max-width: 260px; max-height: 240px; border-radius: 10px;
     margin-top: .35rem; display: block; cursor: zoom-in;
@@ -1401,7 +1405,16 @@ function renderMarkdown(src) {
   // Links [text](http/https url) only.
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Blockquotes: any run of lines beginning with "> " becomes one <blockquote>.
+  // Done per-line before the newline→<br> conversion; escaped "&gt; " matches
+  // the literal "> " the user typed.
+  s = s.replace(/(?:^|\n)((?:&gt; ?.*(?:\n|$))+)/g, (m, block) => {
+    const inner = block.replace(/(?:^|\n)&gt; ?/g, "\n").replace(/^\n/, "");
+    return "\n<blockquote>" + inner.replace(/\n$/, "") + "</blockquote>\n";
+  });
   s = s.replace(/\n/g, "<br>");
+  // A <br> hugging a blockquote tag is spurious — drop it.
+  s = s.replace(/<br>(<\/?blockquote>)/g, "$1").replace(/(<\/?blockquote>)<br>/g, "$1");
   return "<p>" + s + "</p>";
 }
 </script>

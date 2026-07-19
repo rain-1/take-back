@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -519,6 +520,48 @@ func cmdAccept(c *client, args []string) error {
 	return nil
 }
 
+// cmdReact adds an emoji reaction to a message. With no id it reacts to the
+// most recent message in the conversation — handy for "👀 seen" / "✅ done"
+// acknowledgements.
+//
+//	tb react <nick|#group> <emoji> [messageId]
+func cmdReact(c *client, args []string) error {
+	if len(args) < 2 {
+		return errors.New("usage: tb react <nick|#group> <emoji> [messageId]")
+	}
+	cv, err := c.find(args[0])
+	if err != nil {
+		return err
+	}
+	emoji := args[1]
+
+	var msgID int64
+	if len(args) >= 3 {
+		msgID, _ = strconv.ParseInt(args[2], 10, 64)
+	} else {
+		msgs, err := c.history(cv, 1)
+		if err != nil {
+			return err
+		}
+		if len(msgs) == 0 {
+			return errors.New("no messages to react to")
+		}
+		msgID = msgs[len(msgs)-1].ID
+	}
+
+	scope := "dm"
+	if cv.isGroup {
+		scope = "group"
+	}
+	if err := c.do("POST", "/api/reactions", map[string]any{
+		"scope": scope, "messageId": msgID, "emoji": emoji, "add": true,
+	}, nil); err != nil {
+		return err
+	}
+	fmt.Printf("%sreacted %s to %s (msg %d)%s\n", dim, emoji, cv.name, msgID, reset)
+	return nil
+}
+
 // cmdWait blocks on the events socket until the next incoming message (or
 // friend request / group invite), prints one line describing it, and exits.
 //
@@ -717,6 +760,7 @@ func usage() {
   tb send <nick|#group> <message...>          send a message
   tb add <nick>                               send a friend request
   tb accept [nick]                            accept incoming friend request(s)
+  tb react <nick|#group> <emoji> [msgId]      react to a message (latest if no id)
   tb wait [-timeout D]                        block until ONE new message, print it, exit
   tb watch                                    live-tail incoming messages
   tb whoami                                   show the logged-in account
@@ -749,6 +793,8 @@ func main() {
 		err = cmdAdd(c, args)
 	case "accept":
 		err = cmdAccept(c, args)
+	case "react":
+		err = cmdReact(c, args)
 	case "wait":
 		err = cmdWait(c, args)
 	case "watch":
