@@ -197,6 +197,22 @@ object Events {
         post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(), "New group message", preview)
     }
 
+    /**
+     * Dismiss the tray notification for a conversation once you open/view it.
+     * (Notification ids mirror notifyMessage/notifyGroupMessage above.) Opening a
+     * chat only suppressed *future* notifications; the already-posted one lingered.
+     */
+    fun clearMessageNotification(friendId: Long) = cancel(NOTIF_MESSAGE_BASE + friendId.toInt())
+
+    fun clearGroupMessageNotification(groupId: Long) =
+        cancel(NOTIF_MESSAGE_BASE + 100000 + groupId.toInt())
+
+    private fun cancel(id: Int) {
+        if (::appContext.isInitialized) {
+            runCatching { NotificationManagerCompat.from(appContext).cancel(id) }
+        }
+    }
+
     private fun post(id: Int, title: String, text: String) {
         val n = NotificationCompat.Builder(appContext, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_chat)

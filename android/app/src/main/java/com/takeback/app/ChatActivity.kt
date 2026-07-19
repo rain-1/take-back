@@ -73,6 +73,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     override fun onResume() {
         super.onResume()
         Events.openFriendId = friendId
+        Events.clearMessageNotification(friendId) // viewing it dismisses its notification
     }
 
     override fun onPause() {

@@ -85,6 +85,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     override fun onResume() {
         super.onResume()
         Events.openGroupId = groupId
+        Events.clearGroupMessageNotification(groupId) // viewing it dismisses its notification
     }
 
     override fun onPause() {
