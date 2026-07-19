@@ -24,6 +24,23 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.17.1
+
+**Fixed (Android)**
+- **Message notifications now clear when you open the chat.** Opening a
+  conversation only suppressed *future* notifications; the one already in the
+  tray lingered after you'd read it. `onResume` now dismisses it (DM + group).
+
+**Added (web)**
+- **"Get the Android app" download link** on the sign-in / registration screen.
+
+**Ops**
+- The `/take-back.apk` download now sends `Cache-Control: no-store` so a freshly
+  deployed APK isn't masked by an edge-cached old one. (A one-time Cloudflare
+  purge is needed to clear an already-cached copy.)
+
+---
+
 ## 1.17.0
 
 **Fixed**
