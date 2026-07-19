@@ -5,3 +5,6 @@
 *.db-*
 /media/
 takeback.db
+
+# Ephemeral subagent git worktrees
+.claude/worktrees/
