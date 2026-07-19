@@ -61,9 +61,25 @@
   }
   .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; }
   .row > div { flex:1; min-width:180px; }
-  #grid { display:grid; gap:.75rem; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); margin-top:1rem; }
+  /* The call grid fills the space below the callbar/settings all the way to the
+     bottom of the window. layoutGrid() (JS) sets the column/row counts and the
+     grid's exact height for the current participant count and viewport, so tiles
+     use as much of the window as possible while staying a sane shape. The rule
+     here is only a reasonable first paint before that runs. */
+  #grid {
+    display:grid; gap:.75rem; margin-top:1rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
+  }
+  /* Once we're in a call the lobby/nick cards are hidden, so let the layout use
+     the whole window width instead of the 1100px reading column — otherwise a
+     "fill the window" call would still be boxed into the middle of the page. */
+  body.in-call main { max-width:none; padding:.75rem 1rem 1rem; }
   .tile {
-    position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:4/3;
+    position:relative; background:#000; border-radius:12px; overflow:hidden;
+    /* No fixed aspect-ratio: layoutGrid sizes the rows, and a grid cell with a
+       forced aspect-ratio would fight that and overflow. min-*:0 lets a tile
+       shrink inside its cell rather than pushing the grid past the viewport. */
+    min-height:0; min-width:0;
     outline:2px solid transparent; outline-offset:-2px;
     transition:outline-color .12s ease;
   }
@@ -215,6 +231,13 @@
         <select id="micSelect"></select>
       </div>
       <div class="setrow">
+        <label for="stereoSel">Transmit audio</label>
+        <select id="stereoSel">
+          <option value="mono">Mono (default)</option>
+          <option value="stereo">Stereo</option>
+        </select>
+      </div>
+      <div class="setrow">
         <label>Mic level</label>
         <div class="levelbox">
           <div class="meter" title="Live level of what your peers hear">
@@ -301,18 +324,26 @@ async function startCall(code) {
   u.searchParams.set("nick", nick);
   history.replaceState(null, "", u);
   try {
-    // Honour the saved device choices, falling back if that device is gone.
-    const micId = localStorage.getItem(PREF_MIC), camId = localStorage.getItem(PREF_CAM);
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      audio: micId ? { deviceId: { ideal: micId } } : true,
-      video: camId ? { deviceId: { ideal: camId } } : true,
-    });
+    // First try to REQUIRE the saved devices (deviceId: {exact}). Firefox
+    // silently ignores `ideal` device hints and grabs its own default mic, so
+    // the previous {ideal} constraint meant the saved microphone was never
+    // actually used there — exact makes the chosen device stick on both Firefox
+    // and Chrome. channelCount follows the mono/stereo transmit preference.
+    cameraStream = await navigator.mediaDevices.getUserMedia(gumConstraints(true));
   } catch (err) {
-    log("Could not access camera/microphone: " + err.message);
-    return;
+    // A saved device can be gone (unplugged, or a permission/enumeration quirk),
+    // in which case `exact` rejects. Retry once PREFERRING the saved devices so
+    // the call still starts on whatever is available.
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia(gumConstraints(false));
+    } catch (err2) {
+      log("Could not access camera/microphone: " + err2.message);
+      return;
+    }
   }
   $("lobbyStep").classList.add("hidden");
   $("callStep").classList.remove("hidden");
+  document.body.classList.add("in-call"); // let the grid use the full window
   $("callCode").textContent = code;
   addTile("local", nick + " (you)", cameraStream, true);
   applyMirror();
@@ -329,17 +360,68 @@ $("leaveBtn").onclick = () => { leaving = true; location.href = location.pathnam
 // ---- Settings: devices & preferences ----
 // Set-once-and-keep choices, so they live in a panel and persist across calls.
 const PREF_MIRROR = "tb.mirror", PREF_MIC = "tb.micId", PREF_CAM = "tb.camId";
+// Transmit mono by default; stereo is opt-in (it roughly doubles audio bitrate
+// and most mics are mono anyway). Stored as "1" (stereo) / "0" or unset (mono).
+const PREF_STEREO = "tb.stereo";
+function stereoWanted() { return localStorage.getItem(PREF_STEREO) === "1"; }
 
 let mirrored = localStorage.getItem(PREF_MIRROR) !== "0"; // default: mirrored
+
+// gumConstraints builds the getUserMedia request from the saved device choices
+// and the mono/stereo preference. With `exact` the saved devices are REQUIRED
+// (used for the first attempt); without it they're merely preferred, so a call
+// can still start when a saved device has gone away.
+function gumConstraints(exact) {
+  const micId = localStorage.getItem(PREF_MIC), camId = localStorage.getItem(PREF_CAM);
+  const pick = (id) => (exact ? { exact: id } : { ideal: id });
+  // channelCount is a soft hint (ideal): plenty of mics are mono-only, and we
+  // never want a stereo request to fail the whole capture.
+  const audio = { channelCount: { ideal: stereoWanted() ? 2 : 1 } };
+  if (micId) audio.deviceId = pick(micId);
+  const video = camId ? { deviceId: pick(camId) } : true;
+  return { audio, video };
+}
 
 $("settingsBtn").onclick = async () => {
   const panel = $("settingsPanel");
   panel.classList.toggle("hidden");
+  // Opening/closing the panel changes how much room is left for the grid, so
+  // re-fit it either way.
+  layoutGrid();
   if (panel.classList.contains("hidden")) { stopMeter(); return; }
+  $("stereoSel").value = stereoWanted() ? "stereo" : "mono";
   await loadDevices();
   renderVolumes();
   startMeter();
 };
+
+// Mono/stereo transmit toggle. Two things have to change for it to take effect
+// on a live call: the CAPTURE channel count (getUserMedia) and the Opus SDP
+// (stereo / sprop-stereo fmtp params, added by tuneAudio during negotiation).
+$("stereoSel").onchange = async () => {
+  const stereo = $("stereoSel").value === "stereo";
+  localStorage.setItem(PREF_STEREO, stereo ? "1" : "0");
+  if (cameraStream) await recaptureMic(); // new channelCount
+  // Renegotiate so the Opus fmtp change reaches peers. Only from a stable state,
+  // so we don't collide with an in-flight offer (perfect negotiation covers the
+  // rest if we do race).
+  for (const [peerId, entry] of peers) {
+    if (entry.pc.signalingState === "stable") await makeOffer(peerId, entry);
+  }
+  log("Transmitting " + (stereo ? "stereo" : "mono") + " audio.");
+};
+
+// recaptureMic re-opens the microphone with the current channelCount preference
+// (same device) and swaps the fresh track into the call.
+async function recaptureMic() {
+  const micId = localStorage.getItem(PREF_MIC);
+  const audio = { channelCount: { ideal: stereoWanted() ? 2 : 1 } };
+  if (micId) audio.deviceId = { exact: micId };
+  let fresh;
+  try { fresh = await navigator.mediaDevices.getUserMedia({ audio }); }
+  catch (e) { log("Couldn't re-capture microphone: " + e.message); return; }
+  await applyAudioTrack(fresh.getAudioTracks()[0]);
+}
 
 $("mirrorChk").onchange = () => {
   mirrored = $("mirrorChk").checked;
@@ -522,48 +604,74 @@ async function switchDevice(kind, deviceId) {
   let fresh;
   try {
     fresh = await navigator.mediaDevices.getUserMedia(
-      kind === "audio" ? { audio: { deviceId: { exact: deviceId } } }
-                       : { video: { deviceId: { exact: deviceId } } });
+      kind === "audio"
+        // Keep the mono/stereo preference across a mic change too.
+        ? { audio: { deviceId: { exact: deviceId }, channelCount: { ideal: stereoWanted() ? 2 : 1 } } }
+        : { video: { deviceId: { exact: deviceId } } });
   } catch (err) {
     log("Couldn't switch " + kind + ": " + err.message);
     return;
   }
-  const newTrack = kind === "audio" ? fresh.getAudioTracks()[0] : fresh.getVideoTracks()[0];
-
-  for (const entry of peers.values()) {
-    const sender = entry.pc.getSenders().find(
-      (s) => s.track && s.track.kind === kind && s !== entry.screenSender);
-    if (sender) await sender.replaceTrack(newTrack);
-  }
-
-  const old = kind === "audio" ? cameraStream.getAudioTracks()[0] : cameraStream.getVideoTracks()[0];
-  if (old) { cameraStream.removeTrack(old); old.stop(); }
-  cameraStream.addTrack(newTrack);
-  newTrack.enabled = kind === "audio" ? micOn : camOn;
-
+  // Remember the choice so the NEXT call opens with this device (gumConstraints).
   localStorage.setItem(kind === "audio" ? PREF_MIC : PREF_CAM, deviceId);
 
   if (kind === "audio") {
-    // The analyser is bound to the OLD track, so the speaking ring would go
-    // dead after a mic change unless we rebuild it against the new stream.
-    detachVAD("tile-local");
-    if (gainChainActive) {
-      rebuildMicSource(); // point the gain chain at the new mic
-      const processed = micDest.stream.getAudioTracks()[0];
-      processed.enabled = micOn;
-      for (const entry of peers.values()) {
-        const snd = entry.pc.getSenders().find((x) => x.track && x.track.kind === "audio");
-        if (snd) await snd.replaceTrack(processed);
-      }
-      attachVAD("tile-local", micDest.stream);
-    } else {
-      attachVAD("tile-local", cameraStream);
-    }
+    await applyAudioTrack(fresh.getAudioTracks()[0]);
+    log("Microphone switched.");
   } else {
-    const v = document.querySelector("#tile-local video");
-    if (v) { v.srcObject = cameraStream; v.play().catch(() => {}); }
+    await applyVideoTrack(fresh.getVideoTracks()[0]);
+    log("Camera switched.");
   }
-  log(kind === "audio" ? "Microphone switched." : "Camera switched.");
+}
+
+// applyAudioTrack installs a freshly captured microphone track as our outgoing
+// audio: hand it to every peer, swap it into cameraStream, and re-point the
+// meter/gain/VAD (all bound to the OLD track, which would otherwise go silent).
+// Shared by the microphone picker and the mono/stereo toggle.
+async function applyAudioTrack(newTrack) {
+  if (!newTrack) return;
+  for (const entry of peers.values()) {
+    const sender = entry.pc.getSenders().find(
+      (s) => s.track && s.track.kind === "audio" && s !== entry.screenSender);
+    if (sender) await sender.replaceTrack(newTrack);
+  }
+  const old = cameraStream.getAudioTracks()[0];
+  if (old) { cameraStream.removeTrack(old); old.stop(); }
+  cameraStream.addTrack(newTrack);
+  newTrack.enabled = micOn;
+
+  // The analyser is bound to the OLD track, so the speaking ring would go dead
+  // after a mic change unless we rebuild it against the new stream.
+  detachVAD("tile-local");
+  if (gainChainActive) {
+    rebuildMicSource(); // point the gain chain at the new mic
+    const processed = micDest.stream.getAudioTracks()[0];
+    processed.enabled = micOn;
+    for (const entry of peers.values()) {
+      const snd = entry.pc.getSenders().find((x) => x.track && x.track.kind === "audio");
+      if (snd) await snd.replaceTrack(processed);
+    }
+    attachVAD("tile-local", micDest.stream);
+  } else {
+    attachVAD("tile-local", cameraStream);
+  }
+}
+
+// applyVideoTrack is the camera equivalent: swap the new track into the senders,
+// the camera stream and the local preview.
+async function applyVideoTrack(newTrack) {
+  if (!newTrack) return;
+  for (const entry of peers.values()) {
+    const sender = entry.pc.getSenders().find(
+      (s) => s.track && s.track.kind === "video" && s !== entry.screenSender);
+    if (sender) await sender.replaceTrack(newTrack);
+  }
+  const old = cameraStream.getVideoTracks()[0];
+  if (old) { cameraStream.removeTrack(old); old.stop(); }
+  cameraStream.addTrack(newTrack);
+  newTrack.enabled = camOn;
+  const v = document.querySelector("#tile-local video");
+  if (v) { v.srcObject = cameraStream; v.play().catch(() => {}); }
 }
 
 // ---- Audio recovery ----
@@ -628,7 +736,7 @@ function applyState(id, s) {
   setTileMuted(id, !s.audio);
   if (!s.screenId) { // they stopped sharing
     const t = document.getElementById("tile-" + id + "-screen");
-    if (t) t.remove();
+    if (t) { t.remove(); layoutGrid(); }
   }
 }
 
@@ -681,6 +789,7 @@ function stopScreenShare() {
   }
   const tile = document.getElementById("tile-local-screen");
   if (tile) tile.remove();
+  layoutGrid();
 
   $("presentBtn").textContent = "🖥 Present screen";
   broadcastState();
@@ -732,6 +841,7 @@ function resetPeers() {
   peers.clear();
   peerState.clear();
   updateCallPill();
+  layoutGrid();
 }
 
 // ---- Status ----
@@ -796,7 +906,11 @@ async function handleSignal(msg) {
 
       // setRemoteDescription implicitly rolls back our own offer when polite.
       await pc.setRemoteDescription(JSON.parse(msg.payload));
-      await pc.setLocalDescription(); // implicit createAnswer
+      // Explicit createAnswer (rather than implicit setLocalDescription) so we
+      // can apply the Opus mono/stereo tuning before we answer.
+      const answer = await pc.createAnswer();
+      answer.sdp = tuneAudio(answer.sdp);
+      await pc.setLocalDescription(answer);
       send({ type: "answer", to: msg.from, nick, payload: JSON.stringify(pc.localDescription) });
       break;
     }
@@ -820,6 +934,52 @@ async function handleSignal(msg) {
       removePeer(msg.from);
       break;
   }
+}
+
+// makeOffer creates and sends an SDP offer for one peer, applying our audio
+// tuning (the mono/stereo Opus params). Used by onnegotiationneeded and by the
+// stereo toggle when it renegotiates an already-connected peer.
+async function makeOffer(peerId, entry) {
+  const pc = entry.pc;
+  try {
+    entry.makingOffer = true;
+    const offer = await pc.createOffer();
+    offer.sdp = tuneAudio(offer.sdp);
+    await pc.setLocalDescription(offer);
+    send({ type: "offer", to: peerId, nick, payload: JSON.stringify(pc.localDescription) });
+  } catch (err) {
+    console.warn("negotiationneeded", err);
+  } finally {
+    entry.makingOffer = false;
+  }
+}
+
+// tuneAudio rewrites the Opus fmtp line so peers know whether to expect stereo.
+// Mono is the default and leaves the SDP untouched (the lowest-risk path, byte
+// for byte what we sent before this feature existed); stereo appends
+// stereo=1;sprop-stereo=1 to the Opus payload's fmtp so both directions carry
+// two channels. SDP lines are CRLF-separated, so preserve that on the way out.
+function tuneAudio(sdp) {
+  if (!stereoWanted()) return sdp;
+  const m = sdp.match(/a=rtpmap:(\d+) opus\/48000/i);
+  if (!m) return sdp;
+  const pt = m[1];
+  const params = "stereo=1;sprop-stereo=1";
+  const lines = sdp.split("\r\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("a=fmtp:" + pt + " ")) {
+      if (!/stereo=1/.test(lines[i])) lines[i] += ";" + params;
+      return lines.join("\r\n");
+    }
+  }
+  // No fmtp line for Opus yet: add one right after its rtpmap.
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("a=rtpmap:" + pt + " ")) {
+      lines.splice(i + 1, 0, "a=fmtp:" + pt + " " + params);
+      break;
+    }
+  }
+  return lines.join("\r\n");
 }
 
 async function createPeer(peerId, peerNick, initiator) {
@@ -849,17 +1009,7 @@ async function createPeer(peerId, peerNick, initiator) {
     entry.screenSender = pc.addTrack(screenStream.getVideoTracks()[0], screenStream);
   }
 
-  pc.onnegotiationneeded = async () => {
-    try {
-      entry.makingOffer = true;
-      await pc.setLocalDescription(); // implicit createOffer
-      send({ type: "offer", to: peerId, nick, payload: JSON.stringify(pc.localDescription) });
-    } catch (err) {
-      console.warn("negotiationneeded", err);
-    } finally {
-      entry.makingOffer = false;
-    }
-  };
+  pc.onnegotiationneeded = () => makeOffer(peerId, entry);
   pc.onicecandidate = (e) => {
     if (e.candidate) send({ type: "candidate", to: peerId, payload: JSON.stringify(e.candidate) });
   };
@@ -935,6 +1085,7 @@ function removePeer(peerId) {
   const tile = document.getElementById("tile-" + peerId);
   if (tile) tile.remove();
   updateCallPill();
+  layoutGrid(); // a tile left: re-fit the window
 }
 
 // Bootstrap: if opened as call.html?room=CODE&nick=NAME (e.g. launched from the
@@ -1038,6 +1189,40 @@ function setTileMuted(id, isMuted) {
   if (tile) tile.classList.toggle("muted", isMuted);
 }
 
+// ---- Grid layout ----
+// "Fill the window": size #grid to the space between its top and the bottom of
+// the viewport, then pick the column/row counts that make the tiles as large as
+// possible for the current participant count while holding a ~16:9 shape. Called
+// whenever tiles are added/removed, the settings panel toggles, or we resize.
+function layoutGrid() {
+  const grid = $("grid");
+  if (!grid) return;
+  const n = grid.children.length;
+  if (!n) { grid.style.height = ""; return; }
+
+  const top = grid.getBoundingClientRect().top;
+  const avail = Math.max(220, window.innerHeight - top - 16); // 16px breathing room
+  grid.style.height = avail + "px";
+
+  const gap = 12;            // keep in step with the .75rem grid gap
+  const AR = 16 / 9;         // target tile aspect ratio
+  const W = grid.clientWidth, H = avail;
+  let best = 1, bestArea = 0;
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const cellW = (W - gap * (cols - 1)) / cols;
+    const cellH = (H - gap * (rows - 1)) / rows;
+    if (cellW <= 0 || cellH <= 0) continue;
+    // A tile is bounded by whichever dimension is tighter for the target ratio.
+    const w = Math.min(cellW, cellH * AR);
+    const area = w * (w / AR);
+    if (area > bestArea) { bestArea = area; best = cols; }
+  }
+  grid.style.gridTemplateColumns = `repeat(${best}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${Math.ceil(n / best)}, 1fr)`;
+}
+window.addEventListener("resize", layoutGrid);
+
 function addTile(id, name, stream, muted) {
   let tile = document.getElementById("tile-" + id);
   if (!tile) {
@@ -1080,6 +1265,8 @@ function addTile(id, name, stream, muted) {
   // settings list in step as people arrive.
   if (peerVolumes.has(id)) setPeerVolume(id, peerVolumes.get(id));
   if (!$("settingsPanel").classList.contains("hidden")) renderVolumes();
+
+  layoutGrid(); // a tile appeared (or its stream changed): re-fit the window
 }
 
 // baseNick strips the decorations we add to labels ("river (you, sharing)").
