@@ -5,6 +5,8 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -102,5 +104,31 @@ func TestSaveImageRejectsNonImage(t *testing.T) {
 	}
 	if _, _, err := m.SaveImage(bytes.NewReader([]byte("not an image"))); err == nil {
 		t.Fatal("expected error for non-image input")
+	}
+}
+
+// TestNoDirList makes sure the media handler serves files by their hash name
+// but refuses to list the directory (which would enumerate every upload).
+func TestNoDirList(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "abc123.jpg"), []byte("img"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := http.StripPrefix("/media/", noDirList(http.FileServer(http.Dir(dir))))
+
+	cases := []struct {
+		path string
+		want int
+	}{
+		{"/media/", http.StatusNotFound},          // root listing blocked
+		{"/media/abc123.jpg", http.StatusOK},      // a real file still served
+		{"/media/nope.jpg", http.StatusNotFound},  // missing file
+	}
+	for _, c := range cases {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", c.path, nil))
+		if rec.Code != c.want {
+			t.Errorf("%s: got %d, want %d", c.path, rec.Code, c.want)
+		}
 	}
 }

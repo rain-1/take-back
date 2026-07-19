@@ -24,6 +24,16 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.16.1
+
+**Security**
+- **No more media directory listing.** `GET /media/` (and any directory path
+  under it) now returns 404 instead of an auto-generated index that enumerated
+  every uploaded image. Individual images are still reachable by their
+  unguessable hash filename; only the listing is gone.
+
+---
+
 ## 1.16.0
 
 **Added (web)**

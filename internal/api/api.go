@@ -52,8 +52,24 @@ func (a *API) Routes(mux *http.ServeMux) {
 
 	a.groupRoutes(mux)
 
-	// Serve uploaded media (originals + thumbnails).
-	mux.Handle("/media/", http.StripPrefix("/media/", http.FileServer(http.Dir(a.Media.Dir))))
+	// Serve uploaded media (originals + thumbnails). Images are guarded only by
+	// their unguessable hash filenames, so we must NOT expose a directory
+	// listing — that would let anyone enumerate every uploaded image.
+	mux.Handle("/media/", http.StripPrefix("/media/", noDirList(http.FileServer(http.Dir(a.Media.Dir)))))
+}
+
+// noDirList wraps a file server so requests for a directory (a path ending in
+// "/", or the media root itself) 404 instead of returning an auto-generated
+// index. http.FileServer also serves index.html for "/", but we never write one
+// into the media dir, so blocking trailing-slash paths is enough.
+func noDirList(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "" || strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // ---- request/response helpers ----
