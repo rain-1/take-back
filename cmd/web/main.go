@@ -54,6 +54,13 @@ func main() {
 			proxy.ServeHTTP(w, r)
 			return
 		}
+		// The client is a couple of HTML files with all CSS/JS inlined, and no
+		// Cache-Control was being sent — so browsers cached them heuristically
+		// and could keep showing a stale UI across deploys (e.g. a missing
+		// button). "no-cache" means "revalidate before reuse", so http.FileServer's
+		// ETag turns each load into a cheap 304 when nothing changed, but a new
+		// build is always picked up immediately.
+		w.Header().Set("Cache-Control", "no-cache")
 		fileServer.ServeHTTP(w, r)
 	})
 

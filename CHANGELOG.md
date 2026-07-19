@@ -24,6 +24,16 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.16.2
+
+**Fixed (web)**
+- **Stale client after deploy.** The web server now sends `Cache-Control: no-cache`
+  on the HTML, so browsers revalidate on every load (cheap 304 when unchanged)
+  instead of holding an old copy. This was making a freshly shipped control —
+  e.g. the call screen's 🖥 Share-screen button — invisible until a hard refresh.
+
+---
+
 ## 1.16.1
 
 **Security**
