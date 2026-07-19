@@ -203,7 +203,7 @@
       <button id="audioGate" class="hidden">🔊 Enable audio</button>
       <button id="micBtn" class="secondary">🎤 Mic on</button>
       <button id="camBtn" class="secondary">📷 Camera on</button>
-      <button id="shareBtn">🖥 Share screen</button>
+      <button id="presentBtn">🖥 Present screen</button>
       <button id="settingsBtn" class="secondary" title="Devices &amp; preferences">⚙</button>
       <button id="leaveBtn" class="secondary">Leave</button>
     </div>
@@ -637,7 +637,7 @@ function applyState(id, s) {
 // streaming alongside it — people expect to see your face while you present.
 // Adding a track triggers renegotiation, handled by the perfect-negotiation
 // logic in createPeer.
-$("shareBtn").onclick = () => (screenStream ? stopScreenShare() : startScreenShare());
+$("presentBtn").onclick = () => (screenStream ? stopScreenShare() : startScreenShare());
 
 async function startScreenShare() {
   let capture;
@@ -663,7 +663,7 @@ async function startScreenShare() {
 
   // The browser's own "Stop sharing" bar ends the track directly.
   screenTrack.onended = stopScreenShare;
-  $("shareBtn").textContent = "🖥 Stop sharing";
+  $("presentBtn").textContent = "🖥 Stop presenting";
   log("Sharing your screen — your camera is still on.");
 }
 
@@ -682,7 +682,7 @@ function stopScreenShare() {
   const tile = document.getElementById("tile-local-screen");
   if (tile) tile.remove();
 
-  $("shareBtn").textContent = "🖥 Share screen";
+  $("presentBtn").textContent = "🖥 Present screen";
   broadcastState();
   log("Stopped sharing.");
 }

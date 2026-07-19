@@ -24,6 +24,17 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.16.5
+
+**Fixed (web)**
+- **Screen-share button hidden by ad-blockers.** The call control was `id="shareBtn"`
+  labelled "Share screen", which uBlock Origin's social-widget cosmetic filters
+  matched and hid (its siblings, without "share", were untouched). Renamed to
+  `id="presentBtn"` / "Present screen" so ad-blockers leave the app's own controls
+  alone.
+
+---
+
 ## 1.16.4
 
 **Added (web)**
