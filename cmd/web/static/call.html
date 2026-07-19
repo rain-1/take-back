@@ -100,6 +100,13 @@
   /* Muted mic beats speaking: never imply we're transmitting when we aren't. */
   .tile.muted .avatar { border-color:transparent; box-shadow:none; }
   .tile.muted { outline-color:transparent; }
+  /* A peer whose connection is wobbling: grey the frozen frame and say so. */
+  .tile.reconnecting video, .tile.reconnecting .avatar { filter:grayscale(1) brightness(.5); }
+  .tile.reconnecting::after {
+    content:"Reconnecting…"; position:absolute; inset:0; display:flex;
+    align-items:center; justify-content:center; color:#e5e7eb; font-size:.9rem;
+    background:rgba(0,0,0,.35);
+  }
   .tile .micoff {
     position:absolute; right:.5rem; top:.5rem; font-size:.9rem;
     background:rgba(0,0,0,.55); border-radius:6px; padding:.1rem .35rem; display:none;
@@ -832,6 +839,7 @@ async function createPeer(peerId, peerNick, initiator) {
     makingOffer: false,
     ignoreOffer: false,
     screenSender: null,
+    dropTimer: null, // set while the connection is "disconnected" (see below)
   };
   peers.set(peerId, entry);
 
@@ -860,9 +868,30 @@ async function createPeer(peerId, peerNick, initiator) {
     updateCallPill();
   };
   pc.onconnectionstatechange = () => {
-    log("peer " + peerId + ": " + pc.connectionState);
+    const st = pc.connectionState;
+    log("peer " + peerId + ": " + st);
     updateCallPill();
-    if (pc.connectionState === "failed" || pc.connectionState === "closed") removePeer(peerId);
+    if (st === "failed" || st === "closed") {
+      removePeer(peerId); // dead for good — drop immediately
+      return;
+    }
+    if (st === "disconnected") {
+      // A blip (network hiccup, peer's tab backgrounded) can recover, so don't
+      // yank them the instant it happens — that's the "frozen" state a viewer
+      // sees. Grey the tile as "reconnecting" and give it a few seconds; if it
+      // hasn't recovered by then, pop them out of the call.
+      markReconnecting(peerId, true);
+      clearTimeout(entry.dropTimer);
+      entry.dropTimer = setTimeout(() => {
+        if (pc.connectionState !== "connected" && pc.connectionState !== "completed") {
+          removePeer(peerId);
+        }
+      }, DROP_GRACE_MS);
+    } else if (st === "connected" || st === "completed") {
+      clearTimeout(entry.dropTimer);
+      entry.dropTimer = null;
+      markReconnecting(peerId, false); // recovered
+    }
   };
 
   // addTrack above fires negotiationneeded, which sends the offer for us.
@@ -884,11 +913,25 @@ function routeRemoteTrack(peerId, entry, e) {
   }
 }
 
+// DROP_GRACE_MS is how long a peer may sit "disconnected" (frozen) before we
+// remove them from the call. Long enough to ride out a brief network blip,
+// short enough that a real drop clears quickly.
+const DROP_GRACE_MS = 6000;
+
+// markReconnecting greys a peer's tile(s) and shows a "Reconnecting…" overlay
+// while their connection is wobbling. Covers both their camera and screen tiles.
+function markReconnecting(peerId, on) {
+  for (const suffix of ["", "-screen"]) {
+    const tile = document.getElementById("tile-" + peerId + suffix);
+    if (tile) tile.classList.toggle("reconnecting", on);
+  }
+}
+
 function removePeer(peerId) {
   peerVolumes.delete(peerId);
   if (!$("settingsPanel").classList.contains("hidden")) renderVolumes();
   const entry = peers.get(peerId);
-  if (entry) { entry.pc.close(); peers.delete(peerId); }
+  if (entry) { clearTimeout(entry.dropTimer); entry.pc.close(); peers.delete(peerId); }
   const tile = document.getElementById("tile-" + peerId);
   if (tile) tile.remove();
   updateCallPill();

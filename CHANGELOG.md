@@ -24,6 +24,17 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.16.4
+
+**Added (web)**
+- **Dropped peers pop out of the call.** When a peer's connection dies, their
+  tile no longer freezes forever. It greys out with a "Reconnecting…" overlay,
+  and if the connection doesn't recover within a few seconds they're removed
+  from the call. Catches ungraceful drops (network loss, media failure) that
+  never send a clean "leave".
+
+---
+
 ## 1.16.3
 
 **Fixed (web)**
