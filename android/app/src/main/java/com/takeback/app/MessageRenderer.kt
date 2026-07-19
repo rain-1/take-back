@@ -33,6 +33,7 @@ data class RMsg(
     val replyBody: String,
     val mine: Boolean,
     val callCode: String?,
+    val editedAt: Long = 0,
 )
 
 /**
@@ -49,6 +50,7 @@ class MessageRenderer(
     private val onReact: (id: Long, emoji: String, add: Boolean) -> Unit,
     private val onJoinCall: (code: String) -> Unit,
     private val onOpenImage: (url: String) -> Unit,
+    private val onEdit: (RMsg) -> Unit = {},
 ) {
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
@@ -61,10 +63,13 @@ class MessageRenderer(
     private val messageViews = HashMap<Long, View>()          // for jump-to
     private val reactionRows = HashMap<Long, LinearLayout>()
     private val reactionState = HashMap<Long, List<Reaction>>()
+    private val bodyViews = HashMap<Long, TextView>()         // for in-place edit
+    private val editedMarks = HashMap<Long, TextView>()       // "· edited" markers
 
     fun clear() {
         container.removeAllViews()
         messageViews.clear(); reactionRows.clear(); reactionState.clear()
+        bodyViews.clear(); editedMarks.clear()
         lastSender = -1L; lastTime = 0L; currentMain = null
     }
 
@@ -118,7 +123,9 @@ class MessageRenderer(
                             val mine = reactionState[m.id]?.firstOrNull { it.emoji == emoji }?.mine ?: false
                             onReact(m.id, emoji, !mine)
                         }
-                    })
+                    },
+                    // Edit is offered only for your own text messages (not images/calls).
+                    onEdit = if (m.mine && m.callCode == null && m.body.isNotEmpty()) ({ onEdit(m) }) else null)
                 true
             }
         }
@@ -136,7 +143,15 @@ class MessageRenderer(
             if (m.body.isNotEmpty()) {
                 val tv = TextView(ctx).apply { setTextColor(Color.parseColor("#E8EAF0")); textSize = 15f }
                 markwon.setMarkdown(tv, m.body)
+                bodyViews[m.id] = tv
                 col.addView(tv)
+                // Muted "· edited" marker, shown once a message has been edited.
+                val mark = TextView(ctx).apply {
+                    text = "· edited"; setTextColor(Color.parseColor("#5A6273")); textSize = 11f
+                    visibility = if (m.editedAt > 0) View.VISIBLE else View.GONE
+                }
+                editedMarks[m.id] = mark
+                col.addView(mark)
             }
             if (m.thumbUrl != null) {
                 col.addView(ImageView(ctx).apply {
@@ -161,6 +176,15 @@ class MessageRenderer(
         messageViews[m.id] = col
         return col
     }
+
+    /** Apply an edit to a message already on screen (mine or a peer's). */
+    fun updateMessage(id: Long, body: String, editedAt: Long) {
+        bodyViews[id]?.let { markwon.setMarkdown(it, body) }
+        editedMarks[id]?.visibility = if (editedAt > 0) View.VISIBLE else View.GONE
+    }
+
+    /** Whether a message with this id is currently on screen. */
+    fun has(id: Long): Boolean = messageViews.containsKey(id)
 
     /** Update one message's reactions from a live event. */
     fun updateReactions(id: Long, reactions: List<Reaction>) {

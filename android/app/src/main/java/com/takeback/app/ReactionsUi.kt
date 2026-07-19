@@ -97,10 +97,20 @@ object ReactionsUi {
     }
 
     /** Long-press action sheet for a message. */
-    fun showActions(ctx: Context, onReply: () -> Unit, onReact: () -> Unit) {
+    /**
+     * Long-press menu for a message. [onEdit] is non-null only for your own
+     * messages, where an extra "Edit" entry appears (matching the web client's
+     * press-↑-to-edit).
+     */
+    fun showActions(ctx: Context, onReply: () -> Unit, onReact: () -> Unit, onEdit: (() -> Unit)? = null) {
+        val labels = if (onEdit != null) arrayOf("Reply", "React", "Edit") else arrayOf("Reply", "React")
         AlertDialog.Builder(ctx)
-            .setItems(arrayOf("Reply", "React")) { _, which ->
-                if (which == 0) onReply() else onReact()
+            .setItems(labels) { _, which ->
+                when (which) {
+                    0 -> onReply()
+                    1 -> onReact()
+                    2 -> onEdit?.invoke()
+                }
             }
             .show()
     }

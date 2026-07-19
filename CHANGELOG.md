@@ -33,6 +33,16 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
   from the call. Catches ungraceful drops (network loss, media failure) that
   never send a clean "leave".
 
+**Android**
+- **Feature parity with web.** Android reaches 1.16.4 with two additions:
+  - **Message editing** — long-press your own message → *Edit* to change its
+    text (DM and group). Edited messages show a muted "· edited" marker and
+    update live for everyone via the `message_edited` / `group_message_edited`
+    events. (Blockquote markdown already worked here — Markwon renders CommonMark.)
+  - **Dropped peers pop out of a call** — a peer whose connection wobbles gets a
+    greyed tile with a "Reconnecting…" overlay, and is removed after a ~6s grace
+    period if it doesn't recover (matching the web behaviour).
+
 ---
 
 ## 1.16.3

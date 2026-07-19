@@ -69,6 +69,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
             onOpenImage = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+            onEdit = { editMessage(it) },
         )
 
         binding.sendBtn.setOnClickListener { sendText() }
@@ -215,8 +216,27 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 replyNick = if (m.replySender == myId) "you" else (nickOf(m.replySender) ?: "someone"),
                 replyBody = m.replyBody,
                 mine = m.senderId == myId, callCode = call,
+                editedAt = m.editedAt,
             )
         )
+    }
+
+    /** Prompt to edit one of my own group messages, then push the change. */
+    private fun editMessage(m: RMsg) {
+        val input = android.widget.EditText(this).apply { setText(m.body); setSelection(m.body.length) }
+        AlertDialog.Builder(this)
+            .setTitle("Edit message")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val body = input.text.toString().trim()
+                if (body.isEmpty() || body == m.body) return@setPositiveButton
+                lifecycleScope.launch {
+                    runCatching { ApiClient.editGroupMessage(m.id, body) }
+                        .onSuccess { renderer.updateMessage(it.id, it.body, it.editedAt) }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun react(messageId: Long, emoji: String, add: Boolean) = lifecycleScope.launch {
@@ -242,6 +262,12 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onGroupMessage(message: GroupMessage) = runOnUiThread {
         if (message.groupId == groupId) { render(message); renderer.scrollToBottom() }
+    }
+
+    override fun onGroupMessageEdited(message: GroupMessage) = runOnUiThread {
+        if (message.groupId == groupId && renderer.has(message.id)) {
+            renderer.updateMessage(message.id, message.body, message.editedAt)
+        }
     }
 
     override fun onGroupUpdate(gid: Long) = runOnUiThread {

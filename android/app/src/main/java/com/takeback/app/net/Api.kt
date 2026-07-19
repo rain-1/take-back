@@ -56,6 +56,7 @@ data class Message(
     val replyTo: Long = 0,
     val replySender: Long = 0,
     val replyBody: String = "",
+    val editedAt: Long = 0,
 )
 
 data class Group(
@@ -85,6 +86,7 @@ data class GroupMessage(
     val replyTo: Long = 0,
     val replySender: Long = 0,
     val replyBody: String = "",
+    val editedAt: Long = 0,
 )
 
 /**
@@ -228,6 +230,11 @@ object ApiClient {
         parseMessage(post("/api/messages", jsonBody(
             JSONObject().put("with", withUser).put("body", body).put("replyTo", replyTo))))
 
+    /** Edit the text of one of my own DMs. Returns the updated message. */
+    suspend fun editMessage(id: Long, body: String): Message =
+        parseMessage(post("/api/messages/edit", jsonBody(
+            JSONObject().put("id", id).put("scope", "dm").put("body", body))))
+
     suspend fun sendImage(withUser: Long, filename: String, bytes: ByteArray, caption: String): Message {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("with", withUser.toString())
@@ -298,6 +305,11 @@ object ApiClient {
         parseGroupMessage(JSONObject(post("/api/groups/messages",
             jsonBody(JSONObject().put("group", groupId).put("body", body).put("replyTo", replyTo)))))
 
+    /** Edit the text of one of my own group messages. Returns the updated message. */
+    suspend fun editGroupMessage(id: Long, body: String): GroupMessage =
+        parseGroupMessage(JSONObject(post("/api/messages/edit", jsonBody(
+            JSONObject().put("id", id).put("scope", "group").put("body", body)))))
+
     suspend fun sendGroupImage(groupId: Long, filename: String, bytes: ByteArray, caption: String): GroupMessage {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("group", groupId.toString())
@@ -366,6 +378,7 @@ object ApiClient {
         replyTo = o.optLong("replyTo"),
         replySender = o.optLong("replySender"),
         replyBody = o.optString("replyBody"),
+        editedAt = o.optLong("editedAt"),
     )
 
     private fun parseReactions(arr: JSONArray?): List<Reaction> {
@@ -402,6 +415,7 @@ object ApiClient {
         replyTo = o.optLong("replyTo"),
         replySender = o.optLong("replySender"),
         replyBody = o.optString("replyBody"),
+        editedAt = o.optLong("editedAt"),
     )
 }
 

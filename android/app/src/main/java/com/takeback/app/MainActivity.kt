@@ -447,6 +447,16 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         if (binding.settingsPanel.visibility == View.VISIBLE) renderVolumes()
     }
 
+    override fun onPeerReconnecting(peerId: String, reconnecting: Boolean) = runOnUiThread {
+        // Grey the frozen frame and show "Reconnecting…" on both their tiles.
+        for (key in listOf(peerId, "$peerId-screen")) {
+            tiles[key]?.let { t ->
+                t.reconnect.visibility = if (reconnecting) View.VISIBLE else View.GONE
+                t.renderer.alpha = if (reconnecting) 0.4f else 1f
+            }
+        }
+    }
+
     override fun onPeerClosed(peerId: String) = runOnUiThread {
         tiles.remove(peerId)?.let { t ->
             binding.videoGrid.removeView(t.root)
@@ -475,6 +485,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val avatar: TextView,
         val micBadge: TextView,
         val label: TextView,
+        val reconnect: TextView,
     ) {
         var speaking = false
         var videoOn = true
@@ -512,10 +523,19 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             setBackgroundColor(Color.parseColor("#99000000"))
             layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.BOTTOM)
         }
+        val reconnect = TextView(this).apply {
+            text = "Reconnecting…"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setBackgroundColor(Color.parseColor("#59000000"))
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+        }
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(renderer, FrameLayout.LayoutParams(-1, -1))
-            addView(avatar); addView(micBadge); addView(label)
+            addView(avatar); addView(micBadge); addView(label); addView(reconnect)
         }
 
         val params = android.widget.GridLayout.LayoutParams().apply {
@@ -526,7 +546,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         }
         binding.videoGrid.addView(root, params)
 
-        val tile = Tile(root, renderer, avatar, micBadge, label)
+        val tile = Tile(root, renderer, avatar, micBadge, label, reconnect)
         tiles[key] = tile
         avatar.background = avatarBg(nick, speaking = false)
         track.addSink(renderer)

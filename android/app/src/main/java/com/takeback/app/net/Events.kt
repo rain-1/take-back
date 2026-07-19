@@ -18,9 +18,13 @@ interface EventsListener {
     fun onPresence(userId: Long, online: Boolean) {}
     fun onHello(onlineFriendIds: List<Long>) {}
     fun onMessage(message: Message) {}
+    /** A DM I can see was edited by its sender. [message] is the fresh version. */
+    fun onMessageEdited(message: Message) {}
     fun onFriendRequest(fromId: Long, fromNick: String) {}
     fun onFriendUpdate() {}
     fun onGroupMessage(message: GroupMessage) {}
+    /** A group message was edited by its sender. [message] is the fresh version. */
+    fun onGroupMessageEdited(message: GroupMessage) {}
     fun onGroupUpdate(groupId: Long) {}
     /** A message's reactions changed. [reactions] is the fresh aggregate. */
     fun onReaction(scope: String, messageId: Long, reactions: List<Reaction>) {}
@@ -116,10 +120,18 @@ object Events {
                 listeners.forEach { it.onMessage(m) }
                 if (openFriendId != m.senderId) notifyMessage(m)
             }
+            "message_edited" -> {
+                val m = parsePushedMessage(msg.getJSONObject("message"))
+                listeners.forEach { it.onMessageEdited(m) }
+            }
             "group_message" -> {
                 val m = ApiClient.parseGroupMessage(msg.getJSONObject("message"))
                 listeners.forEach { it.onGroupMessage(m) }
                 if (openGroupId != m.groupId) notifyGroupMessage(m)
+            }
+            "group_message_edited" -> {
+                val m = ApiClient.parseGroupMessage(msg.getJSONObject("message"))
+                listeners.forEach { it.onGroupMessageEdited(m) }
             }
             "group_invite" -> {
                 val gid = msg.optLong("groupId")
@@ -153,6 +165,7 @@ object Events {
         imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { ApiClient.mediaUrl(it) },
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { ApiClient.mediaUrl(it) },
         created = o.getLong("created"),
+        editedAt = o.optLong("editedAt"),
     )
 
     // ---- notifications ----

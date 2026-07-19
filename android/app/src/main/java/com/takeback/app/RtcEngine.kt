@@ -54,6 +54,13 @@ interface RtcEvents {
     fun onRemoteVideo(peerId: String, nick: String, track: VideoTrack, streamId: String)
     fun onPeerClosed(peerId: String)
 
+    /**
+     * A peer's connection dropped to "disconnected" (true) or recovered (false).
+     * The UI greys their tile with a "Reconnecting…" overlay while it's true;
+     * if it doesn't recover within the grace period the peer is closed outright.
+     */
+    fun onPeerReconnecting(peerId: String, reconnecting: Boolean) {}
+
     /** Someone started/stopped speaking. [id] is [LOCAL_ID] or a peer id. */
     fun onSpeaking(id: String, speaking: Boolean) {}
 
@@ -74,6 +81,10 @@ const val LOCAL_SCREEN_ID = "local-screen"
 /** Stream ids we publish. The screen one is announced to peers in `state`. */
 const val CAM_STREAM_ID = "tb-cam"
 const val SCREEN_STREAM_ID = "tb-screen"
+
+// How long a peer may sit "disconnected" (frozen) before we drop them. Long
+// enough to ride out a brief blip, short enough that a real drop clears fast.
+const val DROP_GRACE_MS = 6000L
 
 /**
  * RtcEngine owns the shared local media and one [PeerConnection] per remote
@@ -125,6 +136,8 @@ class RtcEngine(
         var makingOffer = false
         var ignoreOffer = false
         var screenSender: org.webrtc.RtpSender? = null
+        // Pending "drop this peer" runnable, scheduled while it's disconnected.
+        var dropRunnable: Runnable? = null
     }
 
     // Speaking detection. Local level comes from the mic's raw samples; remote
@@ -331,7 +344,10 @@ class RtcEngine(
 
     fun removePeer(peerId: String) {
         remoteAudio.remove(peerId)
-        peers.remove(peerId)?.pc?.close()
+        peers.remove(peerId)?.let { box ->
+            box.dropRunnable?.let { statsHandler.removeCallbacks(it) }
+            box.pc.close()
+        }
         events.onPeerClosed(peerId)
     }
 
@@ -361,9 +377,33 @@ class RtcEngine(
                 }
             }
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-                if (newState == PeerConnection.PeerConnectionState.FAILED ||
-                    newState == PeerConnection.PeerConnectionState.CLOSED
-                ) removePeer(peerId)
+                when (newState) {
+                    PeerConnection.PeerConnectionState.FAILED,
+                    PeerConnection.PeerConnectionState.CLOSED -> removePeer(peerId)
+                    PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                        // A blip that can recover — don't yank them instantly (that's
+                        // the "frozen" state). Grey the tile and give it a few seconds.
+                        events.onPeerReconnecting(peerId, true)
+                        peers[peerId]?.let { box ->
+                            box.dropRunnable?.let { statsHandler.removeCallbacks(it) }
+                            val r = Runnable {
+                                if (box.pc.connectionState() == PeerConnection.PeerConnectionState.DISCONNECTED) {
+                                    removePeer(peerId)
+                                }
+                            }
+                            box.dropRunnable = r
+                            statsHandler.postDelayed(r, DROP_GRACE_MS)
+                        }
+                    }
+                    PeerConnection.PeerConnectionState.CONNECTED -> {
+                        peers[peerId]?.let { box ->
+                            box.dropRunnable?.let { statsHandler.removeCallbacks(it) }
+                            box.dropRunnable = null
+                        }
+                        events.onPeerReconnecting(peerId, false)
+                    }
+                    else -> {}
+                }
             }
         }) ?: error("failed to create peer connection")
 

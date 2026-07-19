@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.takeback.app.databinding.ActivityChatBinding
@@ -57,6 +58,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
             onOpenImage = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+            onEdit = { editMessage(it) },
         )
 
         binding.sendBtn.setOnClickListener { sendText() }
@@ -113,8 +115,27 @@ class ChatActivity : AppCompatActivity(), EventsListener {
                 replyNick = if (m.replySender == me?.id) (me?.nick ?: "you") else friendNick,
                 replyBody = m.replyBody,
                 mine = mine, callCode = call,
+                editedAt = m.editedAt,
             )
         )
+    }
+
+    /** Prompt to edit one of my own messages, then push the change. */
+    private fun editMessage(m: RMsg) {
+        val input = android.widget.EditText(this).apply { setText(m.body); setSelection(m.body.length) }
+        AlertDialog.Builder(this)
+            .setTitle("Edit message")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val body = input.text.toString().trim()
+                if (body.isEmpty() || body == m.body) return@setPositiveButton
+                lifecycleScope.launch {
+                    runCatching { ApiClient.editMessage(m.id, body) }
+                        .onSuccess { renderer.updateMessage(it.id, it.body, it.editedAt) }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun sendText() {
@@ -180,5 +201,9 @@ class ChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onMessage(message: Message) = runOnUiThread {
         if (message.senderId == friendId) { render(message); renderer.scrollToBottom() }
+    }
+
+    override fun onMessageEdited(message: Message) = runOnUiThread {
+        if (renderer.has(message.id)) renderer.updateMessage(message.id, message.body, message.editedAt)
     }
 }
