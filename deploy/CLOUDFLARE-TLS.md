@@ -35,17 +35,22 @@ The `*.pem` files are git-ignored. Keep your local copies somewhere safe (or
 delete them — they live on the server now). If you lose the key, just generate a
 new Origin cert (below) and reinstall.
 
-## The one step left — flip the SSL mode (Cloudflare dashboard)
+## The one step left — enable Full (strict) for takeback ONLY
 
-1. Cloudflare dashboard → select **chain-of-thought.org**.
-2. **SSL/TLS → Overview** → set encryption mode to **Full (strict)**.
-   - NB this is a **zone-wide** setting. It affects every site on
-     chain-of-thought.org, so each origin behind this zone must also answer
-     HTTPS with a valid cert. If other sites on the VPS are HTTP-only, either
-     give them origin certs too, or use a per-hostname **Configuration Rule**
-     (Rules → Overrides) to set SSL = Full (strict) for `takeback.*` only and
-     leave the zone default as-is.
-3. (Recommended) **SSL/TLS → Edge Certificates** → enable **Always Use HTTPS**.
+The zone-wide **SSL/TLS → Overview** mode affects *every* site on
+chain-of-thought.org, and some other origins on this VPS are HTTP-only — flipping
+the zone default to Full (strict) would break them (526). So scope it to this
+hostname with a **Configuration Rule** and leave the zone default (Flexible) alone:
+
+1. Cloudflare dashboard → **chain-of-thought.org** → **Rules → Configuration Rules** → **Create rule**.
+2. Name: e.g. `takeback Full strict`.
+3. **When incoming requests match** → *Custom filter expression*:
+   Field **Hostname**, Operator **equals**, Value **`takeback.chain-of-thought.org`**.
+4. **Then the settings are** → **SSL** → **Full (strict)**.
+5. **Deploy**. Leave SSL/TLS → Overview (the zone default) unchanged.
+6. (Optional) **SSL/TLS → Edge Certificates → Always Use HTTPS** — note this too
+   is zone-wide; scope it with a Configuration Rule if the other sites shouldn't
+   force HTTPS.
 
 ## Verify after flipping
 
