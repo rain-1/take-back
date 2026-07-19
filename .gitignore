@@ -8,3 +8,6 @@ takeback.db
 
 # Ephemeral subagent git worktrees
 .claude/worktrees/
+
+# TLS certs / private keys — never commit
+*.pem
