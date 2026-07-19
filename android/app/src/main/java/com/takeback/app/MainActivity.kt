@@ -1,14 +1,19 @@
 package com.takeback.app
 
 import android.Manifest
+import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Rational
 import android.view.Gravity
 import android.view.View
 import android.widget.AdapterView
@@ -56,6 +61,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private var sharing = false
     private var micOn = true
     private var camOn = true
+    private var inCall = false // true between beginCall() and leaveCall(); gates PiP
 
     private val tiles = HashMap<String, Tile>()
     // peerId -> (video, audio, screenId). screenId names the stream carrying
@@ -145,6 +151,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     }
 
     private fun beginCall() {
+        inCall = true
         binding.lobbyStep.visibility = View.GONE
         binding.callStep.visibility = View.VISIBLE
         binding.callCode.text = roomCode
@@ -160,6 +167,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     }
 
     private fun leaveCall() {
+        inCall = false
         signaling?.close(); signaling = null
         engine?.close(); engine = null
         stopService(Intent(this, ScreenCaptureService::class.java))
@@ -617,6 +625,45 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
     private fun toast(msg: String) =
         android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+
+    // ---- Keep the call alive when you navigate away (Picture-in-Picture) ----
+    // Pressing Back / Home during a call shrinks it into a floating window and
+    // brings the screen underneath (the chat you came from) forward, instead of
+    // tearing the call down. Only the Leave button actually ends the call. If PiP
+    // isn't available we fall back to the normal Back behaviour — a clean return,
+    // never the crash/logout this replaced.
+
+    override fun onBackPressed() {
+        if (inCall && enterPipIfPossible()) return
+        super.onBackPressed()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (inCall) enterPipIfPossible()
+    }
+
+    private fun enterPipIfPossible(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
+        return try {
+            enterPictureInPictureMode(
+                PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
+            )
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPip: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPip, newConfig)
+        // In the tiny PiP window show only the video; hide all the call chrome.
+        val chrome = if (isInPip) View.GONE else View.VISIBLE
+        binding.callHeader.visibility = chrome
+        binding.status.visibility = chrome
+        binding.callControls.visibility = chrome
+        if (isInPip) binding.settingsPanel.visibility = View.GONE
+    }
 
     override fun onDestroy() {
         super.onDestroy()

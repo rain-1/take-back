@@ -103,6 +103,7 @@
             android:visibility="gone">
 
             <LinearLayout
+                android:id="@+id/callHeader"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
@@ -140,6 +141,7 @@
                 android:textColor="#8A93A6" />
 
             <LinearLayout
+                android:id="@+id/callControls"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
