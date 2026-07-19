@@ -108,6 +108,8 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 renderer.clear()
                 msgs.forEach { render(it) }
                 renderer.scrollToBottom()
+                // Viewing the conversation clears its unread count on the server.
+                msgs.lastOrNull()?.let { runCatching { ApiClient.markRead("group", groupId, it.id) } }
             } catch (_: Exception) { /* transient */ }
         }
     }
@@ -262,7 +264,10 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     // ---- live events ----
 
     override fun onGroupMessage(message: GroupMessage) = runOnUiThread {
-        if (message.groupId == groupId) { render(message); renderer.scrollToBottom() }
+        if (message.groupId == groupId) {
+            render(message); renderer.scrollToBottom()
+            lifecycleScope.launch { runCatching { ApiClient.markRead("group", groupId, message.id) } }
+        }
     }
 
     override fun onGroupMessageEdited(message: GroupMessage) = runOnUiThread {

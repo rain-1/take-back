@@ -96,6 +96,8 @@ class ChatActivity : AppCompatActivity(), EventsListener {
                 renderer.clear()
                 msgs.forEach { render(it) }
                 renderer.scrollToBottom()
+                // Viewing the conversation clears its unread count on the server.
+                msgs.lastOrNull()?.let { runCatching { ApiClient.markRead("dm", friendId, it.id) } }
             } catch (_: Exception) { /* transient */ }
         }
     }
@@ -201,7 +203,11 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     }
 
     override fun onMessage(message: Message) = runOnUiThread {
-        if (message.senderId == friendId) { render(message); renderer.scrollToBottom() }
+        if (message.senderId == friendId) {
+            render(message); renderer.scrollToBottom()
+            // Keep it read while we're looking at it.
+            lifecycleScope.launch { runCatching { ApiClient.markRead("dm", friendId, message.id) } }
+        }
     }
 
     override fun onMessageEdited(message: Message) = runOnUiThread {

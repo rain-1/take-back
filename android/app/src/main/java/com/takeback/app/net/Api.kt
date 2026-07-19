@@ -319,6 +319,16 @@ object ApiClient {
         return parseGroupMessage(JSONObject(post("/api/groups/messages/image", body)))
     }
 
+    /**
+     * Mark a conversation read up to [lastId], clearing its unread count on the
+     * server (and so the pip + notification badge). kind is "dm" or "group",
+     * id is the friend or group id. Without this, unread counts never cleared.
+     */
+    suspend fun markRead(kind: String, id: Long, lastId: Long) {
+        if (lastId <= 0) return
+        post("/api/read", jsonBody(JSONObject().put("kind", kind).put("id", id).put("lastId", lastId)))
+    }
+
     /** Add or remove your emoji on a message. scope is "dm" or "group". */
     suspend fun react(scope: String, messageId: Long, emoji: String, add: Boolean) =
         post("/api/reactions", jsonBody(JSONObject()
