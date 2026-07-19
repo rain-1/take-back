@@ -286,6 +286,13 @@ $("joinBtn").onclick = () => {
 // ---- Step 3: the call ----
 async function startCall(code) {
   roomCode = code;
+  // Put the room (and nick) in the URL so a page reload rejoins the same call
+  // instead of dropping back to the lobby. autostart() reads these on load.
+  // Leaving the call clears them again (see leaveBtn).
+  const u = new URL(location);
+  u.searchParams.set("room", code);
+  u.searchParams.set("nick", nick);
+  history.replaceState(null, "", u);
   try {
     // Honour the saved device choices, falling back if that device is gone.
     const micId = localStorage.getItem(PREF_MIC), camId = localStorage.getItem(PREF_CAM);
@@ -308,7 +315,9 @@ async function startCall(code) {
 $("copyBtn").onclick = () => {
   navigator.clipboard.writeText(roomCode).then(() => log("Call code copied."));
 };
-$("leaveBtn").onclick = () => { leaving = true; location.reload(); };
+// Leaving navigates to a room-less URL, so the reload lands on the lobby rather
+// than rejoining the call (the room is now persisted in the query string).
+$("leaveBtn").onclick = () => { leaving = true; location.href = location.pathname; };
 
 // ---- Settings: devices & preferences ----
 // Set-once-and-keep choices, so they live in a panel and persist across calls.

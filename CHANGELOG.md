@@ -24,6 +24,17 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.16.3
+
+**Fixed (web)**
+- **Reloading no longer drops you from a call.** Hosting/joining from the lobby
+  didn't record the call code in the URL, so a page reload fell back to the
+  lobby and left the call. `startCall` now persists `?room=&nick=` (via
+  `history.replaceState`), so a reload rejoins the same call; **Leave** clears it
+  and returns to the lobby.
+
+---
+
 ## 1.16.2
 
 **Fixed (web)**
