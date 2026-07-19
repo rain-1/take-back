@@ -24,6 +24,27 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.17.0
+
+**Fixed**
+- **Reply quotes were empty until reload.** The message *send* path never filled
+  the quoted message's sender/body (only the read-time JOIN did), so a just-sent
+  or live-received reply showed a blank quote with the wrong name. `AddMessage`/
+  `AddGroupMessage` now backfill `replySender`/`replyBody` after insert. Server-side,
+  so it fixes **web and Android** at once.
+
+**Added (web — chat)**
+- **Paste or drag an image into the chat** to post it (same upload path as the 🖼 button), for DMs and groups, with a drop-target affordance.
+- **Settings page** — a dark-theme modal (⚙ / click your avatar) housing the profile picture and a desktop-notifications toggle.
+- **Restore the last-viewed chat** automatically after a reload/login.
+
+**Added (web — calls)**
+- **Video tiles fill the window.** The grid now sizes to the viewport and the participant count instead of a fixed small min-width.
+- **Reliable device selection.** Saved mic/camera are requested with `deviceId:{exact}` (Firefox ignores `{ideal}` and grabbed the wrong default); persists across calls.
+- **Mono/stereo transmit toggle** (default mono). Stereo requests two-channel capture and adds `stereo=1;sprop-stereo=1` to the Opus fmtp during negotiation.
+
+---
+
 ## 1.16.6
 
 **Fixed**

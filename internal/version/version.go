@@ -18,7 +18,7 @@ package version
 
 const (
 	// Version is the human-readable release of this build.
-	Version = "1.16.6"
+	Version = "1.17.0"
 
 	// Protocol is the wire-contract version. It must equal the MAJOR component
 	// of Version. Clients compare their own Protocol against the server's and
