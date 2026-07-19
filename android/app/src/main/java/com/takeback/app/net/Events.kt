@@ -166,6 +166,11 @@ object Events {
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { ApiClient.mediaUrl(it) },
         created = o.getLong("created"),
         editedAt = o.optLong("editedAt"),
+        // Reply fields, so a live-received DM reply shows its quote immediately
+        // (not only after a reload). Groups already use the full parser.
+        replyTo = o.optLong("replyTo"),
+        replySender = o.optLong("replySender"),
+        replyBody = o.optString("replyBody"),
     )
 
     // ---- notifications ----
