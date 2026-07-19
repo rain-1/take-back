@@ -34,9 +34,9 @@ type Message struct {
 	ThumbFile   string    `json:"thumbFile,omitempty"`
 	Created     time.Time `json:"created"`
 	EditedAt    int64     `json:"editedAt,omitempty"`
-	ReplyTo     int64     `json:"replyTo,omitempty"`       // id of the message being replied to
-	ReplySender int64     `json:"replySender,omitempty"`   // its sender (for the quote)
-	ReplyBody   string    `json:"replyBody,omitempty"`     // its body, truncated
+	ReplyTo     int64     `json:"replyTo,omitempty"`     // id of the message being replied to
+	ReplySender int64     `json:"replySender,omitempty"` // its sender (for the quote)
+	ReplyBody   string    `json:"replyBody,omitempty"`   // its body, truncated
 }
 
 // AddMessage stores a DM and returns it with its assigned id.
@@ -52,6 +52,21 @@ func (s *Store) AddMessage(m Message) (Message, error) {
 	}
 	m.ID, _ = res.LastInsertId()
 	m.Created = now
+	// The freshly-inserted row only carries reply_to; the quote's sender and
+	// body live on the *replied-to* message. The GET conversation path fills
+	// these via a JOIN, but the send path returns this struct straight to the
+	// sender AND pushes it to the recipient, so populate the quote here too —
+	// otherwise a just-sent / live-received reply shows an empty quote until reload.
+	if m.ReplyTo != 0 {
+		var sender int64
+		var body string
+		if err := s.db.QueryRow(
+			`SELECT sender_id, body FROM messages WHERE id = ?`, m.ReplyTo,
+		).Scan(&sender, &body); err == nil {
+			m.ReplySender = sender
+			m.ReplyBody = truncate(body, 80)
+		}
+	}
 	return m, nil
 }
 

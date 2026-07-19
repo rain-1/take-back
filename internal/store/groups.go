@@ -65,12 +65,12 @@ type Group struct {
 
 // GroupMessage is one message posted to a group. EditedAt is 0 when never edited.
 type GroupMessage struct {
-	ID        int64     `json:"id"`
-	GroupID   int64     `json:"groupId"`
-	SenderID  int64     `json:"senderId"`
-	Body      string    `json:"body"`
-	ImageFile string    `json:"imageFile,omitempty"`
-	ThumbFile string    `json:"thumbFile,omitempty"`
+	ID          int64     `json:"id"`
+	GroupID     int64     `json:"groupId"`
+	SenderID    int64     `json:"senderId"`
+	Body        string    `json:"body"`
+	ImageFile   string    `json:"imageFile,omitempty"`
+	ThumbFile   string    `json:"thumbFile,omitempty"`
 	Created     time.Time `json:"created"`
 	EditedAt    int64     `json:"editedAt,omitempty"`
 	ReplyTo     int64     `json:"replyTo,omitempty"`
@@ -287,6 +287,19 @@ func (s *Store) AddGroupMessage(m GroupMessage) (GroupMessage, error) {
 	}
 	m.ID, _ = res.LastInsertId()
 	m.Created = now
+	// Populate the reply quote (sender + truncated body of the replied-to
+	// message) so a just-sent / live-fanned-out reply carries its quote, exactly
+	// like the JOIN in GroupConversation does for the GET path.
+	if m.ReplyTo != 0 {
+		var sender int64
+		var body string
+		if err := s.db.QueryRow(
+			`SELECT sender_id, body FROM group_messages WHERE id = ?`, m.ReplyTo,
+		).Scan(&sender, &body); err == nil {
+			m.ReplySender = sender
+			m.ReplyBody = truncate(body, 80)
+		}
+	}
 	return m, nil
 }
 
