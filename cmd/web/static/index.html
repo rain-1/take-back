@@ -1312,11 +1312,31 @@ function randomCode() {
 }
 
 // ---------- Live events ----------
+// The server sends an app-level {"type":"ping"} every ~20s. We record when we
+// last heard anything and, if a proxy silently drops the socket (the browser
+// won't always fire onclose), the watchdog forces a reconnect — otherwise new
+// messages wouldn't arrive until a manual page reload.
+let lastEventAt = 0;
+let eventsWatchdog = null;
+const EVENTS_STALE_MS = 45000; // > 2 missed heartbeats
+
 function connectEvents() {
   const url = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/api/events";
   events = new WebSocket(url);
+  events.onopen = () => {
+    lastEventAt = Date.now();
+    clearInterval(eventsWatchdog);
+    eventsWatchdog = setInterval(() => {
+      if (Date.now() - lastEventAt > EVENTS_STALE_MS) {
+        clearInterval(eventsWatchdog);
+        try { events.close(); } catch (_) {} // onclose schedules the reconnect
+      }
+    }, 10000);
+  };
   events.onmessage = (ev) => {
+    lastEventAt = Date.now();
     const e = JSON.parse(ev.data);
+    if (e.type === "ping") return; // heartbeat only; nothing to render
     if (e.type === "presence") {
       const f = friendState.get(e.userId);
       if (f) { f.online = e.online; renderFriends();
@@ -1376,7 +1396,10 @@ function connectEvents() {
       if (openGroup && e.userId === openGroup.id) loadMembers(openGroup.id);
     }
   };
-  events.onclose = () => setTimeout(() => { if (me) connectEvents(); }, 2000);
+  events.onclose = () => {
+    clearInterval(eventsWatchdog);
+    setTimeout(() => { if (me) connectEvents(); }, 2000);
+  };
 }
 
 // ---------- Helpers ----------

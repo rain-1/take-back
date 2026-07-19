@@ -17,6 +17,11 @@ const (
 	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10
 	writeWait  = 10 * time.Second
+	// heartbeatPeriod is how often we send an app-level {"type":"ping"} the
+	// browser's JS can actually see (WebSocket ping *frames* are invisible to
+	// JS). The client uses it to notice a silently-dropped socket and reconnect,
+	// so live messages resume without a manual page reload.
+	heartbeatPeriod = 20 * time.Second
 )
 
 // FriendLookup returns the accepted-friend ids of a user. The hub uses it to
@@ -164,7 +169,9 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, userID int64) {
 	// silently mark the user offline to their friends).
 	go func() {
 		ticker := time.NewTicker(pingPeriod)
+		heartbeat := time.NewTicker(heartbeatPeriod)
 		defer ticker.Stop()
+		defer heartbeat.Stop()
 		for {
 			select {
 			case ev, ok := <-c.send:
@@ -174,6 +181,12 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, userID int64) {
 					return
 				}
 				if err := ws.WriteJSON(ev); err != nil {
+					return
+				}
+			case <-heartbeat.C:
+				// App-level ping the client's JS can observe (see heartbeatPeriod).
+				ws.SetWriteDeadline(time.Now().Add(writeWait))
+				if err := ws.WriteJSON(Event{Type: "ping"}); err != nil {
 					return
 				}
 			case <-ticker.C:

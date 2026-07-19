@@ -24,6 +24,21 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.16.6
+
+**Fixed**
+- **Group reactions vanished on reload.** Group message views never had their
+  reactions attached on fetch (DMs did) — so a reaction showed live but was gone
+  after a reload, and looked like it hadn't registered. Group lists now attach
+  reactions like DMs do.
+- **Live messages sometimes needed a manual reload.** If a proxy silently dropped
+  the events socket, the browser didn't always fire `onclose`, so new messages
+  stopped arriving until you reloaded. The server now sends an app-level
+  `{"type":"ping"}` heartbeat every ~20s, and the web client runs a watchdog that
+  forces a reconnect if it goes ~45s without hearing anything.
+
+---
+
 ## 1.16.5
 
 **Fixed (web)**

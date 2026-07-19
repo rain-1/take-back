@@ -218,6 +218,23 @@ func toGroupView(m store.GroupMessage) groupMsgView {
 	return v
 }
 
+// attachGroupReactions fills each group message view's Reactions, aggregated
+// for `me`. Mirrors attachDMReactions — without it, group reactions were stored
+// but never returned on fetch, so they vanished on reload.
+func (a *API) attachGroupReactions(views []groupMsgView, me int64) {
+	ids := make([]int64, len(views))
+	for i, v := range views {
+		ids[i] = v.ID
+	}
+	rs, err := a.Store.ReactionsFor(store.KindGroup, ids)
+	if err != nil {
+		return
+	}
+	for i := range views {
+		views[i].Reactions = aggregateReactions(rs[views[i].ID], me)
+	}
+}
+
 func (a *API) handleGroupMessages(w http.ResponseWriter, r *http.Request, user *store.User) {
 	switch r.Method {
 	case http.MethodGet:
@@ -234,6 +251,7 @@ func (a *API) handleGroupMessages(w http.ResponseWriter, r *http.Request, user *
 		for _, m := range msgs {
 			views = append(views, toGroupView(m))
 		}
+		a.attachGroupReactions(views, user.ID)
 		writeJSON(w, http.StatusOK, views)
 	case http.MethodPost:
 		var body struct {
