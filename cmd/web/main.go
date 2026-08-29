@@ -16,12 +16,59 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/rain1/take-back/internal/version"
 )
 
 //go:embed static
 var staticFS embed.FS
+
+// buildTime is the modification time reported for the rendered HTML pages.
+// Embedded files have no useful mtime, and it only has to change per build for
+// conditional requests to behave — the version string does that.
+var buildTime = time.Now()
+
+// assetVersion rewrites `?v=dev` in the HTML to the running build's version, so
+// every deploy asks for a URL the caches have never seen.
+//
+// This exists because Cloudflare applies its own multi-hour edge TTL to static
+// extensions (.js/.css/.svg) regardless of what we send, which means a deploy
+// can sit invisible behind an edge-cached copy of the PREVIOUS file — or, worse,
+// behind a cached 404 from before the file existed. Stamping the version into
+// the query string sidesteps the edge cache entirely instead of fighting it, and
+// it's automatic: there is no list to remember to bump.
+var assetVersion = strings.NewReplacer("?v=dev", "?v="+version.Version)
+
+// renderPages reads every .html file out of the embedded assets and applies
+// assetVersion once, at startup, rather than on each request.
+func renderPages(sub fs.FS) (map[string]string, error) {
+	pages := map[string]string{}
+	entries, err := fs.ReadDir(sub, ".")
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".html") {
+			continue
+		}
+		raw, err := fs.ReadFile(sub, e.Name())
+		if err != nil {
+			return nil, err
+		}
+		pages["/"+e.Name()] = assetVersion.Replace(string(raw))
+	}
+	return pages, nil
+}
+
+// pagePath maps a request path to a page key, treating "/" as index.html the
+// way http.FileServer does.
+func pagePath(p string) string {
+	if p == "/" {
+		return "/index.html"
+	}
+	return p
+}
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address for the web client")
@@ -47,6 +94,10 @@ func main() {
 		log.Fatal(err)
 	}
 	fileServer := http.FileServer(http.FS(sub))
+	pages, err := renderPages(sub)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -54,13 +105,16 @@ func main() {
 			proxy.ServeHTTP(w, r)
 			return
 		}
-		// The client is a couple of HTML files with all CSS/JS inlined, and no
-		// Cache-Control was being sent — so browsers cached them heuristically
-		// and could keep showing a stale UI across deploys (e.g. a missing
-		// button). "no-cache" means "revalidate before reuse", so http.FileServer's
-		// ETag turns each load into a cheap 304 when nothing changed, but a new
-		// build is always picked up immediately.
+		// The HTML pages carry no Cache-Control of their own, so browsers cached
+		// them heuristically and could keep showing a stale UI across deploys
+		// (e.g. a missing button). "no-cache" means "revalidate before reuse", so
+		// each load is a cheap 304 when nothing changed but a new build is picked
+		// up immediately.
 		w.Header().Set("Cache-Control", "no-cache")
+		if page, ok := pages[pagePath(r.URL.Path)]; ok {
+			http.ServeContent(w, r, "index.html", buildTime, strings.NewReader(page))
+			return
+		}
 		fileServer.ServeHTTP(w, r)
 	})
 
