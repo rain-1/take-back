@@ -11,10 +11,10 @@ android {
         applicationId = "com.takeback.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 23
+        versionCode = 24
         // Keep in step with internal/version/version.go. MAJOR == PROTOCOL:
         // a client can only talk to a server with the same PROTOCOL.
-        versionName = "1.18.1"
+        versionName = "1.19.0"
         buildConfigField("int", "PROTOCOL", "1")
 
         // Default take-back server (REST API + signaling). Overridable at
@@ -54,5 +54,8 @@ dependencies {
 
     // Markdown rendering for chat messages, and async image loading for thumbs.
     implementation("io.noties.markwon:core:4.6.2")
+    // Turns bare URLs (and "www.…") in message text into tappable links, matching
+    // the web client's autoLink.
+    implementation("io.noties.markwon:linkify:4.6.2")
     implementation("io.coil-kt:coil:2.6.0")
 }

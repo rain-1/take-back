@@ -80,6 +80,7 @@ type GroupMessage struct {
 	MediaSize   int64     `json:"mediaSize,omitempty"`
 	Created     time.Time `json:"created"`
 	EditedAt    int64     `json:"editedAt,omitempty"`
+	DeletedAt   int64     `json:"deletedAt,omitempty"`
 	ReplyTo     int64     `json:"replyTo,omitempty"`
 	ReplySender int64     `json:"replySender,omitempty"`
 	ReplyBody   string    `json:"replyBody,omitempty"`
@@ -343,7 +344,7 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 	rows, err := s.db.Query(
 		`SELECT m.id, m.group_id, m.sender_id, m.body, m.image_file, m.thumb_file,
 		        m.media_kind, m.media_name, m.media_size,
-		        m.created_at, m.edited_at, m.reply_to,
+		        m.created_at, m.edited_at, m.deleted_at, m.reply_to,
 		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
 		   FROM group_messages m
 		   -- Scoped to this group, not just rm.id: a reply_to stored before that
@@ -362,7 +363,7 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 		var created int64
 		if err := rows.Scan(&m.ID, &m.GroupID, &m.SenderID, &m.Body,
 			&m.ImageFile, &m.ThumbFile, &m.MediaKind, &m.MediaName, &m.MediaSize,
-			&created, &m.EditedAt,
+			&created, &m.EditedAt, &m.DeletedAt,
 			&m.ReplyTo, &m.ReplySender, &m.ReplyBody); err != nil {
 			return nil, err
 		}

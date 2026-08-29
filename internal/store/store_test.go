@@ -442,3 +442,83 @@ func TestExpiredSessionIsRejected(t *testing.T) {
 		t.Fatal("an expired session must not resolve")
 	}
 }
+
+// TestDeleteMessage: a delete clears the content, keeps the row (so replies
+// quoting it still resolve and the id is never reused), and reports the media
+// files so the caller can remove them from disk.
+func TestDeleteMessage(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	bob := mustUser(t, s, "bob")
+
+	m, err := s.AddMessage(Message{
+		SenderID: alice.ID, RecipientID: bob.ID, Body: "oops",
+		ImageFile: "abc.jpg", ThumbFile: "abc_thumb.jpg", MediaKind: "image",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Only the author may delete.
+	if _, err := s.DeleteMessage(bob.ID, m.ID); !errors.Is(err, ErrNotSender) {
+		t.Fatalf("recipient deleting: got %v, want ErrNotSender", err)
+	}
+
+	del, err := s.DeleteMessage(alice.ID, m.ID)
+	if err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+	if len(del.Files) != 2 {
+		t.Fatalf("want both media files reported for removal, got %v", del.Files)
+	}
+	if del.RecipientID != bob.ID {
+		t.Fatalf("recipient should be reported so the event can be routed, got %d", del.RecipientID)
+	}
+
+	// Deleting twice must not re-notify everyone.
+	if _, err := s.DeleteMessage(alice.ID, m.ID); !errors.Is(err, ErrAlreadyDeleted) {
+		t.Fatalf("second delete: got %v, want ErrAlreadyDeleted", err)
+	}
+
+	msgs, err := s.Conversation(alice.ID, bob.ID, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("the row must survive the delete, got %d messages", len(msgs))
+	}
+	got := msgs[0]
+	if got.DeletedAt == 0 {
+		t.Fatal("deleted message should read back with DeletedAt set")
+	}
+	if got.Body != "" || got.ImageFile != "" || got.ThumbFile != "" || got.MediaKind != "" {
+		t.Fatalf("content should be cleared, got %+v", got)
+	}
+}
+
+func TestDeleteGroupMessageAuthorOnly(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	mallory := mustUser(t, s, "mallory")
+	g, err := s.CreateGroup(alice.ID, "crew")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.AddGroupMessage(GroupMessage{GroupID: g.ID, SenderID: alice.ID, Body: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteGroupMessage(mallory.ID, m.ID); !errors.Is(err, ErrNotSender) {
+		t.Fatalf("another member deleting: got %v, want ErrNotSender", err)
+	}
+	if _, err := s.DeleteGroupMessage(alice.ID, m.ID); err != nil {
+		t.Fatalf("author deleting: %v", err)
+	}
+	gms, err := s.GroupConversation(g.ID, 0, 50)
+	if err != nil || len(gms) != 1 {
+		t.Fatalf("GroupConversation: %v (%d)", err, len(gms))
+	}
+	if gms[0].DeletedAt == 0 || gms[0].Body != "" {
+		t.Fatalf("group message not soft-deleted: %+v", gms[0])
+	}
+}

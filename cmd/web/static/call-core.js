@@ -79,6 +79,7 @@ window.TBCall = (function () {
       vadTimers: new Map(),
 
       micOn: true, camOn: true,
+      spotlight: null, // tile id blown up to fill the call area, or null
       leaving: false,
       reconnectTimer: null, reconnectDelay: 1000,
       mirrored: localStorage.getItem(PREF_MIRROR) !== "0",
@@ -109,12 +110,14 @@ window.TBCall = (function () {
     u.mic = el("button", "secondary", "🎤 Mic on");
     u.cam = el("button", "secondary", "📷 Camera on");
     u.present = el("button", null, "🖥 Present screen");
+    u.zoomOut = el("button", "secondary tbc-hidden", "⤡ Show everyone");
+    u.zoomOut.title = "Back to the grid";
     u.settings = el("button", "secondary", "⚙");
     u.settings.title = "Devices & preferences";
     u.leave = el("button", "secondary", "Leave");
     if (S.showCode) bar.append(u.codeLabel, u.code, u.copy);
     bar.append(u.pill, u.signalWarn, el("span", "tbc-spacer"),
-      u.audioGate, u.mic, u.cam, u.present, u.settings, u.leave);
+      u.audioGate, u.zoomOut, u.mic, u.cam, u.present, u.settings, u.leave);
 
     // --- settings panel ---
     const panel = el("div", "tbc-settings tbc-hidden");
@@ -333,6 +336,7 @@ window.TBCall = (function () {
     };
 
     u.present.onclick = () => (S.screenStream ? stopScreenShare() : startScreenShare());
+    u.zoomOut.onclick = () => setSpotlight(null);
   }
 
   // gumConstraints builds the getUserMedia request from the saved device choices
@@ -684,6 +688,7 @@ window.TBCall = (function () {
     }
     const tile = tileEl("local-screen");
     if (tile) tile.remove();
+    clearSpotlightIfGone();
     layoutGrid();
 
     S.ui.present.textContent = "🖥 Present screen";
@@ -955,6 +960,7 @@ window.TBCall = (function () {
       const tile = tileEl(peerId + suffix);
       if (tile) { detachVAD(peerId + suffix); tile.remove(); }
     }
+    clearSpotlightIfGone();
     updateCallPill();
     layoutGrid(); // a tile left: re-fit the space
   }
@@ -1077,7 +1083,12 @@ window.TBCall = (function () {
       const video = el("video");
       video.autoplay = true; video.playsInline = true; video.muted = muted;
       const mic = el("div", "tbc-micoff", "🔇");
-      tile.append(video, el("div", "tbc-avatar"), mic, el("div", "tbc-name"));
+      const zoom = el("div", "tbc-zoom", "⤢");
+      tile.append(video, el("div", "tbc-avatar"), mic, zoom, el("div", "tbc-name"));
+      // Click to fill the call area with this feed; click again to come back.
+      // Especially wanted for a shared screen, where one tile among several is
+      // usually the only one you actually need to read.
+      tile.addEventListener("click", () => toggleSpotlight(id));
       S.ui.grid.append(tile);
     }
     const v = tile.querySelector("video");
@@ -1111,6 +1122,30 @@ window.TBCall = (function () {
   // baseNick strips the decorations we add to labels ("river (you)").
   function baseNick(label) { return (label || "").split(" (")[0]; }
 
+  // ---- spotlight ----------------------------------------------------------
+  // One tile blown up to fill the call area. S.spotlight holds its id, or null.
+
+  function toggleSpotlight(id) {
+    if (!S) return;
+    setSpotlight(S.spotlight === id ? null : id);
+  }
+
+  function setSpotlight(id) {
+    S.spotlight = id;
+    S.ui.grid.classList.toggle("spotlight", !!id);
+    for (const tile of S.ui.grid.children) {
+      tile.classList.toggle("spot", !!id && tile.dataset.tile === id);
+    }
+    S.ui.zoomOut.classList.toggle("tbc-hidden", !id);
+    layoutGrid();
+  }
+
+  // If the spotlit peer leaves, fall back to the grid rather than showing an
+  // empty spotlight over everyone else.
+  function clearSpotlightIfGone() {
+    if (S && S.spotlight && !tileEl(S.spotlight)) setSpotlight(null);
+  }
+
   // ---- grid layout ---------------------------------------------------------
   // The grid is a flex child that already owns its space (see call.css), so all
   // this has to do is pick the column/row counts that make the tiles as large as
@@ -1121,6 +1156,9 @@ window.TBCall = (function () {
     const grid = S.ui.grid;
     const n = grid.children.length;
     if (!n) return;
+    // A spotlit tile is positioned over the grid and sized by it, so the
+    // column/row packing below has nothing to decide.
+    if (S.spotlight) return;
 
     const gap = 10;    // keep in step with the .6rem grid gap in call.css
     const AR = 16 / 9; // target tile aspect ratio

@@ -206,6 +206,7 @@ type groupMsgView struct {
 	MediaSize   int64           `json:"mediaSize,omitempty"`
 	Created     int64           `json:"created"`
 	EditedAt    int64           `json:"editedAt,omitempty"`
+	DeletedAt   int64           `json:"deletedAt,omitempty"`
 	Reactions   []reactionGroup `json:"reactions,omitempty"`
 	ReplyTo     int64           `json:"replyTo,omitempty"`
 	ReplySender int64           `json:"replySender,omitempty"`
@@ -220,6 +221,7 @@ func toGroupView(m store.GroupMessage) groupMsgView {
 	}
 	v.MediaURL, v.ImageURL, v.ThumbURL = mediaURLs(m.ImageFile, m.ThumbFile, m.MediaKind, m.MediaName)
 	v.MediaKind, v.MediaName, v.MediaSize = m.MediaKind, m.MediaName, m.MediaSize
+	v.DeletedAt = m.DeletedAt
 	return v
 }
 

@@ -152,6 +152,33 @@
     font-size: .68rem; font-weight: 700; line-height: 18px; text-align: center;
   }
   .pip.dot-only { min-width: 8px; width: 8px; height: 8px; padding: 0; border-radius: 50%; }
+  /* A conversation where someone said your name gets a RED pip, not the usual
+     blue one — "you are being asked for" is a different signal from "there is
+     something new". */
+  .pip.mention { background: var(--danger); box-shadow: 0 0 0 2px rgba(248,113,113,.22); }
+
+  /* @mentions in message text. */
+  .mention {
+    color: #9ec1ff; background: rgba(91,140,255,.13);
+    border-radius: 5px; padding: 0 .2rem; cursor: pointer; font-weight: 550;
+  }
+  .mention:hover { background: rgba(91,140,255,.26); text-decoration: underline; }
+  /* Your own name stands out further — that's the one you're scanning for. */
+  .mention.me { color: #ffd7a8; background: rgba(232,147,95,.18); }
+  .mention.me:hover { background: rgba(232,147,95,.32); }
+
+  /* Profile card, shown by clicking a mention. */
+  #profileCard {
+    position: fixed; z-index: 40; min-width: 190px; max-width: 260px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: .8rem; box-shadow: 0 12px 34px rgba(0,0,0,.5);
+    display: none; flex-direction: column; gap: .5rem;
+  }
+  #profileCard.on { display: flex; }
+  #profileCard .pc-top { display: flex; align-items: center; gap: .55rem; }
+  #profileCard .pc-nick { font-weight: 650; font-size: .95rem; }
+  #profileCard .pc-sub { color: var(--dim); font-size: .74rem; }
+  #profileCard button { width: 100%; }
 
   /* Requests */
   .req { display: flex; align-items: center; gap: .4rem; padding: .3rem .25rem; font-size: .88rem; }
@@ -167,6 +194,8 @@
     border-bottom: 1px solid var(--border-soft); background: var(--panel);
   }
   #chatHeader .nick { font-weight: 600; font-size: .95rem; }
+  /* The mark sits at the top left, ahead of the wordmark. */
+  #brandMark { display: block; flex: none; margin-right: -.15rem; }
   #chatHeader .sub { color: var(--dim); font-size: .75rem; }
 
   #membersPanel {
@@ -299,6 +328,10 @@
     border: 1px solid var(--accent-dim); border-radius: 8px; padding: .35rem .5rem;
   }
   .msg .edithint { font-size: .62rem; color: var(--dim); margin-top: .25rem; }
+  .msg .delbtn:hover { color: var(--danger); background: rgba(248,113,113,.12); }
+  /* A withdrawn message leaves a marker rather than a hole — otherwise the
+     conversation silently reflows and replies quote something that isn't there. */
+  .msg .body.deleted { color: var(--dim); font-style: italic; font-size: .85rem; }
 
   /* Reply quote shown above a message that is a reply */
   .msg .quote {
@@ -471,6 +504,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="profileCard"></div>
 <div id="emojiPicker"></div>
 
 <!-- ============ SETTINGS ============ -->
@@ -511,6 +545,7 @@
 <!-- ============ APP ============ -->
 <div id="main" class="hidden">
   <header>
+    <img src="/logo-mark.svg?v=dev" alt="" id="brandMark" width="26" height="26">
     <h1>take-back</h1>
     <span class="sub" id="verLabel"></span>
     <span style="flex:1;"></span>
@@ -764,7 +799,7 @@ function renderGroups() {
     row.append(name);
 
     if (g.unread > 0) {
-      row.append(pip(g.unread));
+      row.append(pip(g.unread, g.mentioned));
     } else {
       const count = document.createElement("span");
       count.style.cssText = "color:var(--dim);font-size:.72rem;";
@@ -953,7 +988,7 @@ function renderFriends() {
     name.textContent = f.user.nick;
     row.append(name);
 
-    if (f.unread > 0) row.append(pip(f.unread));
+    if (f.unread > 0) row.append(pip(f.unread, f.mentioned));
     else {
       // This unfriends — a destructive, mutual action — so label it and confirm.
       // (There's no "close chat" here: the row *is* the friend, not a tab.)
@@ -993,13 +1028,101 @@ function touchActivity(kind, id, created) {
   kind === "dm" ? renderFriends() : renderGroups();
 }
 
-// pip renders an unread badge (count, capped at 99+).
-function pip(n) {
+// pip renders an unread badge (count, capped at 99+). `mention` paints it red:
+// someone used your name in there, which is a stronger signal than "unread".
+function pip(n, mention) {
   const p = document.createElement("span");
-  p.className = "pip";
+  p.className = "pip" + (mention ? " mention" : "");
   p.textContent = n > 99 ? "99+" : String(n);
+  if (mention) p.title = "You were mentioned";
   return p;
 }
+
+// attachmentPreview describes an attachment-only message in a notification.
+function attachmentPreview(m) {
+  switch (m.mediaKind || (m.thumbUrl ? "image" : "")) {
+    case "image": return "📷 image";
+    case "video": return "🎬 " + (m.mediaName || "video");
+    case "audio": return "🎵 " + (m.mediaName || "audio");
+    case "file":  return "📎 " + (m.mediaName || "file");
+    default:      return "message";
+  }
+}
+
+// mentionsMe reports whether a message body says my name with an @.
+// Deliberately the same shape linkMentions uses, so what lights up in the text
+// and what turns the pip red can never disagree.
+function mentionsMe(body) {
+  if (!body || !me) return false;
+  const re = new RegExp("(^|[^\\w@/])@" + me.nick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+  return re.test(body);
+}
+
+// ---------- Profile card ----------
+// Clicking an @mention shows who that is. Sourced from the conversation state we
+// already hold, so it needs no extra endpoint.
+function showProfile(nick, anchor) {
+  const card = $("profileCard");
+  card.replaceChildren();
+
+  const friend = [...friendState.values()].find(
+    (f) => f.user.nick.toLowerCase() === nick.toLowerCase());
+  const member = [...groupMembers.values()].find(
+    (m) => m.nick.toLowerCase() === nick.toLowerCase());
+  const isMe = me && me.nick.toLowerCase() === nick.toLowerCase();
+  const online = isMe ? true : (friend ? friend.online : member ? member.online : false);
+  const avatarUrl = isMe ? me.avatarUrl : (friend ? friend.user.avatarUrl : "");
+
+  const top = document.createElement("div");
+  top.className = "pc-top";
+  top.append(avatarWrap(nick, false, online, avatarUrl));
+  const names = document.createElement("div");
+  const n = document.createElement("div");
+  n.className = "pc-nick";
+  n.textContent = nick + (isMe ? " (you)" : "");
+  const sub = document.createElement("div");
+  sub.className = "pc-sub";
+  sub.textContent = isMe ? "This is you"
+    : friend ? (online ? "Online" : "Offline") + " · friend"
+    : member ? (online ? "Online" : "Offline") + " · in this group"
+    : "Not in your contacts";
+  names.append(n, sub);
+  top.append(names);
+  card.append(top);
+
+  // Only offer to open a DM with someone we can actually message.
+  if (friend && friend.status === "accepted" && !isMe) {
+    card.append(mkBtn("Message " + nick, "secondary", () => {
+      hideProfile();
+      openChat(friend.user);
+    }));
+  }
+
+  card.classList.add("on");
+  // Place it under the mention, nudged back inside the viewport if it would
+  // otherwise hang off the right or bottom edge.
+  const r = anchor.getBoundingClientRect();
+  const cr = card.getBoundingClientRect();
+  card.style.left = Math.max(8, Math.min(window.innerWidth - cr.width - 8, r.left)) + "px";
+  card.style.top = (r.bottom + 6 + cr.height > window.innerHeight
+    ? Math.max(8, r.top - cr.height - 6)
+    : r.bottom + 6) + "px";
+}
+
+function hideProfile() { $("profileCard").classList.remove("on"); }
+
+// Delegated so it covers messages added later, and closes on any click elsewhere.
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest && e.target.closest(".mention");
+  if (chip) {
+    e.stopPropagation();
+    showProfile(chip.dataset.nick, chip);
+    return;
+  }
+  if (!e.target.closest || !e.target.closest("#profileCard")) hideProfile();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideProfile(); });
+window.addEventListener("resize", hideProfile);
 
 // setChatAvatar swaps the avatar shown in the chat header.
 function setChatAvatar(name, isGroup, online, url) {
@@ -1122,8 +1245,8 @@ async function openChat(user) {
 async function markRead(kind, id, msgs) {
   const lastId = msgs && msgs.length ? msgs[msgs.length - 1].id : 0;
   const state = kind === "dm" ? friendState.get(id) : groupState.get(id);
-  const hadUnread = state && state.unread > 0;
-  if (state) state.unread = 0;
+  const hadUnread = state && (state.unread > 0 || state.mentioned);
+  if (state) { state.unread = 0; state.mentioned = false; }
   if (hadUnread) { renderFriends(); renderGroups(); }
   if (!lastId) return;
   await api("/api/read", {
@@ -1133,10 +1256,13 @@ async function markRead(kind, id, msgs) {
 }
 
 // bumpUnread increments the local pip for a conversation that isn't open.
-function bumpUnread(kind, id) {
+// `mention` latches until the conversation is opened: a later ordinary message
+// must not quietly downgrade a request for your attention back to blue.
+function bumpUnread(kind, id, mention) {
   const state = kind === "dm" ? friendState.get(id) : groupState.get(id);
   if (!state) return;
   state.unread = (state.unread || 0) + 1;
+  if (mention) state.mentioned = true;
   kind === "dm" ? renderFriends() : renderGroups();
 }
 
@@ -1375,8 +1501,12 @@ function messageEl(m) {
     div.innerHTML = html;
     div.append(mkBtn("Join call " + call[1], "", () => joinCall(call[1])));
   } else {
-    if (m.body) html += `<div class="body">${renderMarkdown(m.body)}</div>`;
-    html += renderAttachment(m);
+    if (m.deletedAt) {
+      html += `<div class="body deleted">🗑 message deleted</div>`;
+    } else {
+      if (m.body) html += `<div class="body">${renderMarkdown(m.body)}</div>`;
+      html += renderAttachment(m);
+    }
     div.innerHTML = html;
   }
 
@@ -1402,13 +1532,23 @@ function messageEl(m) {
 
   // Only your own text messages are editable (an image keeps its attachment;
   // call invites aren't text you'd want to rewrite).
-  if (mine && !call && m.body) {
+  if (mine && !call && m.body && !m.deletedAt) {
     const btn = document.createElement("button");
     btn.className = "editbtn";
     btn.textContent = "✎ edit";
     btn.title = "Edit message";
     btn.onclick = () => startEdit(div, m);
     row.append(btn);
+  }
+  // Delete your own message, whatever it holds — including an attachment-only
+  // one, which is exactly the case you most want to be able to take back.
+  if (mine && !m.deletedAt) {
+    const del = document.createElement("button");
+    del.className = "editbtn delbtn";
+    del.textContent = "🗑 delete";
+    del.title = "Delete message";
+    del.onclick = () => deleteMessage(m);
+    row.append(del);
   }
   const reply = document.createElement("button");
   reply.className = "react-add reply";
@@ -1603,6 +1743,44 @@ function applyEdit(m) {
 }
 function scrollMessages() { const m = $("messages"); m.scrollTop = m.scrollHeight; }
 
+// deleteMessage withdraws one of my own messages, for everyone.
+async function deleteMessage(m) {
+  if (!confirm("Delete this message for everyone? This can't be undone.")) return;
+  try {
+    await api("/api/messages/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: m.id, scope: openGroup ? "group" : "dm" }),
+    });
+  } catch (e) { toast(e.message); return; }
+  applyDelete(m.id);
+}
+
+// applyDelete rewrites a message already on screen as a "deleted" marker —
+// used for my own delete and for the event when someone else deletes theirs.
+function applyDelete(id) {
+  const div = findMessageEl(id);
+  if (!div) return;
+  if (div._msg) {
+    div._msg.deletedAt = Math.floor(Date.now() / 1000);
+    div._msg.body = "";
+    div._msg.mediaUrl = div._msg.imageUrl = div._msg.thumbUrl = "";
+  }
+  // Replace the content but keep the row, its timestamp and its reactions row,
+  // so the conversation doesn't jump.
+  const body = div.querySelector(".body");
+  if (body) {
+    body.className = "body deleted";
+    body.textContent = "🗑 message deleted";
+  } else {
+    const marker = document.createElement("div");
+    marker.className = "body deleted";
+    marker.textContent = "🗑 message deleted";
+    div.prepend(marker);
+  }
+  div.querySelectorAll("img.thumb, video.att, audio.att, .filechip").forEach((n) => n.remove());
+  div.querySelectorAll(".editbtn").forEach((n) => n.remove());
+}
+
 // renderAttachment turns a message's attachment into markup, by kind. Images
 // show their thumbnail (click for the full size), video and audio play inline,
 // and anything else is a download chip labelled with the sender's filename.
@@ -1773,11 +1951,13 @@ function connectEvents() {
         markRead("dm", openFriend.id, [m]); // keep it read while we're looking
       } else {
         // Message from someone whose chat isn't open — pip it and notify.
-        bumpUnread("dm", m.senderId);
+        const mentioned = mentionsMe(m.body);
+        bumpUnread("dm", m.senderId, mentioned);
         const from = friendState.get(m.senderId);
         const who = from ? from.user.nick : "someone";
-        const preview = m.body ? m.body.slice(0, 80) : "📷 image";
-        notify("Message from " + who, preview, () => { if (from) openChat(from.user); });
+        const preview = m.body ? m.body.slice(0, 80) : attachmentPreview(m);
+        notify((mentioned ? "You were mentioned by " : "Message from ") + who, preview,
+          () => { if (from) openChat(from.user); });
       }
     } else if (e.type === "friend_request") {
       // A new incoming friend request: refresh the list and raise a notification.
@@ -1791,6 +1971,13 @@ function connectEvents() {
       if (openFriend && e.message.senderId === openFriend.id) applyEdit(e.message);
     } else if (e.type === "group_message_edited") {
       if (openGroup && e.message.groupId === openGroup.id) applyEdit(e.message);
+    } else if (e.type === "message_deleted") {
+      // Someone withdrew a message; drop its content wherever it's on screen.
+      const d = e.message || {};
+      const forThisChat = d.scope === "group"
+        ? (openGroup && d.groupId === openGroup.id)
+        : !!openFriend;
+      if (forThisChat) applyDelete(d.id);
     } else if (e.type === "reaction") {
       applyReaction(e.message);
     } else if (e.type === "group_message") {
@@ -1800,10 +1987,12 @@ function connectEvents() {
         appendMessage(m); scrollMessages();
         markRead("group", openGroup.id, [m]);
       } else {
-        bumpUnread("group", m.groupId);
+        const mentioned = mentionsMe(m.body);
+        bumpUnread("group", m.groupId, mentioned);
         const g = groupState.get(m.groupId);
-        const preview = m.body ? m.body.slice(0, 80) : "📷 image";
-        notify("Message in " + (g ? g.name : "a group"), preview);
+        const preview = m.body ? m.body.slice(0, 80) : attachmentPreview(m);
+        notify(mentioned ? "You were mentioned in " + (g ? g.name : "a group")
+                         : "Message in " + (g ? g.name : "a group"), preview);
       }
     } else if (e.type === "group_invite") {
       loadGroupInvites();
@@ -1834,6 +2023,55 @@ function mkBtn(label, cls, onclick) {
   const b = document.createElement("button");
   b.textContent = label; if (cls) b.className = cls; b.onclick = onclick; return b;
 }
+// autoLink turns bare URLs into links: "https://x.com/a" and also "www.x.com",
+// which people type far more often than they type a scheme.
+//
+// Runs AFTER esc() and after the [text](url) rule, on already-escaped text — so
+// the pattern must tolerate the entities escaping produced (&amp; in a query
+// string) and must not re-link the href of a link the previous rule just built.
+// The (^|[\s(]) guard is what keeps it out of an existing tag: inside
+// `href="…"` the character before the URL is a quote, which doesn't match.
+function autoLink(s) {
+  return s.replace(
+    /(^|[\s(])((?:https?:\/\/|www\.)[^\s<>"']+)/g,
+    (m, pre, url) => {
+      // Trailing punctuation is almost always sentence punctuation, not URL.
+      const trail = (url.match(/[.,;:!?)\]]+$/) || [""])[0];
+      const clean = url.slice(0, url.length - trail.length);
+      if (!clean) return m;
+      // A bare www.… has no scheme; assume https rather than sending them to
+      // plaintext http.
+      const href = /^www\./i.test(clean) ? "https://" + clean : clean;
+      return `${pre}<a href="${href}" target="_blank" rel="noopener noreferrer">${clean}</a>${trail}`;
+    });
+}
+
+// linkMentions highlights @nick and makes it open that person's profile card.
+// Only nicks that actually exist in this conversation become links, so an email
+// address or a stray "@" in prose is left alone.
+function linkMentions(s) {
+  return s.replace(/(^|[^\w@\/])@([A-Za-z0-9_-]{1,32})/g, (m, pre, nick) => {
+    const known = knownNick(nick);
+    if (!known) return m;
+    const isMe = !!me && known.toLowerCase() === me.nick.toLowerCase();
+    return `${pre}<span class="mention${isMe ? " me" : ""}" data-nick="${esc(known)}">@${esc(known)}</span>`;
+  });
+}
+
+// knownNick resolves a mention case-insensitively against the people you could
+// actually be talking to, returning their canonical nick.
+function knownNick(nick) {
+  const want = nick.toLowerCase();
+  if (me && me.nick.toLowerCase() === want) return me.nick;
+  for (const f of friendState.values()) {
+    if (f.user.nick.toLowerCase() === want) return f.user.nick;
+  }
+  for (const m of groupMembers.values()) {
+    if (m.nick.toLowerCase() === want) return m.nick;
+  }
+  return null;
+}
+
 function esc(s) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -1846,6 +2084,8 @@ function renderMarkdown(src) {
   // Links [text](http/https url) only.
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = autoLink(s);
+  s = linkMentions(s);
   // Blockquotes: any run of lines beginning with "> " becomes one <blockquote>.
   // Done per-line before the newline→<br> conversion; escaped "&gt; " matches
   // the literal "> " the user typed.

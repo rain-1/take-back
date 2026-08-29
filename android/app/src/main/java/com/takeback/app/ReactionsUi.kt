@@ -102,16 +102,39 @@ object ReactionsUi {
      * messages, where an extra "Edit" entry appears (matching the web client's
      * press-↑-to-edit).
      */
-    fun showActions(ctx: Context, onReply: () -> Unit, onReact: () -> Unit, onEdit: (() -> Unit)? = null) {
-        val labels = if (onEdit != null) arrayOf("Reply", "React", "Edit") else arrayOf("Reply", "React")
+    /**
+     * The long-press menu on a message. Edit and Delete are only passed in for
+     * messages the action applies to, so the menu is built from whatever is
+     * actually offered rather than showing entries that do nothing.
+     */
+    fun showActions(
+        ctx: Context,
+        onReply: () -> Unit,
+        onReact: () -> Unit,
+        onEdit: (() -> Unit)? = null,
+        onDelete: (() -> Unit)? = null,
+    ) {
+        val actions = mutableListOf<Pair<String, () -> Unit>>(
+            "Reply" to onReply,
+            "React" to onReact,
+        )
+        onEdit?.let { actions.add("Edit" to it) }
+        onDelete?.let { actions.add("Delete" to { confirmDelete(ctx, it) }) }
+
         AlertDialog.Builder(ctx)
-            .setItems(labels) { _, which ->
-                when (which) {
-                    0 -> onReply()
-                    1 -> onReact()
-                    2 -> onEdit?.invoke()
-                }
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which ->
+                actions[which].second()
             }
+            .show()
+    }
+
+    // Deleting is for everyone and can't be undone, so make it deliberate.
+    private fun confirmDelete(ctx: Context, onConfirm: () -> Unit) {
+        AlertDialog.Builder(ctx)
+            .setTitle("Delete message?")
+            .setMessage("It will be removed for everyone. This can't be undone.")
+            .setPositiveButton("Delete") { _, _ -> onConfirm() }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 

@@ -24,6 +24,54 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.19.0
+
+Six requests from #bugrep & featurereq.
+
+**Fixed — the call panel overflowed the page** (@Etheri, web)
+- `.tbc` is a flex item in a row container and had no grow or width, so it sized
+  to its *content*: a wide call set the panel's width instead of the other way
+  round, and pushed the whole page into horizontal scroll. Etheri diagnosed this
+  one exactly. It now fills its host.
+
+**Added — click a tile to maximise it** (@Etheri)
+- Click any camera or screen tile to have it fill the call area; click again, or
+  use "⤡ Show everyone", to go back. The spotlit tile is positioned *over* the
+  others rather than the others being hidden: `display: none` on a tile lets the
+  browser tear down its `<video>`, and you'd lose that person's audio while
+  looking at someone else.
+
+**Added — delete messages** (@Etheri, web + Android)
+- Delete your own message, of any kind, for everyone. Web: a 🗑 button beside
+  edit. Android: long-press → Delete. Both confirm first.
+- The delete is soft on the server: the row survives so replies quoting it still
+  resolve and its id is never reused, but the body and attachment metadata are
+  cleared **and the uploaded files are removed from disk** — leaving those
+  fetchable by URL would make "delete" cosmetic. Everyone sees a "message
+  deleted" marker live. Only the author may delete.
+
+**Added — @mentions** (@river, web)
+- A mention of someone in the conversation lights up and is clickable, opening a
+  small profile card (avatar, online state, and a "Message them" shortcut for a
+  friend). Your own name is highlighted differently — that's the one you're
+  scanning for.
+- A message that mentions you turns that conversation's pip **red** instead of
+  blue, and the desktop notification says "You were mentioned" rather than
+  "Message from". The red state latches until you open the conversation, so a
+  later ordinary message can't quietly downgrade a request for your attention.
+- Only nicks that actually exist in the conversation become mentions, so
+  `alice@example.com` and stray `@`s in prose are left alone.
+
+**Added — bare URLs are links** (@river, web + Android)
+- `https://…` and plain `www.…` in message text are detected and linked; on
+  Android via Markwon's linkify (deliberately not `Linkify.ALL`, which turns any
+  longish run of digits into a phone number). Trailing sentence punctuation is
+  kept out of the URL, and a schemeless `www.` link resolves to https rather than
+  plaintext http.
+
+**Added — the logo is in the header** (@river)
+- Top left, beside the wordmark, and it's the favicon.
+
 ## 1.18.1
 
 Security fixes from an external review of the whole repository. Nothing here was

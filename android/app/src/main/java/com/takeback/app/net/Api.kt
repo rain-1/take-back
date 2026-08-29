@@ -72,6 +72,7 @@ data class Message(
     val replySender: Long = 0,
     val replyBody: String = "",
     val editedAt: Long = 0,
+    val deletedAt: Long = 0,
 )
 
 data class Group(
@@ -103,6 +104,7 @@ data class GroupMessage(
     val replySender: Long = 0,
     val replyBody: String = "",
     val editedAt: Long = 0,
+    val deletedAt: Long = 0,
 )
 
 /**
@@ -245,6 +247,18 @@ object ApiClient {
     suspend fun sendText(withUser: Long, body: String, replyTo: Long = 0): Message =
         parseMessage(post("/api/messages", jsonBody(
             JSONObject().put("with", withUser).put("body", body).put("replyTo", replyTo))))
+
+    /**
+     * Withdraw one of my own messages, for everyone. [scope] is "dm" or "group".
+     *
+     * The server soft-deletes: the row survives so replies quoting it still
+     * resolve, but its text and any attachment (including the stored file) are
+     * gone.
+     */
+    suspend fun deleteMessage(id: Long, scope: String) {
+        post("/api/messages/delete", jsonBody(
+            JSONObject().put("id", id).put("scope", scope)))
+    }
 
     /** Edit the text of one of my own DMs. Returns the updated message. */
     suspend fun editMessage(id: Long, body: String): Message =
@@ -413,6 +427,7 @@ object ApiClient {
         replySender = o.optLong("replySender"),
         replyBody = o.optString("replyBody"),
         editedAt = o.optLong("editedAt"),
+        deletedAt = o.optLong("deletedAt"),
     )
 
     /**
@@ -471,6 +486,7 @@ object ApiClient {
         replySender = o.optLong("replySender"),
         replyBody = o.optString("replyBody"),
         editedAt = o.optLong("editedAt"),
+        deletedAt = o.optLong("deletedAt"),
     )
 }
 

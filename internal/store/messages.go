@@ -51,6 +51,7 @@ type Message struct {
 	MediaSize   int64     `json:"mediaSize,omitempty"`
 	Created     time.Time `json:"created"`
 	EditedAt    int64     `json:"editedAt,omitempty"`
+	DeletedAt   int64     `json:"deletedAt,omitempty"`   // non-zero once withdrawn
 	ReplyTo     int64     `json:"replyTo,omitempty"`     // id of the message being replied to
 	ReplySender int64     `json:"replySender,omitempty"` // its sender (for the quote)
 	ReplyBody   string    `json:"replyBody,omitempty"`   // its body, truncated
@@ -131,7 +132,7 @@ func (s *Store) Conversation(meID, otherID int64, beforeID int64, limit int) ([]
 	rows, err := s.db.Query(
 		`SELECT m.id, m.sender_id, m.recipient_id, m.body, m.image_file, m.thumb_file,
 		        m.media_kind, m.media_name, m.media_size,
-		        m.created_at, m.edited_at, m.reply_to,
+		        m.created_at, m.edited_at, m.deleted_at, m.reply_to,
 		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
 		   FROM messages m
 		   -- The join is scoped to this same conversation, not just rm.id: a
@@ -170,7 +171,7 @@ func scanMessage(rows *sql.Rows) (Message, error) {
 	var created int64
 	if err := rows.Scan(&m.ID, &m.SenderID, &m.RecipientID, &m.Body,
 		&m.ImageFile, &m.ThumbFile, &m.MediaKind, &m.MediaName, &m.MediaSize,
-		&created, &m.EditedAt,
+		&created, &m.EditedAt, &m.DeletedAt,
 		&m.ReplyTo, &m.ReplySender, &m.ReplyBody); err != nil {
 		return Message{}, err
 	}

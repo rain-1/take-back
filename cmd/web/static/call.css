@@ -5,6 +5,11 @@
 .tbc {
   display: flex; flex-direction: column;
   min-height: 0; height: 100%;
+  /* Both hosts (#callHost here and in index.html) are row flex containers, so
+     without an explicit grow/width .tbc sizes to its CONTENT — the grid then set
+     the panel's width instead of the other way round, and a wide call pushed the
+     whole page into horizontal overflow. */
+  flex: 1 1 auto; width: 100%; min-width: 0;
   gap: .6rem;
   --tbc-accent: #5b8cff;
   --tbc-border: #232936;
@@ -48,13 +53,30 @@
 .tbc-grid {
   flex: 1; min-height: 0; display: grid; gap: .6rem;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  position: relative; /* the containing block for a spotlit tile */
 }
 .tbc-tile {
   position: relative; background: #000; border-radius: 12px; overflow: hidden;
   min-height: 0; min-width: 0;
   outline: 2px solid transparent; outline-offset: -2px;
   transition: outline-color .12s ease;
+  cursor: zoom-in;
 }
+
+/* Spotlight: click a tile and it covers the whole grid; click again to go back.
+   The spotlit tile is absolutely positioned OVER the others rather than the
+   others being hidden — `display: none` on a tile lets the browser tear down its
+   <video>, and we'd lose that person's audio while looking at someone else. They
+   keep playing underneath, simply covered. */
+.tbc-grid.spotlight > .tbc-tile.spot {
+  position: absolute; inset: 0; z-index: 3; cursor: zoom-out;
+}
+.tbc-tile .tbc-zoom {
+  position: absolute; right: .5rem; bottom: .5rem; z-index: 2;
+  background: rgba(0,0,0,.6); border-radius: 6px; padding: .1rem .4rem;
+  font-size: .78rem; opacity: 0; transition: opacity .12s ease; pointer-events: none;
+}
+.tbc-tile:hover .tbc-zoom { opacity: 1; }
 /* Scale to fit by default: the whole frame is visible, letterboxed against the
    tile's black background. `cover` crops to fill and was what "fill the window"
    shipped with — it's now opt-in per person via the Video scaling setting. */

@@ -64,11 +64,12 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         binding.groupName.text = "# $groupName"
 
         renderer = MessageRenderer(
-            this, binding.messages, binding.scroll, Markwon.create(this),
+            this, binding.messages, binding.scroll, markwon(),
             onReply = { startReply(it.id, it.senderNick, it.body) },
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
             onOpenAttachment = { openAttachment(it) },
+            onDelete = { deleteMessage(it) },
             onEdit = { editMessage(it) },
         )
 
@@ -204,6 +205,15 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         }
     }
 
+    /** Withdraw one of my own messages, for everyone. */
+    private fun deleteMessage(m: RMsg) {
+        lifecycleScope.launch {
+            runCatching { ApiClient.deleteMessage(m.id, "group") }
+                .onSuccess { renderer.markDeleted(m.id) }
+                .onFailure { toast("Couldn't delete: " + (it.message ?: "failed")) }
+        }
+    }
+
     /** Hand an attachment's URL to whatever app handles that type. */
     private fun openAttachment(url: String) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
@@ -239,7 +249,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 senderNick = if (m.senderId == myId) (nickOf(myId) ?: "you") else (nickOf(m.senderId) ?: "someone"),
                 senderAvatar = avatarOf(m.senderId),
                 body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl,
-                attachment = m.attachment, created = m.created,
+                attachment = m.attachment, created = m.created, deletedAt = m.deletedAt,
                 reactions = m.reactions,
                 replyTo = m.replyTo,
                 replyNick = if (m.replySender == myId) "you" else (nickOf(m.replySender) ?: "someone"),
@@ -286,6 +296,10 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onReaction(scope: String, messageId: Long, reactions: List<com.takeback.app.net.Reaction>) =
         runOnUiThread { if (scope == "group") renderer.updateReactions(messageId, reactions) }
+
+    override fun onMessageDeleted(scope: String, messageId: Long, gid: Long) = runOnUiThread {
+        if (scope == "group" && gid == groupId) renderer.markDeleted(messageId)
+    }
 
     // ---- live events ----
 

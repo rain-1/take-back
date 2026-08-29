@@ -53,11 +53,12 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         binding.friendNick.text = friendNick
 
         renderer = MessageRenderer(
-            this, binding.messages, binding.scroll, Markwon.create(this),
+            this, binding.messages, binding.scroll, markwon(),
             onReply = { startReply(it.id, it.senderNick, it.body) },
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
             onOpenAttachment = { openAttachment(it) },
+            onDelete = { deleteMessage(it) },
             onEdit = { editMessage(it) },
         )
 
@@ -114,7 +115,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
                 senderNick = sender?.nick ?: (if (mine) "you" else friendNick),
                 senderAvatar = sender?.avatarUrl ?: "",
                 body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl,
-                attachment = m.attachment, created = m.created,
+                attachment = m.attachment, created = m.created, deletedAt = m.deletedAt,
                 reactions = m.reactions,
                 replyTo = m.replyTo,
                 replyNick = if (m.replySender == me?.id) (me?.nick ?: "you") else friendNick,
@@ -183,6 +184,15 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         }
     }
 
+    /** Withdraw one of my own messages, for everyone. */
+    private fun deleteMessage(m: RMsg) {
+        lifecycleScope.launch {
+            runCatching { ApiClient.deleteMessage(m.id, "dm") }
+                .onSuccess { renderer.markDeleted(m.id) }
+                .onFailure { toast("Couldn't delete: " + (it.message ?: "failed")) }
+        }
+    }
+
     /** Hand an attachment's URL to whatever app handles that type. */
     private fun openAttachment(url: String) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
@@ -220,6 +230,9 @@ class ChatActivity : AppCompatActivity(), EventsListener {
 
     private fun react(messageId: Long, emoji: String, add: Boolean) {
         lifecycleScope.launch { runCatching { ApiClient.react("dm", messageId, emoji, add) } }
+    }
+    override fun onMessageDeleted(scope: String, messageId: Long, gid: Long) = runOnUiThread {
+        if (scope == "dm") renderer.markDeleted(messageId)
     }
 
     override fun onReaction(scope: String, messageId: Long, reactions: List<Reaction>) = runOnUiThread {

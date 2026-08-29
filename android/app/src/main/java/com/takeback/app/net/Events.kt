@@ -28,6 +28,9 @@ interface EventsListener {
     fun onGroupUpdate(groupId: Long) {}
     /** A message's reactions changed. [reactions] is the fresh aggregate. */
     fun onReaction(scope: String, messageId: Long, reactions: List<Reaction>) {}
+
+    /** Someone withdrew a message. [scope] is "dm" or "group". */
+    fun onMessageDeleted(scope: String, messageId: Long, groupId: Long) {}
     /** Someone invited me to a group — it needs an accept/decline. */
     fun onGroupInvite(groupId: Long, groupName: String, invitedBy: String) {}
 }
@@ -143,6 +146,12 @@ object Events {
             "group_update" -> {
                 val groupId = msg.optLong("userId") // group id is carried in userId
                 listeners.forEach { it.onGroupUpdate(groupId) }
+            }
+            "message_deleted" -> {
+                val m = msg.getJSONObject("message")
+                listeners.forEach {
+                    it.onMessageDeleted(m.optString("scope"), m.optLong("id"), m.optLong("groupId"))
+                }
             }
             "reaction" -> {
                 val m = msg.getJSONObject("message")

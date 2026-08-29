@@ -48,6 +48,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/messages/image", a.auth(a.handleMediaMessage))
 	mux.HandleFunc("/api/read", a.auth(a.handleRead)) // mark a conversation read
 	mux.HandleFunc("/api/messages/edit", a.auth(a.handleEditMessage))
+	mux.HandleFunc("/api/messages/delete", a.auth(a.handleDeleteMessage))
 	mux.HandleFunc("/api/reactions", a.auth(a.handleReaction))
 	mux.HandleFunc("/api/events", a.auth(a.handleEvents)) // presence + message stream (WS)
 

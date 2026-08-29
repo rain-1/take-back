@@ -353,3 +353,16 @@ func randHex() string {
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
 }
+
+// Remove deletes stored files by name. Names come from the database, never from
+// a request, but Base() them anyway so a corrupted row can't escape the media
+// directory. Missing files are not an error — the caller is deleting, and the
+// desired end state is "not there".
+func (m *MediaStore) Remove(names ...string) {
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		_ = os.Remove(filepath.Join(m.Dir, filepath.Base(n)))
+	}
+}

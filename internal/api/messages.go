@@ -32,6 +32,7 @@ type msgView struct {
 	MediaSize   int64           `json:"mediaSize,omitempty"`
 	Created     int64           `json:"created"`
 	EditedAt    int64           `json:"editedAt,omitempty"`
+	DeletedAt   int64           `json:"deletedAt,omitempty"`
 	Reactions   []reactionGroup `json:"reactions,omitempty"`
 	ReplyTo     int64           `json:"replyTo,omitempty"`
 	ReplySender int64           `json:"replySender,omitempty"`
@@ -46,6 +47,7 @@ func toView(m store.Message) msgView {
 	}
 	v.MediaURL, v.ImageURL, v.ThumbURL = mediaURLs(m.ImageFile, m.ThumbFile, m.MediaKind, m.MediaName)
 	v.MediaKind, v.MediaName, v.MediaSize = m.MediaKind, m.MediaName, m.MediaSize
+	v.DeletedAt = m.DeletedAt
 	return v
 }
 
@@ -275,4 +277,67 @@ func (a *API) requireFriend(w http.ResponseWriter, me, other int64) bool {
 		return false
 	}
 	return true
+}
+
+// handleDeleteMessage withdraws a message the caller sent.
+// POST {id, scope} — "dm" (default) or "group", mirroring the edit endpoint.
+//
+// The delete is soft: the row survives so replies quoting it still resolve and
+// its id is never reused, but the body and any attachment are cleared and the
+// uploaded files are removed from disk. Leaving those fetchable by URL would
+// make "delete" cosmetic — the whole point is that the content is gone.
+func (a *API) handleDeleteMessage(w http.ResponseWriter, r *http.Request, user *store.User) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var body struct {
+		ID    int64  `json:"id"`
+		Scope string `json:"scope"` // "dm" (default) | "group"
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+
+	var (
+		del store.DeletedMessage
+		err error
+	)
+	if body.Scope == "group" {
+		del, err = a.Store.DeleteGroupMessage(user.ID, body.ID)
+	} else {
+		del, err = a.Store.DeleteMessage(user.ID, body.ID)
+	}
+	if err != nil {
+		writeDeleteErr(w, err)
+		return
+	}
+
+	// Drop the stored files. Best-effort: the message is already withdrawn, and
+	// a failure here shouldn't turn a successful delete into an error.
+	a.Media.Remove(del.Files...)
+
+	ev := map[string]any{"id": del.ID, "scope": body.Scope}
+	if body.Scope == "group" {
+		ev["groupId"] = del.GroupID
+		if raw, mErr := json.Marshal(ev); mErr == nil {
+			a.notifyGroup(del.GroupID, presence.Event{Type: "message_deleted", Message: raw}, user.ID)
+		}
+	} else if raw, mErr := json.Marshal(ev); mErr == nil {
+		a.Presence.NotifyUser(del.RecipientID, presence.Event{Type: "message_deleted", Message: raw})
+	}
+	writeJSON(w, http.StatusOK, ev)
+}
+
+func writeDeleteErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, store.ErrNotSender):
+		writeErr(w, http.StatusForbidden, "you can only delete your own messages")
+	case errors.Is(err, store.ErrAlreadyDeleted):
+		writeErr(w, http.StatusConflict, err.Error())
+	case errors.Is(err, sql.ErrNoRows):
+		writeErr(w, http.StatusNotFound, "no such message")
+	default:
+		writeErr(w, http.StatusInternalServerError, err.Error())
+	}
 }

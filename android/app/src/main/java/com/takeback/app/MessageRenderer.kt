@@ -36,6 +36,7 @@ data class RMsg(
     val mine: Boolean,
     val callCode: String?,
     val editedAt: Long = 0,
+    val deletedAt: Long = 0,
 )
 
 /**
@@ -53,6 +54,7 @@ class MessageRenderer(
     private val onJoinCall: (code: String) -> Unit,
     private val onOpenAttachment: (url: String) -> Unit,
     private val onEdit: (RMsg) -> Unit = {},
+    private val onDelete: (RMsg) -> Unit = {},
 ) {
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
@@ -127,7 +129,11 @@ class MessageRenderer(
                         }
                     },
                     // Edit is offered only for your own text messages (not images/calls).
-                    onEdit = if (m.mine && m.callCode == null && m.body.isNotEmpty()) ({ onEdit(m) }) else null)
+                    onEdit = if (m.mine && m.callCode == null && m.body.isNotEmpty() && m.deletedAt == 0L)
+                        ({ onEdit(m) }) else null,
+                    // Delete covers your own messages of any kind — an attachment
+                    // is the thing you most often want to take back.
+                    onDelete = if (m.mine && m.deletedAt == 0L) ({ onDelete(m) }) else null)
                 true
             }
         }
@@ -138,7 +144,16 @@ class MessageRenderer(
             })
         }
 
-        if (m.callCode != null) {
+        if (m.deletedAt != 0L) {
+            // A withdrawn message leaves a marker rather than a hole, so replies
+            // quoting it still point at something and the list doesn't reflow.
+            col.addView(TextView(ctx).apply {
+                text = "🗑 message deleted"
+                setTextColor(Color.parseColor("#5A6273"))
+                textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.ITALIC)
+            })
+        } else if (m.callCode != null) {
             col.addView(TextView(ctx).apply { text = "📞 Video call"; setTextColor(Color.parseColor("#E8EAF0")) })
             col.addView(Button(ctx).apply { text = "Join call ${m.callCode}"; setOnClickListener { onJoinCall(m.callCode) } })
         } else {
@@ -246,6 +261,29 @@ class MessageRenderer(
     fun updateMessage(id: Long, body: String, editedAt: Long) {
         bodyViews[id]?.let { markwon.setMarkdown(it, body) }
         editedMarks[id]?.visibility = if (editedAt > 0) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Turn a message already on screen into the "deleted" marker, for my own
+     * delete and for the live event when someone else deletes theirs.
+     *
+     * The row itself stays put so the list doesn't jump and replies quoting it
+     * still have somewhere to scroll to; only its content is replaced.
+     */
+    fun markDeleted(id: Long) {
+        val col = messageViews[id] as? LinearLayout ?: return
+        col.removeAllViews()
+        col.setOnLongClickListener(null) // nothing left to reply to, react to or edit
+        col.addView(TextView(ctx).apply {
+            text = "🗑 message deleted"
+            setTextColor(Color.parseColor("#5A6273"))
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.ITALIC)
+        })
+        bodyViews.remove(id)
+        editedMarks.remove(id)
+        reactionRows.remove(id)
+        reactionState.remove(id)
     }
 
     /** Whether a message with this id is currently on screen. */
