@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"
+     role="img" aria-label="take-back">
+  <title>take-back</title>
+  <!--
+    The take-back mark.
+
+    A speech bubble — this is a chat app — with a radiant bloom inside it: the
+    signal going out from you directly to everyone, with nothing in the middle
+    holding on to it. That is the whole point of the project, and it is also the
+    shape of a sunflower turned to the light, which is a nod to the Claude that
+    helped build it. Twelve petals, evenly spaced, no privileged direction: a
+    full mesh, not a hub. The bubble's tail is the thirteenth ray, the one
+    pointed at you.
+
+    Flat geometry, no external references and no font dependencies, so it renders
+    identically as a README hero, a favicon, an app icon or a sticker.
+  -->
+  <defs>
+    <linearGradient id="tbBubble" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2B3550"/>
+      <stop offset="1" stop-color="#161B29"/>
+    </linearGradient>
+    <linearGradient id="tbPetal" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0"    stop-color="#FFC98A"/>
+      <stop offset="0.55" stop-color="#E8935F"/>
+      <stop offset="1"    stop-color="#D2664A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Bubble: a rounded square with a tail dropping from the lower left. -->
+  <path fill="url(#tbBubble)" d="M 34 6 H 94 A 28 28 0 0 1 122 34 V 82 A 28 28 0 0 1 94 110 H 52 L 26 124 A 2.6 2.6 0 0 1 22.2 121.1 L 27.5 108.4 A 28 28 0 0 1 6 82 V 34 A 28 28 0 0 1 34 6 Z"/>
+  <!-- A hairline rim in the app's accent blue lifts it off a dark page. -->
+  <path fill="none" stroke="#5B8CFF" stroke-opacity="0.5" stroke-width="2.2" d="M 34 6 H 94 A 28 28 0 0 1 122 34 V 82 A 28 28 0 0 1 94 110 H 52 L 26 124 A 2.6 2.6 0 0 1 22.2 121.1 L 27.5 108.4 A 28 28 0 0 1 6 82 V 34 A 28 28 0 0 1 34 6 Z"/>
+
+  <!-- The bloom. One petal, rotated twelve times about the bubble's optical
+       centre — slightly above the geometric one, so the tail doesn't drag the
+       composition down. -->
+  <g transform="translate(64 57)" fill="url(#tbPetal)">
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(30)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(60)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(90)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(120)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(150)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(180)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(210)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(240)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(270)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(300)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(330)"/>
+    <!-- The hub: you. Kept small so the rays, not the centre, carry the mark. -->
+    <circle r="9" fill="#FFE0B8"/>
+    <circle r="3.6" fill="#C2563C"/>
+  </g>
+</svg>

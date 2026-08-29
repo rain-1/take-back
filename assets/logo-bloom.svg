@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"
+     role="img" aria-label="take-back">
+  <title>take-back — bloom</title>
+  <!--
+    The bloom on its own, without the bubble. Use it where the container is
+    already a shape: a round avatar, a launcher icon, a favicon at 16px where
+    the bubble's tail would turn to mush.
+  -->
+  <defs>
+    <linearGradient id="tbPetalB" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0"    stop-color="#FFC98A"/>
+      <stop offset="0.55" stop-color="#E8935F"/>
+      <stop offset="1"    stop-color="#D2664A"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(64 64) scale(1.55)" fill="url(#tbPetalB)">
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(30)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(60)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(90)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(120)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(150)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(180)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(210)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(240)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(270)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(300)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(330)"/>
+    <circle r="9" fill="#FFE0B8"/>
+    <circle r="3.6" fill="#C2563C"/>
+  </g>
+</svg>

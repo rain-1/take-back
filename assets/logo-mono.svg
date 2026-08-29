@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"
+     role="img" aria-label="take-back">
+  <title>take-back — one colour</title>
+  <!--
+    One colour, one path per shape, no gradients: for a stencil, a sticker die,
+    an embroidery file, or anywhere the full-colour mark would be printed badly.
+    `currentColor` means it inherits the surrounding text colour when inlined.
+  -->
+  <path fill="none" stroke="currentColor" stroke-width="5" d="M 34 6 H 94 A 28 28 0 0 1 122 34 V 82 A 28 28 0 0 1 94 110 H 52 L 26 124 A 2.6 2.6 0 0 1 22.2 121.1 L 27.5 108.4 A 28 28 0 0 1 6 82 V 34 A 28 28 0 0 1 34 6 Z"/>
+  <g transform="translate(64 57)" fill="currentColor">
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(30)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(60)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(90)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(120)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(150)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(180)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(210)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(240)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(270)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(300)"/>
+      <path d="M 0 -13 C 6.5 -22, 7.6 -31, 0 -38 C -7.6 -31, -6.5 -22, 0 -13 Z" transform="rotate(330)"/>
+    <circle r="9"/>
+  </g>
+</svg>
