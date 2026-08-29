@@ -283,6 +283,13 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
 
+        // Video scaling: fit (whole frame, letterboxed) or fill (cropped).
+        binding.fillChk.isChecked = CallSettings.videoFill(this)
+        binding.fillChk.setOnCheckedChangeListener { _, on ->
+            CallSettings.setVideoFill(this, on)
+            applyScaling()
+        }
+
         // Mirror: self-view only, remembered across calls.
         binding.mirrorChk.isChecked = CallSettings.mirror(this)
         binding.mirrorChk.setOnCheckedChangeListener { _, on ->
@@ -500,12 +507,27 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         var muted = false
     }
 
+    /** The scaling a tile should use: screens always fit, cameras follow the setting. */
+    private fun scalingFor(key: String): RendererCommon.ScalingType =
+        if (!key.endsWith("-screen") && CallSettings.videoFill(this))
+            RendererCommon.ScalingType.SCALE_ASPECT_FILL
+        else
+            RendererCommon.ScalingType.SCALE_ASPECT_FIT
+
+    /** Re-apply the scaling preference to every tile already on screen. */
+    private fun applyScaling() {
+        for ((key, t) in tiles) t.renderer.setScalingType(scalingFor(key))
+    }
+
     private fun attachRenderer(key: String, nick: String, track: VideoTrack) {
         tiles[key]?.let { track.addSink(it.renderer); return }
 
         val renderer = SurfaceViewRenderer(this).apply {
             init(eglBase.eglBaseContext, null)
-            setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
+            // Scale to fit by default — the whole frame, letterboxed — rather
+            // than cropping it to the tile. A shared screen is ALWAYS fitted:
+            // cropping the edge off someone's slides makes the share useless.
+            setScalingType(scalingFor(key))
             setMirror(key == LOCAL_ID && CallSettings.mirror(this@MainActivity))
         }
         val avatar = TextView(this).apply {

@@ -49,9 +49,9 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     private var members: List<GroupMember> = emptyList()
     private var replyingTo: GroupMessage? = null
 
-    private val pickImage = registerForActivityResult(
+    private val pickAttachment = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> uri?.let { uploadImage(it) } }
+    ) { uri -> uri?.let { uploadAttachment(it) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,12 +68,13 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             onReply = { startReply(it.id, it.senderNick, it.body) },
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
-            onOpenImage = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+            onOpenAttachment = { openAttachment(it) },
             onEdit = { editMessage(it) },
         )
 
         binding.sendBtn.setOnClickListener { sendText() }
-        binding.imgBtn.setOnClickListener { pickImage.launch("image/*") }
+        // "*/*" so it isn't just photos any more — video, audio, documents, anything.
+        binding.imgBtn.setOnClickListener { pickAttachment.launch("*/*") }
         binding.callBtn.setOnClickListener { startCall() }
         binding.replyCancel.setOnClickListener { cancelReply() }
         binding.addMemberBtn.setOnClickListener { promptAddMember() }
@@ -175,14 +176,38 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         }
     }
 
-    private fun uploadImage(uri: Uri) {
+    /**
+     * Post a picked file — image, video, audio or anything else — to this group.
+     * The size is checked against the server's cap before reading the bytes, so
+     * a 2 GB video fails immediately instead of after filling memory with it.
+     */
+    private fun uploadAttachment(uri: Uri) {
+        val declared = Attachments.size(this, uri)
+        if (declared > Attachments.MAX_BYTES) {
+            toast("That file is ${Attachments.formatSize(declared)} — the limit is " +
+                  Attachments.formatSize(Attachments.MAX_BYTES) + ".")
+            return
+        }
         lifecycleScope.launch {
             try {
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
-                val name = (uri.lastPathSegment ?: "image").substringAfterLast('/')
-                render(ApiClient.sendGroupImage(groupId, name, bytes, "")); renderer.scrollToBottom()
-            } catch (_: Exception) { /* ignore */ }
+                if (bytes.size > Attachments.MAX_BYTES) { // provider didn't declare a size
+                    toast("That file is too big — the limit is " +
+                          Attachments.formatSize(Attachments.MAX_BYTES) + ".")
+                    return@launch
+                }
+                val name = Attachments.displayName(this@GroupChatActivity, uri)
+                render(ApiClient.sendGroupAttachment(groupId, name, bytes, "")); renderer.scrollToBottom()
+            } catch (e: Exception) {
+                toast("Couldn't send that file: " + (e.message ?: "upload failed"))
+            }
         }
+    }
+
+    /** Hand an attachment's URL to whatever app handles that type. */
+    private fun openAttachment(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            .onFailure { toast("No app on this device can open that.") }
     }
 
     private fun startCall() {
@@ -213,7 +238,8 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 id = m.id, senderId = m.senderId,
                 senderNick = if (m.senderId == myId) (nickOf(myId) ?: "you") else (nickOf(m.senderId) ?: "someone"),
                 senderAvatar = avatarOf(m.senderId),
-                body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl, created = m.created,
+                body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl,
+                attachment = m.attachment, created = m.created,
                 reactions = m.reactions,
                 replyTo = m.replyTo,
                 replyNick = if (m.replySender == myId) "you" else (nickOf(m.replySender) ?: "someone"),
@@ -247,7 +273,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private fun startReply(id: Long, nick: String, body: String) {
-        replyingTo = GroupMessage(id, groupId, 0, body, null, null, 0)
+        replyingTo = GroupMessage(id, groupId, 0, body, null, null, created = 0)
         binding.replyBarText.text = "Replying to $nick: ${body.take(50).ifEmpty { "image" }}"
         binding.replyBar.visibility = View.VISIBLE
     }

@@ -44,6 +44,20 @@ data class Friend(
 /** One emoji aggregated across everyone who used it on a message. */
 data class Reaction(val emoji: String, val count: Int, val nicks: List<String>, val mine: Boolean)
 
+/**
+ * An attachment on a message. `kind` decides how it renders: an image shows its
+ * thumbnail, video and audio get a player, anything else gets a download chip.
+ * Messages sent before attachments were generalised carry no kind, and are read
+ * back as images (see [attachmentOf]).
+ */
+data class Attachment(
+    val url: String,
+    val kind: String,   // image | video | audio | file
+    val name: String,
+    val size: Long,
+    val thumbUrl: String?,
+)
+
 data class Message(
     val id: Long,
     val senderId: Long,
@@ -51,6 +65,7 @@ data class Message(
     val body: String,
     val imageUrl: String?,   // absolute URL, or null
     val thumbUrl: String?,
+    val attachment: Attachment? = null,
     val created: Long,
     val reactions: List<Reaction> = emptyList(),
     val replyTo: Long = 0,
@@ -81,6 +96,7 @@ data class GroupMessage(
     val body: String,
     val imageUrl: String?,
     val thumbUrl: String?,
+    val attachment: Attachment? = null,
     val created: Long,
     val reactions: List<Reaction> = emptyList(),
     val replyTo: Long = 0,
@@ -235,13 +251,19 @@ object ApiClient {
         parseMessage(post("/api/messages/edit", jsonBody(
             JSONObject().put("id", id).put("scope", "dm").put("body", body))))
 
-    suspend fun sendImage(withUser: Long, filename: String, bytes: ByteArray, caption: String): Message {
+    /**
+     * Post an attachment to a DM — an image, a video, an audio clip or any other
+     * file. The server decides how to store it: images are re-encoded and
+     * thumbnailed, everything else is kept byte-for-byte.
+     */
+    suspend fun sendAttachment(withUser: Long, filename: String, bytes: ByteArray, caption: String): Message {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("with", withUser.toString())
             .addFormDataPart("body", caption)
-            .addFormDataPart("image", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
+            .addFormDataPart("name", filename)
+            .addFormDataPart("file", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
             .build()
-        return parseMessage(post("/api/messages/image", body))
+        return parseMessage(post("/api/messages/media", body))
     }
 
     /** Upload a new profile picture (thumbnailed server-side). Returns its URL. */
@@ -310,13 +332,14 @@ object ApiClient {
         parseGroupMessage(JSONObject(post("/api/messages/edit", jsonBody(
             JSONObject().put("id", id).put("scope", "group").put("body", body)))))
 
-    suspend fun sendGroupImage(groupId: Long, filename: String, bytes: ByteArray, caption: String): GroupMessage {
+    suspend fun sendGroupAttachment(groupId: Long, filename: String, bytes: ByteArray, caption: String): GroupMessage {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("group", groupId.toString())
             .addFormDataPart("body", caption)
-            .addFormDataPart("image", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
+            .addFormDataPart("name", filename)
+            .addFormDataPart("file", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
             .build()
-        return parseGroupMessage(JSONObject(post("/api/groups/messages/image", body)))
+        return parseGroupMessage(JSONObject(post("/api/groups/messages/media", body)))
     }
 
     /**
@@ -383,6 +406,7 @@ object ApiClient {
         body = o.optString("body"),
         imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { mediaUrl(it) },
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
+        attachment = attachmentOf(o),
         created = o.getLong("created"),
         reactions = parseReactions(o.optJSONArray("reactions")),
         replyTo = o.optLong("replyTo"),
@@ -390,6 +414,26 @@ object ApiClient {
         replyBody = o.optString("replyBody"),
         editedAt = o.optLong("editedAt"),
     )
+
+    /**
+     * Build an [Attachment] from a message payload, if it has one.
+     *
+     * `mediaUrl` and `mediaKind` arrived with generalised attachments; older
+     * messages only have `imageUrl`/`thumbUrl`, and every one of those was an
+     * image, so they read back as one.
+     */
+    fun attachmentOf(o: JSONObject): Attachment? {
+        val raw = o.optString("mediaUrl").ifEmpty { o.optString("imageUrl") }
+        if (raw.isEmpty()) return null
+        val thumb = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) }
+        return Attachment(
+            url = mediaUrl(raw),
+            kind = o.optString("mediaKind").ifEmpty { if (thumb != null) "image" else "file" },
+            name = o.optString("mediaName").ifEmpty { "file" },
+            size = o.optLong("mediaSize"),
+            thumbUrl = thumb,
+        )
+    }
 
     private fun parseReactions(arr: JSONArray?): List<Reaction> {
         if (arr == null) return emptyList()
@@ -420,6 +464,7 @@ object ApiClient {
         body = o.optString("body"),
         imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { mediaUrl(it) },
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
+        attachment = attachmentOf(o),
         created = o.getLong("created"),
         reactions = parseReactions(o.optJSONArray("reactions")),
         replyTo = o.optLong("replyTo"),

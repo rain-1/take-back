@@ -164,6 +164,7 @@ object Events {
         body = o.optString("body"),
         imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { ApiClient.mediaUrl(it) },
         thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { ApiClient.mediaUrl(it) },
+        attachment = ApiClient.attachmentOf(o),
         created = o.getLong("created"),
         editedAt = o.optLong("editedAt"),
         // Reply fields, so a live-received DM reply shows its quote immediately
@@ -188,13 +189,22 @@ object Events {
         post(NOTIF_FRIEND, "Friend request", "$nick wants to be your friend")
 
     private fun notifyMessage(m: Message) {
-        val preview = if (m.body.isNotEmpty()) m.body.take(80) else "📷 image"
+        val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
         post(NOTIF_MESSAGE_BASE + m.senderId.toInt(), "New message", preview)
     }
 
     private fun notifyGroupMessage(m: GroupMessage) {
-        val preview = if (m.body.isNotEmpty()) m.body.take(80) else "📷 image"
+        val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
         post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(), "New group message", preview)
+    }
+
+    /** Notification text for a message that is nothing but an attachment. */
+    private fun attachmentPreview(a: Attachment?): String = when (a?.kind) {
+        "image" -> "\uD83D\uDCF7 image"
+        "video" -> "\uD83C\uDFAC " + a.name
+        "audio" -> "\uD83C\uDFB5 " + a.name
+        null -> "message"
+        else -> "\uD83D\uDCCE " + a.name
     }
 
     /**

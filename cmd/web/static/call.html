@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>take-back</title>
+<link rel="icon" type="image/svg+xml" href="/logo-mark.svg">
+<link rel="stylesheet" href="/call.css">
 <style>
   :root {
     color-scheme: dark;
     --bg:        #0b0d11;
     --panel:     #11141b;
-    --surface:   #171b24;
     --surface-2: #1e2431;
     --border:    #232936;
     --border-soft: #1a1f29;
@@ -17,166 +18,60 @@
     --muted:     #8a93a6;
     --dim:       #5a6273;
     --accent:    #5b8cff;
-    --online:    #22c55e;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 15px; background: var(--bg); color: var(--text); min-height: 100vh;
+    font-size: 15px; background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
     -webkit-font-smoothing: antialiased;
   }
   header {
-    padding: 0 1rem; height: 52px; display:flex; align-items:center; gap:.6rem;
-    border-bottom: 1px solid var(--border-soft); background: var(--panel);
+    padding: 0 1rem; height: 52px; display: flex; align-items: center; gap: .6rem;
+    border-bottom: 1px solid var(--border-soft); background: var(--panel); flex: none;
   }
-  header h1 { font-size:.95rem; margin:0; font-weight:650; letter-spacing:-.01em; }
-  header .sub { color: var(--dim); font-size:.78rem; }
-  main { padding: 1.25rem; max-width: 1100px; margin: 0 auto; }
+  header h1 { font-size: .95rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  header .sub { color: var(--dim); font-size: .78rem; }
+  header a { color: var(--accent); font-size: .8rem; text-decoration: none; margin-left: auto; }
+  header a:hover { text-decoration: underline; }
+
+  /* The lobby is a reading-width column; the call itself gets the whole window. */
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 1rem; }
+  main.lobby { max-width: 1100px; width: 100%; margin: 0 auto; padding: 1.25rem; }
   .card {
-    background: var(--panel); border:1px solid var(--border);
-    border-radius:14px; padding:1.25rem; margin-bottom:1rem;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; flex: none;
   }
-  label { display:block; font-size:.8rem; color: var(--muted); margin-bottom:.35rem; }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .35rem; }
   input {
-    width:100%; padding:.5rem .7rem; border-radius:10px; border:1px solid var(--border);
-    background:#0d1016; color: var(--text); font-size:.95rem;
+    width: 100%; padding: .5rem .7rem; border-radius: 10px; border: 1px solid var(--border);
+    background: #0d1016; color: var(--text); font-size: .95rem;
   }
   input::placeholder { color: var(--dim); }
-  input:focus { border-color:#2f4a8f; outline:none; }
+  input:focus { border-color: #2f4a8f; outline: none; }
   button {
-    padding:.5rem .85rem; border-radius:10px; border:1px solid transparent; font-size:.875rem;
-    cursor:pointer; background: var(--accent); color:#fff; font-weight:550;
-    transition: background .15s ease;
+    padding: .5rem .85rem; border-radius: 10px; border: 1px solid transparent; font-size: .875rem;
+    cursor: pointer; background: var(--accent); color: #fff; font-weight: 550; font-family: inherit;
   }
-  button:hover { background:#6f9bff; }
+  button:hover { background: #6f9bff; }
   button.secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
-  button.secondary:hover { background:#262d3c; }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  button:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  .hidden { display:none !important; }
-  .callbar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-  .code {
-    font-family: ui-monospace, SFMono-Regular, monospace; font-size:1.15rem; letter-spacing:.18em;
-    background:#0d1016; padding:.3rem .7rem; border-radius:10px; border:1px solid var(--border);
-  }
-  .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; }
-  .row > div { flex:1; min-width:180px; }
-  /* The call grid fills the space below the callbar/settings all the way to the
-     bottom of the window. layoutGrid() (JS) sets the column/row counts and the
-     grid's exact height for the current participant count and viewport, so tiles
-     use as much of the window as possible while staying a sane shape. The rule
-     here is only a reasonable first paint before that runs. */
-  #grid {
-    display:grid; gap:.75rem; margin-top:1rem;
-    grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
-  }
-  /* Once we're in a call the lobby/nick cards are hidden, so let the layout use
-     the whole window width instead of the 1100px reading column — otherwise a
-     "fill the window" call would still be boxed into the middle of the page. */
-  body.in-call main { max-width:none; padding:.75rem 1rem 1rem; }
-  .tile {
-    position:relative; background:#000; border-radius:12px; overflow:hidden;
-    /* No fixed aspect-ratio: layoutGrid sizes the rows, and a grid cell with a
-       forced aspect-ratio would fight that and overflow. min-*:0 lets a tile
-       shrink inside its cell rather than pushing the grid past the viewport. */
-    min-height:0; min-width:0;
-    outline:2px solid transparent; outline-offset:-2px;
-    transition:outline-color .12s ease;
-  }
-  .tile video {
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
-  }
-  /* "Flip my video": mirror only your own preview, like a real mirror. */
-  .tile.mirror video { transform: scaleX(-1); }
-
-  /* Voice-only (camera off): show the profile picture over the video.
-     NB: the video element stays rendered (opacity:0, not display:none) — a
-     display:none media element can have its playback torn down by the browser,
-     and we still need the peer's AUDIO in voice-only mode. */
-  .tile.novideo video { opacity:0; }
-  .tile .avatar {
-    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    display:none;
-  }
-  .tile.novideo .avatar {
-    display:grid; place-items:center;
-    width:96px; height:96px; border-radius:50%;
-    font-size:2rem; font-weight:650; color:#fff; letter-spacing:.02em;
-    border:3px solid transparent;
-    transition:border-color .12s ease, box-shadow .12s ease;
-  }
-
-  /* Speaking indicator: a green ring. Around the avatar in voice-only mode,
-     around the whole tile when video is on. */
-  .tile.speaking { outline-color:#22c55e; }
-  .tile.novideo.speaking { outline-color:transparent; }
-  .tile.novideo.speaking .avatar {
-    border-color:#22c55e; box-shadow:0 0 14px rgba(34,197,94,.55);
-  }
-  /* Muted mic beats speaking: never imply we're transmitting when we aren't. */
-  .tile.muted .avatar { border-color:transparent; box-shadow:none; }
-  .tile.muted { outline-color:transparent; }
-  /* A peer whose connection is wobbling: grey the frozen frame and say so. */
-  .tile.reconnecting video, .tile.reconnecting .avatar { filter:grayscale(1) brightness(.5); }
-  .tile.reconnecting::after {
-    content:"Reconnecting…"; position:absolute; inset:0; display:flex;
-    align-items:center; justify-content:center; color:#e5e7eb; font-size:.9rem;
-    background:rgba(0,0,0,.35);
-  }
-  .tile .micoff {
-    position:absolute; right:.5rem; top:.5rem; font-size:.9rem;
-    background:rgba(0,0,0,.55); border-radius:6px; padding:.1rem .35rem; display:none;
-  }
-  .tile.muted .micoff { display:block; }
-  .tile .name {
-    position:absolute; left:.5rem; bottom:.5rem; background:rgba(0,0,0,.6);
-    padding:.15rem .5rem; border-radius:6px; font-size:.78rem;
-  }
-  /* Settings panel */
-  #settingsPanel {
-    margin-top:.9rem; padding:.9rem 1rem; border:1px solid var(--border);
-    border-radius:12px; background:#0e1117; display:grid; gap:.7rem;
-  }
-  .setrow { display:grid; grid-template-columns:130px 1fr; align-items:center; gap:.75rem; }
-  .setrow label { margin:0; color: var(--muted); font-size:.82rem; }
-  .setrow select {
-    font: inherit; font-size:.85rem; padding:.4rem .5rem; border-radius:8px;
-    border:1px solid var(--border); background:#0d1016; color: var(--text); width:100%;
-  }
-  .setnote { display:flex; align-items:center; gap:.5rem; color: var(--dim); font-size:.75rem; }
-  @media (max-width:640px) { .setrow { grid-template-columns:1fr; gap:.3rem; } }
-
-  /* Mic level meter + gain */
-  .levelbox { display:flex; align-items:center; gap:.6rem; }
-  .meter {
-    width:110px; height:8px; border-radius:999px; background:#1c2029;
-    overflow:hidden; flex:none;
-  }
-  .meter > div {
-    height:100%; width:0%; border-radius:999px; background: var(--online);
-    transition: width .06s linear;
-  }
-  input[type=range] { accent-color: var(--accent); width:130px; }
-
-  /* Per-participant volumes. Top-align the label: the list grows with the
-     number of people, and a vertically-centred label drifts away from it. */
-  #volumesRow { align-items: start; }
-  #volumesRow > label { padding-top: .25rem; }
-  #volumes { display:grid; gap:.35rem; }
-  .volrow { display:flex; align-items:center; gap:.5rem; font-size:.8rem; }
-  .volrow .who { width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color: var(--text); }
-  .volrow .val { color: var(--dim); font-size:.72rem; width:34px; text-align:right; }
-
-  .status { font-size:.8rem; color: var(--dim); }
-  .pill { font-size:.72rem; padding:.15rem .55rem; border-radius:999px; background:rgba(34,197,94,.13); color:#4ade80; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hidden { display: none !important; }
+  .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
+  .row > div { flex: 1; min-width: 180px; }
+  .status { font-size: .8rem; color: var(--dim); }
+  #callHost { flex: 1; min-height: 0; display: flex; }
 </style>
 </head>
 <body>
 <header>
   <h1>take-back</h1>
   <span class="sub">webrtc nat-passthrough prototype</span>
+  <a href="/">← back to chat</a>
 </header>
-<main>
+
+<main id="main" class="lobby">
 
   <!-- Step 1: nickname -->
   <section id="nickStep" class="card">
@@ -189,107 +84,31 @@
 
   <!-- Step 2: host or join -->
   <section id="lobbyStep" class="card hidden">
-    <div class="callbar" style="margin-bottom:1rem;">
+    <div style="margin-bottom:1rem;">
       <span class="status">Hi <b id="nickLabel"></b> — start or join a call.</span>
     </div>
     <div class="row">
-      <div>
-        <button id="hostBtn">Host a new call</button>
-      </div>
+      <div><button id="hostBtn">Host a new call</button></div>
       <div>
         <label for="joinCode">Join with a call code</label>
         <input id="joinCode" placeholder="ABCD12" autocomplete="off" style="text-transform:uppercase;">
       </div>
-      <div style="flex:0;">
-        <button id="joinBtn" class="secondary">Join</button>
-      </div>
+      <div style="flex:0;"><button id="joinBtn" class="secondary">Join</button></div>
     </div>
   </section>
 
-  <!-- Step 3: in call -->
-  <section id="callStep" class="card hidden">
-    <div class="callbar">
-      <span class="status">Call code:</span>
-      <span class="code" id="callCode"></span>
-      <button id="copyBtn" class="secondary">Copy</button>
-      <span class="pill" id="connPill">connecting…</span>
-      <span class="pill hidden" id="signalWarn" style="background:rgba(248,113,113,.13);color:#f87171;"
-            title="The call keeps running; new peers can't join until this recovers">⚠ signaling</span>
-      <span style="flex:1;"></span>
-      <button id="audioGate" class="hidden">🔊 Enable audio</button>
-      <button id="micBtn" class="secondary">🎤 Mic on</button>
-      <button id="camBtn" class="secondary">📷 Camera on</button>
-      <button id="presentBtn">🖥 Present screen</button>
-      <button id="settingsBtn" class="secondary" title="Devices &amp; preferences">⚙</button>
-      <button id="leaveBtn" class="secondary">Leave</button>
-    </div>
-
-    <!-- Devices & preferences: things you set once and keep. -->
-    <div id="settingsPanel" class="hidden">
-      <div class="setrow">
-        <label for="micSelect">Microphone</label>
-        <select id="micSelect"></select>
-      </div>
-      <div class="setrow">
-        <label for="stereoSel">Transmit audio</label>
-        <select id="stereoSel">
-          <option value="mono">Mono (default)</option>
-          <option value="stereo">Stereo</option>
-        </select>
-      </div>
-      <div class="setrow">
-        <label>Mic level</label>
-        <div class="levelbox">
-          <div class="meter" title="Live level of what your peers hear">
-            <div id="micMeter"></div>
-          </div>
-          <input type="range" id="micGain" min="0" max="200" step="5" value="100">
-          <span class="setnote" id="micGainVal">100%</span>
-        </div>
-      </div>
-      <div class="setrow" id="volumesRow">
-        <label>Volumes</label>
-        <div id="volumes"></div>
-      </div>
-      <div class="setrow">
-        <label for="camSelect">Camera</label>
-        <select id="camSelect"></select>
-      </div>
-      <div class="setrow">
-        <label for="mirrorChk">Mirror my video</label>
-        <span class="setnote">
-          <input type="checkbox" id="mirrorChk" style="width:auto;">
-          Only changes your own preview — peers always see you un-mirrored.
-        </span>
-      </div>
-    </div>
-
-    <div id="grid"></div>
-  </section>
-
-  <p class="status" id="log"></p>
+  <!-- Step 3: the call itself, rendered by TBCall -->
+  <div id="callHost" class="hidden"></div>
 </main>
 
+<script src="/call-core.js"></script>
 <script>
-// Signaling is proxied same-origin by the web app, so derive it from the page.
-const SIGNAL_URL = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws";
-// Public STUN so peers can discover their NAT-mapped address. Add TURN here for
-// networks where a direct path can't be punched.
-const ICE_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-
-let nick = "";
-let ws = null;
-let myId = null;
-let roomCode = "";
-let cameraStream = null;   // the original camera+mic, kept so we can revert
-let screenStream = null;   // active screen capture, if any
-const peers = new Map(); // peerId -> { pc, nick }
-
+// This page is now just the lobby around TBCall: pick a nickname, host or join,
+// and hand the room to the shared engine (which is the same code the chat page
+// embeds in its call panel).
 const $ = (id) => document.getElementById(id);
-const logEl = $("log");
-function log(msg) { logEl.textContent = msg; console.log("[take-back]", msg); }
+let nick = "";
 
-// ---- Step 1: nickname ----
 $("nickBtn").onclick = () => {
   const v = $("nick").value.trim();
   if (!v) return;
@@ -300,7 +119,6 @@ $("nickBtn").onclick = () => {
 };
 $("nick").addEventListener("keydown", (e) => { if (e.key === "Enter") $("nickBtn").click(); });
 
-// ---- Step 2: host / join ----
 function randomCode() {
   const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   let s = "";
@@ -313,964 +131,39 @@ $("joinBtn").onclick = () => {
   if (c) startCall(c);
 };
 
-// ---- Step 3: the call ----
 async function startCall(code) {
-  roomCode = code;
   // Put the room (and nick) in the URL so a page reload rejoins the same call
-  // instead of dropping back to the lobby. autostart() reads these on load.
-  // Leaving the call clears them again (see leaveBtn).
+  // instead of dropping back to the lobby. autostart() reads these on load;
+  // leaving clears them again.
   const u = new URL(location);
   u.searchParams.set("room", code);
   u.searchParams.set("nick", nick);
   history.replaceState(null, "", u);
-  try {
-    // First try to REQUIRE the saved devices (deviceId: {exact}). Firefox
-    // silently ignores `ideal` device hints and grabs its own default mic, so
-    // the previous {ideal} constraint meant the saved microphone was never
-    // actually used there — exact makes the chosen device stick on both Firefox
-    // and Chrome. channelCount follows the mono/stereo transmit preference.
-    cameraStream = await navigator.mediaDevices.getUserMedia(gumConstraints(true));
-  } catch (err) {
-    // A saved device can be gone (unplugged, or a permission/enumeration quirk),
-    // in which case `exact` rejects. Retry once PREFERRING the saved devices so
-    // the call still starts on whatever is available.
-    try {
-      cameraStream = await navigator.mediaDevices.getUserMedia(gumConstraints(false));
-    } catch (err2) {
-      log("Could not access camera/microphone: " + err2.message);
-      return;
-    }
-  }
+
   $("lobbyStep").classList.add("hidden");
-  $("callStep").classList.remove("hidden");
-  document.body.classList.add("in-call"); // let the grid use the full window
-  $("callCode").textContent = code;
-  addTile("local", nick + " (you)", cameraStream, true);
-  applyMirror();
-  connectSignaling();
-}
+  $("nickStep").classList.add("hidden");
+  $("main").classList.remove("lobby"); // let the call use the whole window
+  $("callHost").classList.remove("hidden");
 
-$("copyBtn").onclick = () => {
-  navigator.clipboard.writeText(roomCode).then(() => log("Call code copied."));
-};
-// Leaving navigates to a room-less URL, so the reload lands on the lobby rather
-// than rejoining the call (the room is now persisted in the query string).
-$("leaveBtn").onclick = () => { leaving = true; location.href = location.pathname; };
-
-// ---- Settings: devices & preferences ----
-// Set-once-and-keep choices, so they live in a panel and persist across calls.
-const PREF_MIRROR = "tb.mirror", PREF_MIC = "tb.micId", PREF_CAM = "tb.camId";
-// Transmit mono by default; stereo is opt-in (it roughly doubles audio bitrate
-// and most mics are mono anyway). Stored as "1" (stereo) / "0" or unset (mono).
-const PREF_STEREO = "tb.stereo";
-function stereoWanted() { return localStorage.getItem(PREF_STEREO) === "1"; }
-
-let mirrored = localStorage.getItem(PREF_MIRROR) !== "0"; // default: mirrored
-
-// gumConstraints builds the getUserMedia request from the saved device choices
-// and the mono/stereo preference. With `exact` the saved devices are REQUIRED
-// (used for the first attempt); without it they're merely preferred, so a call
-// can still start when a saved device has gone away.
-function gumConstraints(exact) {
-  const micId = localStorage.getItem(PREF_MIC), camId = localStorage.getItem(PREF_CAM);
-  const pick = (id) => (exact ? { exact: id } : { ideal: id });
-  // channelCount is a soft hint (ideal): plenty of mics are mono-only, and we
-  // never want a stereo request to fail the whole capture.
-  const audio = { channelCount: { ideal: stereoWanted() ? 2 : 1 } };
-  if (micId) audio.deviceId = pick(micId);
-  const video = camId ? { deviceId: pick(camId) } : true;
-  return { audio, video };
-}
-
-$("settingsBtn").onclick = async () => {
-  const panel = $("settingsPanel");
-  panel.classList.toggle("hidden");
-  // Opening/closing the panel changes how much room is left for the grid, so
-  // re-fit it either way.
-  layoutGrid();
-  if (panel.classList.contains("hidden")) { stopMeter(); return; }
-  $("stereoSel").value = stereoWanted() ? "stereo" : "mono";
-  await loadDevices();
-  renderVolumes();
-  startMeter();
-};
-
-// Mono/stereo transmit toggle. Two things have to change for it to take effect
-// on a live call: the CAPTURE channel count (getUserMedia) and the Opus SDP
-// (stereo / sprop-stereo fmtp params, added by tuneAudio during negotiation).
-$("stereoSel").onchange = async () => {
-  const stereo = $("stereoSel").value === "stereo";
-  localStorage.setItem(PREF_STEREO, stereo ? "1" : "0");
-  if (cameraStream) await recaptureMic(); // new channelCount
-  // Renegotiate so the Opus fmtp change reaches peers. Only from a stable state,
-  // so we don't collide with an in-flight offer (perfect negotiation covers the
-  // rest if we do race).
-  for (const [peerId, entry] of peers) {
-    if (entry.pc.signalingState === "stable") await makeOffer(peerId, entry);
-  }
-  log("Transmitting " + (stereo ? "stereo" : "mono") + " audio.");
-};
-
-// recaptureMic re-opens the microphone with the current channelCount preference
-// (same device) and swaps the fresh track into the call.
-async function recaptureMic() {
-  const micId = localStorage.getItem(PREF_MIC);
-  const audio = { channelCount: { ideal: stereoWanted() ? 2 : 1 } };
-  if (micId) audio.deviceId = { exact: micId };
-  let fresh;
-  try { fresh = await navigator.mediaDevices.getUserMedia({ audio }); }
-  catch (e) { log("Couldn't re-capture microphone: " + e.message); return; }
-  await applyAudioTrack(fresh.getAudioTracks()[0]);
-}
-
-$("mirrorChk").onchange = () => {
-  mirrored = $("mirrorChk").checked;
-  localStorage.setItem(PREF_MIRROR, mirrored ? "1" : "0");
-  applyMirror();
-};
-
-// applyMirror only touches your own camera tile — never the screen tile (a
-// mirrored screen share would be unreadable) and never what peers receive.
-function applyMirror() {
-  const tile = document.getElementById("tile-local");
-  if (tile) tile.classList.toggle("mirror", mirrored);
-  $("mirrorChk").checked = mirrored;
-}
-
-// loadDevices fills the pickers. Device labels only populate once permission
-// has been granted — which it has by the time we're in a call.
-async function loadDevices() {
-  let devices = [];
-  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (e) { return; }
-  fillSelect($("micSelect"), devices.filter((d) => d.kind === "audioinput"),
-    currentTrackDeviceId("audio"), "Microphone");
-  fillSelect($("camSelect"), devices.filter((d) => d.kind === "videoinput"),
-    currentTrackDeviceId("video"), "Camera");
-}
-
-function fillSelect(sel, devices, activeId, fallbackLabel) {
-  sel.innerHTML = "";
-  devices.forEach((d, i) => {
-    const o = document.createElement("option");
-    o.value = d.deviceId;
-    o.textContent = d.label || `${fallbackLabel} ${i + 1}`;
-    if (d.deviceId === activeId) o.selected = true;
-    sel.append(o);
+  await TBCall.mount($("callHost"), {
+    nick,
+    room: code,
+    // Leaving navigates to a room-less URL, so a reload lands on the lobby
+    // rather than rejoining the call we just left.
+    onLeave: () => { location.href = location.pathname; },
   });
-  if (!devices.length) {
-    const o = document.createElement("option");
-    o.textContent = "none found";
-    sel.append(o);
-  }
 }
 
-function currentTrackDeviceId(kind) {
-  const t = kind === "audio" ? cameraStream.getAudioTracks()[0] : cameraStream.getVideoTracks()[0];
-  return t ? (t.getSettings().deviceId || "") : "";
-}
-
-$("micSelect").onchange = () => switchDevice("audio", $("micSelect").value);
-$("camSelect").onchange = () => switchDevice("video", $("camSelect").value);
-
-// ---- Mic level: meter + gain ----
-// The meter shows the level of what peers actually hear (post-gain), so it
-// answers "am I being picked up, and am I too quiet/loud?".
-const PREF_GAIN = "tb.micGain";
-let micGainValue = parseFloat(localStorage.getItem(PREF_GAIN) || "1") || 1;
-let micGainNode = null, micDest = null, micSourceNode = null;
-let gainChainActive = false;   // are we sending the processed track?
-let localRms = 0;              // updated by the local VAD tick
-let meterTimer = null;
-
-$("micGain").value = String(Math.round(micGainValue * 100));
-$("micGainVal").textContent = Math.round(micGainValue * 100) + "%";
-$("micGain").oninput = () => {
-  micGainValue = Number($("micGain").value) / 100;
-  $("micGainVal").textContent = Math.round(micGainValue * 100) + "%";
-  localStorage.setItem(PREF_GAIN, String(micGainValue));
-  applyMicGain();
-};
-
-/**
- * Route the mic through a GainNode and send THAT to peers.
- *
- * Deliberately lazy: a suspended AudioContext makes a MediaStreamDestination
- * emit silence, and the context starts suspended when a call auto-joins from a
- * chat link (no user gesture on that page) — routing by default could leave you
- * inaudible. So we keep sending the raw track until you actually touch the
- * slider, which is itself the gesture that lets the context run.
- */
-function applyMicGain() {
-  if (micGainValue === 1 && !gainChainActive) return; // nothing to do; stay raw
-  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-
-  if (!micGainNode) {
-    micGainNode = audioCtx.createGain();
-    micDest = audioCtx.createMediaStreamDestination();
-    micGainNode.connect(micDest);
-  }
-  micGainNode.gain.value = micGainValue;
-
-  if (!gainChainActive) {
-    rebuildMicSource();
-    const processed = micDest.stream.getAudioTracks()[0];
-    processed.enabled = micOn;
-    for (const entry of peers.values()) {
-      const sender = entry.pc.getSenders().find((s) => s.track && s.track.kind === "audio");
-      if (sender) sender.replaceTrack(processed);
-    }
-    gainChainActive = true;
-    // Meter/ring should follow what we now send.
-    detachVAD("tile-local");
-    attachVAD("tile-local", micDest.stream);
-    log("Mic gain applied.");
-  }
-}
-
-// (Re)connect the chain's input to the current microphone.
-function rebuildMicSource() {
-  if (!micGainNode) return;
-  try { micSourceNode?.disconnect(); } catch (e) { /* not connected */ }
-  micSourceNode = audioCtx.createMediaStreamSource(cameraStream);
-  micSourceNode.connect(micGainNode);
-}
-
-// The meter only needs to run while the panel is visible.
-function startMeter() {
-  stopMeter();
-  meterTimer = setInterval(() => {
-    // Scale so normal speech fills a useful part of the bar.
-    const pct = Math.min(100, Math.round((localRms / 0.25) * 100));
-    $("micMeter").style.width = pct + "%";
-    $("micMeter").style.background = micOn ? "var(--online)" : "var(--dim)";
-  }, 80);
-}
-function stopMeter() { if (meterTimer) clearInterval(meterTimer); meterTimer = null; }
-
-// ---- Per-participant volume ----
-// Each remote camera tile's <video> carries that peer's audio, so its .volume
-// gives us a clean per-person control.
-const peerVolumes = new Map(); // peerId -> 0..1
-
-function renderVolumes() {
-  const box = $("volumes");
-  if (!box) return;
-  box.innerHTML = "";
-  const remotes = [...peers.entries()];
-  if (!remotes.length) {
-    box.innerHTML = `<span class="setnote">No one else here yet.</span>`;
-    return;
-  }
-  for (const [peerId, entry] of remotes) {
-    const row = document.createElement("div");
-    row.className = "volrow";
-
-    const who = document.createElement("span");
-    who.className = "who";
-    who.textContent = entry.nick;
-
-    const slider = document.createElement("input");
-    // 0–100%: the element's own volume. Boosting past 100% would mean routing
-    // their audio through Web Audio, which goes silent if the AudioContext is
-    // suspended — not worth risking someone's audio to make them louder.
-    slider.type = "range"; slider.min = "0"; slider.max = "100"; slider.step = "5";
-    slider.value = String(Math.round((peerVolumes.get(peerId) ?? 1) * 100));
-
-    const val = document.createElement("span");
-    val.className = "val";
-    val.textContent = slider.value + "%";
-
-    slider.oninput = () => {
-      const v = Number(slider.value) / 100;
-      peerVolumes.set(peerId, v);
-      val.textContent = slider.value + "%";
-      setPeerVolume(peerId, v);
-    };
-    row.append(who, slider, val);
-    box.append(row);
-  }
-}
-
-function setPeerVolume(peerId, v) {
-  const video = document.querySelector("#tile-" + peerId + " video");
-  if (video) video.volume = Math.max(0, Math.min(1, v));
-}
-
-// switchDevice swaps a capture device mid-call. replaceTrack reuses the
-// existing senders, so no renegotiation and peers see no interruption.
-async function switchDevice(kind, deviceId) {
-  if (!deviceId) return;
-  let fresh;
-  try {
-    fresh = await navigator.mediaDevices.getUserMedia(
-      kind === "audio"
-        // Keep the mono/stereo preference across a mic change too.
-        ? { audio: { deviceId: { exact: deviceId }, channelCount: { ideal: stereoWanted() ? 2 : 1 } } }
-        : { video: { deviceId: { exact: deviceId } } });
-  } catch (err) {
-    log("Couldn't switch " + kind + ": " + err.message);
-    return;
-  }
-  // Remember the choice so the NEXT call opens with this device (gumConstraints).
-  localStorage.setItem(kind === "audio" ? PREF_MIC : PREF_CAM, deviceId);
-
-  if (kind === "audio") {
-    await applyAudioTrack(fresh.getAudioTracks()[0]);
-    log("Microphone switched.");
-  } else {
-    await applyVideoTrack(fresh.getVideoTracks()[0]);
-    log("Camera switched.");
-  }
-}
-
-// applyAudioTrack installs a freshly captured microphone track as our outgoing
-// audio: hand it to every peer, swap it into cameraStream, and re-point the
-// meter/gain/VAD (all bound to the OLD track, which would otherwise go silent).
-// Shared by the microphone picker and the mono/stereo toggle.
-async function applyAudioTrack(newTrack) {
-  if (!newTrack) return;
-  for (const entry of peers.values()) {
-    const sender = entry.pc.getSenders().find(
-      (s) => s.track && s.track.kind === "audio" && s !== entry.screenSender);
-    if (sender) await sender.replaceTrack(newTrack);
-  }
-  const old = cameraStream.getAudioTracks()[0];
-  if (old) { cameraStream.removeTrack(old); old.stop(); }
-  cameraStream.addTrack(newTrack);
-  newTrack.enabled = micOn;
-
-  // The analyser is bound to the OLD track, so the speaking ring would go dead
-  // after a mic change unless we rebuild it against the new stream.
-  detachVAD("tile-local");
-  if (gainChainActive) {
-    rebuildMicSource(); // point the gain chain at the new mic
-    const processed = micDest.stream.getAudioTracks()[0];
-    processed.enabled = micOn;
-    for (const entry of peers.values()) {
-      const snd = entry.pc.getSenders().find((x) => x.track && x.track.kind === "audio");
-      if (snd) await snd.replaceTrack(processed);
-    }
-    attachVAD("tile-local", micDest.stream);
-  } else {
-    attachVAD("tile-local", cameraStream);
-  }
-}
-
-// applyVideoTrack is the camera equivalent: swap the new track into the senders,
-// the camera stream and the local preview.
-async function applyVideoTrack(newTrack) {
-  if (!newTrack) return;
-  for (const entry of peers.values()) {
-    const sender = entry.pc.getSenders().find(
-      (s) => s.track && s.track.kind === "video" && s !== entry.screenSender);
-    if (sender) await sender.replaceTrack(newTrack);
-  }
-  const old = cameraStream.getVideoTracks()[0];
-  if (old) { cameraStream.removeTrack(old); old.stop(); }
-  cameraStream.addTrack(newTrack);
-  newTrack.enabled = camOn;
-  const v = document.querySelector("#tile-local video");
-  if (v) { v.srcObject = cameraStream; v.play().catch(() => {}); }
-}
-
-// ---- Audio recovery ----
-// Browsers can block autoplay-with-sound and suspend the AudioContext (which
-// would also silently kill the speaking rings). One tap fixes both.
-$("audioGate").onclick = async () => {
-  if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
-  document.querySelectorAll("#grid video").forEach((v) => v.play().catch(() => {}));
-  $("audioGate").classList.add("hidden");
-  log("Audio enabled.");
-};
-// Any click is a user gesture: opportunistically un-suspend, and only then
-// engage a saved mic gain (the chain would emit silence while suspended).
-document.addEventListener("click", () => {
-  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-  if (micGainValue !== 1 && !gainChainActive && cameraStream) applyMicGain();
-});
-// Coming back to the tab can leave the context suspended; the rings depend on it.
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-});
-
-// ---- Mic / camera toggles ----
-// Toggling only flips track.enabled, so the sender/track stays put and no
-// renegotiation is needed. Peers are told over signaling so they can swap to
-// the profile picture — a disabled video track just sends black frames, which
-// they'd otherwise render as a black tile.
-let micOn = true, camOn = true;
-const peerState = new Map(); // peerId -> { video, audio }
-
-$("micBtn").onclick = () => {
-  micOn = !micOn;
-  cameraStream.getAudioTracks().forEach((t) => (t.enabled = micOn));
-  // When the gain chain is engaged, that processed track is what peers get.
-  if (gainChainActive && micDest) micDest.stream.getAudioTracks().forEach((t) => (t.enabled = micOn));
-  $("micBtn").textContent = micOn ? "🎤 Mic on" : "🔇 Mic off";
-  setTileMuted("local", !micOn);
-  broadcastState();
-};
-
-$("camBtn").onclick = () => {
-  camOn = !camOn;
-  // Camera and screen are separate tracks now, so this only affects the camera.
-  cameraStream.getVideoTracks().forEach((t) => (t.enabled = camOn));
-  $("camBtn").textContent = camOn ? "📷 Camera on" : "📷 Camera off";
-  setTileVideo("local", camOn);
-  broadcastState();
-};
-
-function broadcastState() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  send({ type: "state", payload: JSON.stringify({
-    video: camOn,
-    audio: micOn,
-    // A peer can't tell a screen track from a camera track, so name the stream.
-    screenId: screenStream ? screenStream.id : "",
-  }) });
-}
-
-function applyState(id, s) {
-  setTileVideo(id, !!s.video);
-  setTileMuted(id, !s.audio);
-  if (!s.screenId) { // they stopped sharing
-    const t = document.getElementById("tile-" + id + "-screen");
-    if (t) { t.remove(); layoutGrid(); }
-  }
-}
-
-// ---- Screen sharing ----
-// The screen goes out as an ADDITIONAL video track, so your camera keeps
-// streaming alongside it — people expect to see your face while you present.
-// Adding a track triggers renegotiation, handled by the perfect-negotiation
-// logic in createPeer.
-$("presentBtn").onclick = () => (screenStream ? stopScreenShare() : startScreenShare());
-
-async function startScreenShare() {
-  let capture;
-  try {
-    capture = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  } catch (err) {
-    log("Screen share cancelled: " + (err && err.message ? err.message : err));
-    return;
-  }
-  screenStream = capture;
-  const screenTrack = capture.getVideoTracks()[0];
-
-  // Tell peers which stream id is the screen BEFORE the track arrives, so they
-  // can tell it apart from a camera when ontrack fires.
-  broadcastState();
-
-  for (const entry of peers.values()) {
-    entry.screenSender = entry.pc.addTrack(screenTrack, screenStream);
-  }
-
-  // Our own screen preview sits next to (not instead of) our camera tile.
-  addTile("local-screen", "Your screen", screenStream, true);
-
-  // The browser's own "Stop sharing" bar ends the track directly.
-  screenTrack.onended = stopScreenShare;
-  $("presentBtn").textContent = "🖥 Stop presenting";
-  log("Sharing your screen — your camera is still on.");
-}
-
-function stopScreenShare() {
-  if (!screenStream) return;
-  screenStream.getTracks().forEach((t) => t.stop());
-  screenStream = null;
-
-  // Drop the extra sender from each peer; this renegotiates too.
-  for (const entry of peers.values()) {
-    if (entry.screenSender) {
-      try { entry.pc.removeTrack(entry.screenSender); } catch (e) { /* already gone */ }
-      entry.screenSender = null;
-    }
-  }
-  const tile = document.getElementById("tile-local-screen");
-  if (tile) tile.remove();
-  layoutGrid();
-
-  $("presentBtn").textContent = "🖥 Present screen";
-  broadcastState();
-  log("Stopped sharing.");
-}
-
-let leaving = false;
-let reconnectTimer = null;
-let reconnectDelay = 1000;
-
-function connectSignaling() {
-  const url = SIGNAL_URL + "?room=" + encodeURIComponent(roomCode) + "&nick=" + encodeURIComponent(nick);
-  ws = new WebSocket(url);
-
-  ws.onopen = () => {
-    reconnectDelay = 1000;
-    setSignalOK(true);
-    log("Connected to signaling.");
-  };
-  ws.onclose = () => {
-    // The call itself keeps working (media is peer-to-peer), so don't claim the
-    // call dropped — just flag signaling and get the socket back, otherwise the
-    // server drops us from the room and nobody can re-negotiate with us.
-    setSignalOK(false);
-    if (!leaving) scheduleReconnect();
-  };
-  ws.onerror = () => setSignalOK(false);
-  ws.onmessage = (ev) => handleSignal(JSON.parse(ev.data));
-}
-
-function scheduleReconnect() {
-  clearTimeout(reconnectTimer);
-  log("Signaling lost — reconnecting…");
-  reconnectTimer = setTimeout(() => {
-    // A reconnect gets us a fresh peer id, so drop the old peer connections and
-    // renegotiate from scratch rather than ending up with duplicates.
-    resetPeers();
-    connectSignaling();
-  }, reconnectDelay);
-  reconnectDelay = Math.min(reconnectDelay * 2, 15000);
-}
-
-function resetPeers() {
-  for (const [id, entry] of peers) {
-    entry.pc.close();
-    const tile = document.getElementById("tile-" + id);
-    if (tile) tile.remove();
-  }
-  peers.clear();
-  peerState.clear();
-  updateCallPill();
-  layoutGrid();
-}
-
-// ---- Status ----
-// The pill reflects the CALL (peer connections), not the signaling socket: they
-// are independent, and a dropped signaling socket used to make a perfectly good
-// call read as "disconnected".
-function updateCallPill() {
-  const states = [...peers.values()].map((p) => p.pc.connectionState);
-  const pill = $("connPill");
-  if (states.some((s) => s === "connected")) {
-    pill.textContent = "connected";
-    pill.style.color = ""; pill.style.background = "";
-  } else if (peers.size > 0) {
-    pill.textContent = "connecting…";
-  } else {
-    pill.textContent = "waiting for others";
-  }
-}
-
-// Signaling trouble is shown separately and quietly — it doesn't mean the call
-// is down, but it does mean new peers can't join until it recovers.
-function setSignalOK(ok) {
-  const el = $("signalWarn");
-  if (el) el.classList.toggle("hidden", ok);
-}
-
-function send(obj) { ws.send(JSON.stringify(obj)); }
-
-async function handleSignal(msg) {
-  switch (msg.type) {
-    case "welcome":
-      myId = msg.to;
-      broadcastState(); // let the room know our initial mic/camera state
-      // We are the newcomer: initiate an offer to each existing peer.
-      for (const p of msg.peers || []) {
-        await createPeer(p.id, p.nick, true);
-      }
-      updateCallPill();
-      break;
-    case "hello":
-      // An existing peer sees a newcomer; wait for their offer. Re-announce our
-      // mic/camera state so the newcomer renders us correctly from the start.
-      broadcastState();
-      break;
-    case "state": {
-      // A peer's mic/camera changed (or they just told us their initial state).
-      const s = JSON.parse(msg.payload);
-      peerState.set(msg.from, s);
-      applyState(msg.from, s);
-      break;
-    }
-    case "offer": {
-      await createPeer(msg.from, msg.nick, false);
-      const entry = peers.get(msg.from);
-      const pc = entry.pc;
-
-      // Perfect negotiation: only the polite peer gives way on a collision.
-      // Without this, two people sharing a screen at once would wedge the call.
-      const collision = entry.makingOffer || pc.signalingState !== "stable";
-      entry.ignoreOffer = !entry.polite && collision;
-      if (entry.ignoreOffer) break;
-
-      // setRemoteDescription implicitly rolls back our own offer when polite.
-      await pc.setRemoteDescription(JSON.parse(msg.payload));
-      // Explicit createAnswer (rather than implicit setLocalDescription) so we
-      // can apply the Opus mono/stereo tuning before we answer.
-      const answer = await pc.createAnswer();
-      answer.sdp = tuneAudio(answer.sdp);
-      await pc.setLocalDescription(answer);
-      send({ type: "answer", to: msg.from, nick, payload: JSON.stringify(pc.localDescription) });
-      break;
-    }
-    case "answer": {
-      const entry = peers.get(msg.from);
-      if (!entry) break;
-      try { await entry.pc.setRemoteDescription(JSON.parse(msg.payload)); }
-      catch (e) { console.warn("setRemoteDescription(answer)", e); }
-      break;
-    }
-    case "candidate": {
-      const entry = peers.get(msg.from);
-      if (entry && msg.payload) {
-        try { await entry.pc.addIceCandidate(JSON.parse(msg.payload)); }
-        // Candidates for an offer we deliberately ignored are expected noise.
-        catch (e) { if (!entry.ignoreOffer) console.warn("addIceCandidate", e); }
-      }
-      break;
-    }
-    case "leave":
-      removePeer(msg.from);
-      break;
-  }
-}
-
-// makeOffer creates and sends an SDP offer for one peer, applying our audio
-// tuning (the mono/stereo Opus params). Used by onnegotiationneeded and by the
-// stereo toggle when it renegotiates an already-connected peer.
-async function makeOffer(peerId, entry) {
-  const pc = entry.pc;
-  try {
-    entry.makingOffer = true;
-    const offer = await pc.createOffer();
-    offer.sdp = tuneAudio(offer.sdp);
-    await pc.setLocalDescription(offer);
-    send({ type: "offer", to: peerId, nick, payload: JSON.stringify(pc.localDescription) });
-  } catch (err) {
-    console.warn("negotiationneeded", err);
-  } finally {
-    entry.makingOffer = false;
-  }
-}
-
-// tuneAudio rewrites the Opus fmtp line so peers know whether to expect stereo.
-// Mono is the default and leaves the SDP untouched (the lowest-risk path, byte
-// for byte what we sent before this feature existed); stereo appends
-// stereo=1;sprop-stereo=1 to the Opus payload's fmtp so both directions carry
-// two channels. SDP lines are CRLF-separated, so preserve that on the way out.
-function tuneAudio(sdp) {
-  if (!stereoWanted()) return sdp;
-  const m = sdp.match(/a=rtpmap:(\d+) opus\/48000/i);
-  if (!m) return sdp;
-  const pt = m[1];
-  const params = "stereo=1;sprop-stereo=1";
-  const lines = sdp.split("\r\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith("a=fmtp:" + pt + " ")) {
-      if (!/stereo=1/.test(lines[i])) lines[i] += ";" + params;
-      return lines.join("\r\n");
-    }
-  }
-  // No fmtp line for Opus yet: add one right after its rtpmap.
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith("a=rtpmap:" + pt + " ")) {
-      lines.splice(i + 1, 0, "a=fmtp:" + pt + " " + params);
-      break;
-    }
-  }
-  return lines.join("\r\n");
-}
-
-async function createPeer(peerId, peerNick, initiator) {
-  let entry = peers.get(peerId);
-  if (entry) return entry.pc;
-
-  const pc = new RTCPeerConnection(ICE_CONFIG);
-  entry = {
-    pc,
-    nick: peerNick || "peer",
-    // "Perfect negotiation": either side may add/remove tracks at any time
-    // (that's what lets a screen share join as a SECOND video track instead of
-    // replacing the camera). If both offer at once, the impolite peer ignores
-    // the incoming offer and the polite one gives way. The tiebreak must be
-    // deterministic and opposite on each side, so compare peer ids.
-    polite: String(myId) < String(peerId),
-    makingOffer: false,
-    ignoreOffer: false,
-    screenSender: null,
-    dropTimer: null, // set while the connection is "disconnected" (see below)
-  };
-  peers.set(peerId, entry);
-
-  cameraStream.getTracks().forEach((t) => pc.addTrack(t, cameraStream));
-  // Already sharing when this peer arrives? Send them the screen too.
-  if (screenStream) {
-    entry.screenSender = pc.addTrack(screenStream.getVideoTracks()[0], screenStream);
-  }
-
-  pc.onnegotiationneeded = () => makeOffer(peerId, entry);
-  pc.onicecandidate = (e) => {
-    if (e.candidate) send({ type: "candidate", to: peerId, payload: JSON.stringify(e.candidate) });
-  };
-  pc.ontrack = (e) => {
-    routeRemoteTrack(peerId, entry, e);
-    updateCallPill();
-  };
-  pc.onconnectionstatechange = () => {
-    const st = pc.connectionState;
-    log("peer " + peerId + ": " + st);
-    updateCallPill();
-    if (st === "failed" || st === "closed") {
-      removePeer(peerId); // dead for good — drop immediately
-      return;
-    }
-    if (st === "disconnected") {
-      // A blip (network hiccup, peer's tab backgrounded) can recover, so don't
-      // yank them the instant it happens — that's the "frozen" state a viewer
-      // sees. Grey the tile as "reconnecting" and give it a few seconds; if it
-      // hasn't recovered by then, pop them out of the call.
-      markReconnecting(peerId, true);
-      clearTimeout(entry.dropTimer);
-      entry.dropTimer = setTimeout(() => {
-        if (pc.connectionState !== "connected" && pc.connectionState !== "completed") {
-          removePeer(peerId);
-        }
-      }, DROP_GRACE_MS);
-    } else if (st === "connected" || st === "completed") {
-      clearTimeout(entry.dropTimer);
-      entry.dropTimer = null;
-      markReconnecting(peerId, false); // recovered
-    }
-  };
-
-  // addTrack above fires negotiationneeded, which sends the offer for us.
-  void initiator;
-  return pc;
-}
-
-// routeRemoteTrack decides whether an incoming stream is a peer's camera or
-// their screen. The track alone doesn't say, so peers announce their screen's
-// stream id in their `state` message.
-function routeRemoteTrack(peerId, entry, e) {
-  const stream = e.streams[0];
-  if (!stream) return;
-  const st = peerState.get(peerId);
-  if (st && st.screenId && stream.id === st.screenId) {
-    addTile(peerId + "-screen", entry.nick + "'s screen", stream, false);
-  } else {
-    addTile(peerId, entry.nick, stream, false);
-  }
-}
-
-// DROP_GRACE_MS is how long a peer may sit "disconnected" (frozen) before we
-// remove them from the call. Long enough to ride out a brief network blip,
-// short enough that a real drop clears quickly.
-const DROP_GRACE_MS = 6000;
-
-// markReconnecting greys a peer's tile(s) and shows a "Reconnecting…" overlay
-// while their connection is wobbling. Covers both their camera and screen tiles.
-function markReconnecting(peerId, on) {
-  for (const suffix of ["", "-screen"]) {
-    const tile = document.getElementById("tile-" + peerId + suffix);
-    if (tile) tile.classList.toggle("reconnecting", on);
-  }
-}
-
-function removePeer(peerId) {
-  peerVolumes.delete(peerId);
-  if (!$("settingsPanel").classList.contains("hidden")) renderVolumes();
-  const entry = peers.get(peerId);
-  if (entry) { clearTimeout(entry.dropTimer); entry.pc.close(); peers.delete(peerId); }
-  const tile = document.getElementById("tile-" + peerId);
-  if (tile) tile.remove();
-  updateCallPill();
-  layoutGrid(); // a tile left: re-fit the window
-}
-
-// Bootstrap: if opened as call.html?room=CODE&nick=NAME (e.g. launched from the
-// chat app), skip the nickname/lobby steps and join straight away.
+// Bootstrap: opened as call.html?room=CODE&nick=NAME (e.g. from a chat link)?
+// Skip the nickname/lobby steps and join straight away.
 (function autostart() {
   const params = new URLSearchParams(location.search);
-  const room = params.get("room");
-  const who = params.get("nick");
+  const room = params.get("room"), who = params.get("nick");
   if (room && who) {
     nick = who;
-    $("nickStep").classList.add("hidden");
-    $("lobbyStep").classList.add("hidden");
     startCall(room.toUpperCase());
   }
 })();
-
-// ---- Speaking detection (voice activity) ----
-// Each participant's audio is tapped with an AnalyserNode; when the short-term
-// RMS crosses a threshold we ring their tile green. This doubles as a "is my mic
-// actually picking me up?" check for yourself.
-let audioCtx = null;
-const vadTimers = new Map(); // tileId -> interval id (also "is attached?")
-
-const SPEAK_ON = 0.035;   // RMS to start showing as speaking
-const SPEAK_OFF = 0.020;  // drop below this to stop (hysteresis avoids flicker)
-const HANG_MS = 350;      // keep the ring this long after you stop talking
-
-function attachVAD(tileId, stream) {
-  if (vadTimers.has(tileId) || !stream.getAudioTracks().length) return;
-  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.4;
-  audioCtx.createMediaStreamSource(stream).connect(analyser);
-
-  const buf = new Uint8Array(analyser.fftSize);
-  let speaking = false, quietSince = 0;
-
-  function tick() {
-    const tile = document.getElementById(tileId);
-    if (!tile) return;
-
-    analyser.getByteTimeDomainData(buf);
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) {
-      const v = (buf[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / buf.length);
-    if (tileId === "tile-local") localRms = rms; // feeds the settings meter
-    const now = performance.now();
-
-    if (!speaking && rms > SPEAK_ON) { speaking = true; quietSince = 0; }
-    else if (speaking && rms < SPEAK_OFF) {
-      if (!quietSince) quietSince = now;
-      if (now - quietSince > HANG_MS) speaking = false;
-    } else if (speaking) quietSince = 0;
-
-    tile.classList.toggle("speaking", speaking);
-  }
-
-  // Deliberately setInterval, not requestAnimationFrame: rAF is paused entirely
-  // in background tabs, which froze the ring mid-state until you looked back.
-  const timer = setInterval(() => {
-    if (!document.getElementById(tileId)) { // tile gone: stop polling
-      detachVAD(tileId);
-      return;
-    }
-    tick();
-  }, 100);
-  vadTimers.set(tileId, timer);
-}
-
-// detachVAD stops a tile's level poll. Needed when the audio source changes:
-// the analyser is bound to the old track and would otherwise go silent forever.
-function detachVAD(tileId) {
-  const t = vadTimers.get(tileId);
-  if (t) clearInterval(t);
-  vadTimers.delete(tileId);
-  const tile = document.getElementById(tileId);
-  if (tile) tile.classList.remove("speaking");
-}
-
-// ---- Avatars (match the chat client's initials style) ----
-function initialsOf(name) { return (name || "?").slice(0, 2).toUpperCase(); }
-function colorFor(name) {
-  let h = 0;
-  for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 55% 42%)`;
-}
-
-// setTileVideo toggles between the video feed and the profile picture.
-function setTileVideo(id, on) {
-  const tile = document.getElementById("tile-" + id);
-  if (tile) tile.classList.toggle("novideo", !on);
-}
-function setTileMuted(id, isMuted) {
-  const tile = document.getElementById("tile-" + id);
-  if (tile) tile.classList.toggle("muted", isMuted);
-}
-
-// ---- Grid layout ----
-// "Fill the window": size #grid to the space between its top and the bottom of
-// the viewport, then pick the column/row counts that make the tiles as large as
-// possible for the current participant count while holding a ~16:9 shape. Called
-// whenever tiles are added/removed, the settings panel toggles, or we resize.
-function layoutGrid() {
-  const grid = $("grid");
-  if (!grid) return;
-  const n = grid.children.length;
-  if (!n) { grid.style.height = ""; return; }
-
-  const top = grid.getBoundingClientRect().top;
-  const avail = Math.max(220, window.innerHeight - top - 16); // 16px breathing room
-  grid.style.height = avail + "px";
-
-  const gap = 12;            // keep in step with the .75rem grid gap
-  const AR = 16 / 9;         // target tile aspect ratio
-  const W = grid.clientWidth, H = avail;
-  let best = 1, bestArea = 0;
-  for (let cols = 1; cols <= n; cols++) {
-    const rows = Math.ceil(n / cols);
-    const cellW = (W - gap * (cols - 1)) / cols;
-    const cellH = (H - gap * (rows - 1)) / rows;
-    if (cellW <= 0 || cellH <= 0) continue;
-    // A tile is bounded by whichever dimension is tighter for the target ratio.
-    const w = Math.min(cellW, cellH * AR);
-    const area = w * (w / AR);
-    if (area > bestArea) { bestArea = area; best = cols; }
-  }
-  grid.style.gridTemplateColumns = `repeat(${best}, 1fr)`;
-  grid.style.gridTemplateRows = `repeat(${Math.ceil(n / best)}, 1fr)`;
-}
-window.addEventListener("resize", layoutGrid);
-
-function addTile(id, name, stream, muted) {
-  let tile = document.getElementById("tile-" + id);
-  if (!tile) {
-    tile = document.createElement("div");
-    tile.className = "tile";
-    tile.id = "tile-" + id;
-    const video = document.createElement("video");
-    video.autoplay = true; video.playsInline = true; video.muted = muted;
-    const av = document.createElement("div");
-    av.className = "avatar";
-    const mic = document.createElement("div");
-    mic.className = "micoff";
-    mic.textContent = "🔇";
-    const label = document.createElement("div");
-    label.className = "name";
-    tile.append(video, av, mic, label);
-    $("grid").append(tile);
-  }
-  const v = tile.querySelector("video");
-  if (v.srcObject !== stream) v.srcObject = stream;
-  // Autoplay with sound can be blocked (e.g. when the call auto-joins from a
-  // chat link, with no click on this page). Silent failure here = "their audio
-  // just doesn't work", so surface it and offer a one-tap fix.
-  v.play().catch(() => { if (id !== "local") $("audioGate").classList.remove("hidden"); });
-  tile.querySelector(".name").textContent = name;
-
-  // Profile picture shown whenever the camera is off.
-  const av = tile.querySelector(".avatar");
-  av.textContent = initialsOf(baseNick(name));
-  av.style.background = colorFor(baseNick(name));
-
-  // Ring this tile when its owner speaks.
-  attachVAD(tile.id, stream);
-
-  // A peer's state may have arrived before their video track did.
-  if (peerState.has(id)) applyState(id, peerState.get(id));
-  if (id === "local") applyMirror();
-
-  // Re-apply any volume the user already set for this peer, and keep the
-  // settings list in step as people arrive.
-  if (peerVolumes.has(id)) setPeerVolume(id, peerVolumes.get(id));
-  if (!$("settingsPanel").classList.contains("hidden")) renderVolumes();
-
-  layoutGrid(); // a tile appeared (or its stream changed): re-fit the window
-}
-
-// baseNick strips the decorations we add to labels ("river (you, sharing)").
-function baseNick(label) { return (label || "").split(" (")[0]; }
 </script>
 </body>
 </html>

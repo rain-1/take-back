@@ -1,0 +1,139 @@
+/* Call UI, shared by the standalone lobby page (call.html) and the call panel
+   embedded in the chat (index.html). Everything is scoped under .tbc so it can
+   be dropped into a page that has its own styles without colliding. */
+
+.tbc {
+  display: flex; flex-direction: column;
+  min-height: 0; height: 100%;
+  gap: .6rem;
+  --tbc-accent: #5b8cff;
+  --tbc-border: #232936;
+  --tbc-surface: #1e2431;
+  --tbc-text: #e8eaf0;
+  --tbc-muted: #8a93a6;
+  --tbc-dim: #5a6273;
+  --tbc-online: #22c55e;
+  color: var(--tbc-text);
+}
+
+/* ---- control bar ---- */
+.tbc-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; flex: none; }
+.tbc-bar button {
+  padding: .4rem .7rem; border-radius: 10px; border: 1px solid transparent;
+  font-size: .82rem; cursor: pointer; background: var(--tbc-accent); color: #fff;
+  font-weight: 550; font-family: inherit; transition: background .15s ease;
+}
+.tbc-bar button:hover { background: #6f9bff; }
+.tbc-bar button.secondary { background: var(--tbc-surface); color: var(--tbc-text); border-color: var(--tbc-border); }
+.tbc-bar button.secondary:hover { background: #262d3c; }
+.tbc-bar button:focus-visible { outline: 2px solid var(--tbc-accent); outline-offset: 2px; }
+.tbc-spacer { flex: 1; }
+.tbc-code {
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 1rem; letter-spacing: .16em;
+  background: #0d1016; padding: .25rem .6rem; border-radius: 10px; border: 1px solid var(--tbc-border);
+}
+.tbc-pill {
+  font-size: .72rem; padding: .15rem .55rem; border-radius: 999px;
+  background: rgba(34,197,94,.13); color: #4ade80;
+}
+.tbc-warn { background: rgba(248,113,113,.13); color: #f87171; }
+.tbc-status { font-size: .78rem; color: var(--tbc-dim); }
+.tbc-hidden { display: none !important; }
+
+/* ---- video grid ----
+   flex:1 + min-height:0 means the grid takes exactly the space its container
+   leaves it, whether that container is the whole window (call.html) or a sized
+   panel above the message list (index.html). layoutGrid() then only has to pick
+   the column/row counts — it never has to guess a height from the viewport. */
+.tbc-grid {
+  flex: 1; min-height: 0; display: grid; gap: .6rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.tbc-tile {
+  position: relative; background: #000; border-radius: 12px; overflow: hidden;
+  min-height: 0; min-width: 0;
+  outline: 2px solid transparent; outline-offset: -2px;
+  transition: outline-color .12s ease;
+}
+/* Scale to fit by default: the whole frame is visible, letterboxed against the
+   tile's black background. `cover` crops to fill and was what "fill the window"
+   shipped with — it's now opt-in per person via the Video scaling setting. */
+.tbc-tile video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; background: #000;
+}
+.tbc.fill .tbc-tile video { object-fit: cover; }
+/* A shared screen is always letterboxed: cropping text off the edge of someone's
+   slides makes the share useless, whichever way the camera preference is set. */
+.tbc-tile.screen video { object-fit: contain !important; }
+
+/* "Flip my video": mirror only your own preview, like a real mirror. */
+.tbc-tile.mirror video { transform: scaleX(-1); }
+
+/* Voice-only (camera off): show the profile picture over the video.
+   NB: the video element stays rendered (opacity:0, not display:none) — a
+   display:none media element can have its playback torn down by the browser,
+   and we still need the peer's AUDIO in voice-only mode. */
+.tbc-tile.novideo video { opacity: 0; }
+.tbc-tile .tbc-avatar { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); display: none; }
+.tbc-tile.novideo .tbc-avatar {
+  display: grid; place-items: center;
+  width: 84px; height: 84px; border-radius: 50%;
+  font-size: 1.7rem; font-weight: 650; color: #fff; letter-spacing: .02em;
+  border: 3px solid transparent;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+
+/* Speaking indicator: a green ring. Around the avatar in voice-only mode,
+   around the whole tile when video is on. */
+.tbc-tile.speaking { outline-color: #22c55e; }
+.tbc-tile.novideo.speaking { outline-color: transparent; }
+.tbc-tile.novideo.speaking .tbc-avatar { border-color: #22c55e; box-shadow: 0 0 14px rgba(34,197,94,.55); }
+/* Muted mic beats speaking: never imply we're transmitting when we aren't. */
+.tbc-tile.muted .tbc-avatar { border-color: transparent; box-shadow: none; }
+.tbc-tile.muted { outline-color: transparent; }
+/* A peer whose connection is wobbling: grey the frozen frame and say so. */
+.tbc-tile.reconnecting video, .tbc-tile.reconnecting .tbc-avatar { filter: grayscale(1) brightness(.5); }
+.tbc-tile.reconnecting::after {
+  content: "Reconnecting…"; position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center; color: #e5e7eb; font-size: .9rem;
+  background: rgba(0,0,0,.35);
+}
+.tbc-tile .tbc-micoff {
+  position: absolute; right: .5rem; top: .5rem; font-size: .85rem;
+  background: rgba(0,0,0,.55); border-radius: 6px; padding: .1rem .35rem; display: none;
+}
+.tbc-tile.muted .tbc-micoff { display: block; }
+.tbc-tile .tbc-name {
+  position: absolute; left: .5rem; bottom: .5rem; background: rgba(0,0,0,.6);
+  padding: .15rem .5rem; border-radius: 6px; font-size: .75rem;
+}
+
+/* ---- settings panel ---- */
+.tbc-settings {
+  flex: none; padding: .8rem .9rem; border: 1px solid var(--tbc-border);
+  border-radius: 12px; background: #0e1117; display: grid; gap: .6rem;
+  max-height: 45%; overflow-y: auto;
+}
+.tbc-setrow { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: .75rem; }
+.tbc-setrow > label { margin: 0; color: var(--tbc-muted); font-size: .8rem; }
+.tbc-setrow select {
+  font: inherit; font-size: .82rem; padding: .35rem .5rem; border-radius: 8px;
+  border: 1px solid var(--tbc-border); background: #0d1016; color: var(--tbc-text); width: 100%;
+}
+.tbc-note { display: flex; align-items: center; gap: .5rem; color: var(--tbc-dim); font-size: .74rem; }
+@media (max-width: 640px) { .tbc-setrow { grid-template-columns: 1fr; gap: .3rem; } }
+
+.tbc-levelbox { display: flex; align-items: center; gap: .6rem; }
+.tbc-meter { width: 110px; height: 8px; border-radius: 999px; background: #1c2029; overflow: hidden; flex: none; }
+.tbc-meter > div { height: 100%; width: 0%; border-radius: 999px; background: var(--tbc-online); transition: width .06s linear; }
+.tbc-settings input[type=range] { accent-color: var(--tbc-accent); width: 130px; }
+
+/* Per-participant volumes. Top-align the label: the list grows with the number
+   of people, and a vertically-centred label drifts away from it. */
+.tbc-volrow-wrap { align-items: start; }
+.tbc-volrow-wrap > label { padding-top: .25rem; }
+.tbc-volumes { display: grid; gap: .35rem; }
+.tbc-volrow { display: flex; align-items: center; gap: .5rem; font-size: .78rem; }
+.tbc-volrow .who { width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tbc-text); }
+.tbc-volrow .val { color: var(--tbc-dim); font-size: .7rem; width: 34px; text-align: right; }

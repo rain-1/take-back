@@ -202,3 +202,74 @@ func TestConversationIsolatedPerPair(t *testing.T) {
 		t.Fatalf("conversation leaked across pairs: %+v", msgs)
 	}
 }
+
+// TestMediaRoundTripDMAndGroup covers the attachment metadata added in 1.18:
+// it must survive both the insert path (which returns the message straight to
+// the sender) and the read-back query.
+func TestMediaRoundTripDMAndGroup(t *testing.T) {
+	s := newTestStore(t)
+	a := mustUser(t, s, "alice")
+	b := mustUser(t, s, "bob")
+
+	sent, err := s.AddMessage(Message{
+		SenderID: a.ID, RecipientID: b.ID, Body: "look at this",
+		ImageFile: "deadbeef.mp4", MediaKind: "video",
+		MediaName: "holiday.mp4", MediaSize: 4242,
+	})
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if sent.MediaKind != "video" || sent.MediaName != "holiday.mp4" || sent.MediaSize != 4242 {
+		t.Fatalf("insert path lost media metadata: %+v", sent)
+	}
+
+	msgs, err := s.Conversation(a.ID, b.ID, 0, 50)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("Conversation: %v (%d msgs)", err, len(msgs))
+	}
+	got := msgs[0]
+	if got.MediaKind != "video" || got.MediaName != "holiday.mp4" || got.MediaSize != 4242 ||
+		got.ImageFile != "deadbeef.mp4" {
+		t.Fatalf("read-back lost media metadata: %+v", got)
+	}
+
+	g, err := s.CreateGroup(a.ID, "crew")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddGroupMessage(GroupMessage{
+		GroupID: g.ID, SenderID: a.ID, ImageFile: "cafe.pdf",
+		MediaKind: "file", MediaName: "notes.pdf", MediaSize: 99,
+	}); err != nil {
+		t.Fatalf("AddGroupMessage: %v", err)
+	}
+	gms, err := s.GroupConversation(g.ID, 0, 50)
+	if err != nil || len(gms) != 1 {
+		t.Fatalf("GroupConversation: %v (%d msgs)", err, len(gms))
+	}
+	if gms[0].MediaKind != "file" || gms[0].MediaName != "notes.pdf" || gms[0].MediaSize != 99 {
+		t.Fatalf("group read-back lost media metadata: %+v", gms[0])
+	}
+}
+
+// TestLegacyImageRowReadsBackAsImage: rows written before media_kind existed
+// were all images, so they must not come back as an unknown kind.
+func TestLegacyImageRowReadsBackAsImage(t *testing.T) {
+	s := newTestStore(t)
+	a := mustUser(t, s, "alice")
+	b := mustUser(t, s, "bob")
+
+	// Insert the way the pre-1.18 code did: files set, kind columns defaulted.
+	if _, err := s.db.Exec(
+		`INSERT INTO messages (sender_id, recipient_id, body, image_file, thumb_file, created_at)
+		 VALUES (?, ?, '', 'old.jpg', 'old_thumb.jpg', 1)`, a.ID, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := s.Conversation(a.ID, b.ID, 0, 50)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("Conversation: %v (%d)", err, len(msgs))
+	}
+	if msgs[0].MediaKind != "image" {
+		t.Fatalf("legacy row kind: got %q, want image", msgs[0].MediaKind)
+	}
+}

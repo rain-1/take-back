@@ -26,6 +26,10 @@ func init() {
 	migrations = append(migrations,
 		`ALTER TABLE group_members ADD COLUMN status TEXT NOT NULL DEFAULT 'joined'`,
 		`ALTER TABLE group_members ADD COLUMN invited_by INTEGER NOT NULL DEFAULT 0`,
+		// Attachment metadata; see the matching migration on `messages`.
+		`ALTER TABLE group_messages ADD COLUMN media_kind TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE group_messages ADD COLUMN media_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE group_messages ADD COLUMN media_size INTEGER NOT NULL DEFAULT 0`,
 	)
 	schemaExtras = append(schemaExtras, `
 CREATE TABLE IF NOT EXISTS groups (
@@ -71,6 +75,9 @@ type GroupMessage struct {
 	Body        string    `json:"body"`
 	ImageFile   string    `json:"imageFile,omitempty"`
 	ThumbFile   string    `json:"thumbFile,omitempty"`
+	MediaKind   string    `json:"mediaKind,omitempty"`
+	MediaName   string    `json:"mediaName,omitempty"`
+	MediaSize   int64     `json:"mediaSize,omitempty"`
 	Created     time.Time `json:"created"`
 	EditedAt    int64     `json:"editedAt,omitempty"`
 	ReplyTo     int64     `json:"replyTo,omitempty"`
@@ -278,9 +285,11 @@ func (s *Store) RemoveMember(groupID, userID int64) error {
 func (s *Store) AddGroupMessage(m GroupMessage) (GroupMessage, error) {
 	now := time.Now()
 	res, err := s.db.Exec(
-		`INSERT INTO group_messages (group_id, sender_id, body, image_file, thumb_file, created_at, reply_to)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		m.GroupID, m.SenderID, m.Body, m.ImageFile, m.ThumbFile, now.Unix(), m.ReplyTo,
+		`INSERT INTO group_messages (group_id, sender_id, body, image_file, thumb_file,
+		                             media_kind, media_name, media_size, created_at, reply_to)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.GroupID, m.SenderID, m.Body, m.ImageFile, m.ThumbFile,
+		m.MediaKind, m.MediaName, m.MediaSize, now.Unix(), m.ReplyTo,
 	)
 	if err != nil {
 		return GroupMessage{}, err
@@ -313,6 +322,7 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 	}
 	rows, err := s.db.Query(
 		`SELECT m.id, m.group_id, m.sender_id, m.body, m.image_file, m.thumb_file,
+		        m.media_kind, m.media_name, m.media_size,
 		        m.created_at, m.edited_at, m.reply_to,
 		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
 		   FROM group_messages m
@@ -329,10 +339,12 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 		var m GroupMessage
 		var created int64
 		if err := rows.Scan(&m.ID, &m.GroupID, &m.SenderID, &m.Body,
-			&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt,
+			&m.ImageFile, &m.ThumbFile, &m.MediaKind, &m.MediaName, &m.MediaSize,
+			&created, &m.EditedAt,
 			&m.ReplyTo, &m.ReplySender, &m.ReplyBody); err != nil {
 			return nil, err
 		}
+		m.MediaKind = mediaKindOf(m.MediaKind, m.ImageFile)
 		m.Created = time.Unix(created, 0)
 		m.ReplyBody = truncate(m.ReplyBody, 80)
 		msgs = append(msgs, m)

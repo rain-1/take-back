@@ -53,4 +53,5 @@
     <string name="camera">Camera</string>
     <string name="mirror_my_video">Mirror my video</string>
     <string name="mirror_note">Only changes your own preview — peers always see you un-mirrored.</string>
+    <string name="crop_video_to_fill">Crop video to fill the tile</string>
 </resources>

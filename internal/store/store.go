@@ -40,7 +40,7 @@ const (
 // user's point of view.
 type Friend struct {
 	User      User   `json:"user"`
-	Status    string `json:"status"`   // pending | accepted
+	Status    string `json:"status"`    // pending | accepted
 	Direction string `json:"direction"` // incoming | outgoing (meaningful when pending)
 }
 

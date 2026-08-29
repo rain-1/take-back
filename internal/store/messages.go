@@ -8,6 +8,15 @@ import (
 func init() {
 	// Extend the schema with the messages table. Kept here so message concerns
 	// live beside their queries; Open() runs the combined DDL.
+	// Attachments started out image-only, so the storage key column is still
+	// called image_file. media_kind/media_name/media_size were added when any
+	// file became sendable; rows that predate them carry an empty kind and are
+	// read back as images (see Message.Kind).
+	migrations = append(migrations,
+		`ALTER TABLE messages ADD COLUMN media_kind TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN media_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN media_size INTEGER NOT NULL DEFAULT 0`,
+	)
 	schemaExtras = append(schemaExtras, `
 CREATE TABLE IF NOT EXISTS messages (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,6 +34,10 @@ CREATE INDEX IF NOT EXISTS idx_messages_pair
 // Message is one direct message. Body holds raw Markdown; ImageFile/ThumbFile
 // are storage keys (empty when the message is text-only). Clients receive them
 // as URLs assembled by the API layer. EditedAt is 0 when never edited.
+//
+// MediaKind says how to render the attachment (image | video | audio | file);
+// MediaName is the sender's original filename, shown for non-images and used as
+// the download name.
 type Message struct {
 	ID          int64     `json:"id"`
 	SenderID    int64     `json:"senderId"`
@@ -32,6 +45,9 @@ type Message struct {
 	Body        string    `json:"body"`
 	ImageFile   string    `json:"imageFile,omitempty"`
 	ThumbFile   string    `json:"thumbFile,omitempty"`
+	MediaKind   string    `json:"mediaKind,omitempty"`
+	MediaName   string    `json:"mediaName,omitempty"`
+	MediaSize   int64     `json:"mediaSize,omitempty"`
 	Created     time.Time `json:"created"`
 	EditedAt    int64     `json:"editedAt,omitempty"`
 	ReplyTo     int64     `json:"replyTo,omitempty"`     // id of the message being replied to
@@ -43,9 +59,11 @@ type Message struct {
 func (s *Store) AddMessage(m Message) (Message, error) {
 	now := time.Now()
 	res, err := s.db.Exec(
-		`INSERT INTO messages (sender_id, recipient_id, body, image_file, thumb_file, created_at, reply_to)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		m.SenderID, m.RecipientID, m.Body, m.ImageFile, m.ThumbFile, now.Unix(), m.ReplyTo,
+		`INSERT INTO messages (sender_id, recipient_id, body, image_file, thumb_file,
+		                       media_kind, media_name, media_size, created_at, reply_to)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.SenderID, m.RecipientID, m.Body, m.ImageFile, m.ThumbFile,
+		m.MediaKind, m.MediaName, m.MediaSize, now.Unix(), m.ReplyTo,
 	)
 	if err != nil {
 		return Message{}, err
@@ -81,6 +99,7 @@ func (s *Store) Conversation(meID, otherID int64, beforeID int64, limit int) ([]
 	}
 	rows, err := s.db.Query(
 		`SELECT m.id, m.sender_id, m.recipient_id, m.body, m.image_file, m.thumb_file,
+		        m.media_kind, m.media_name, m.media_size,
 		        m.created_at, m.edited_at, m.reply_to,
 		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
 		   FROM messages m
@@ -114,11 +133,23 @@ func scanMessage(rows *sql.Rows) (Message, error) {
 	var m Message
 	var created int64
 	if err := rows.Scan(&m.ID, &m.SenderID, &m.RecipientID, &m.Body,
-		&m.ImageFile, &m.ThumbFile, &created, &m.EditedAt,
+		&m.ImageFile, &m.ThumbFile, &m.MediaKind, &m.MediaName, &m.MediaSize,
+		&created, &m.EditedAt,
 		&m.ReplyTo, &m.ReplySender, &m.ReplyBody); err != nil {
 		return Message{}, err
 	}
+	m.MediaKind = mediaKindOf(m.MediaKind, m.ImageFile)
 	m.Created = time.Unix(created, 0)
 	m.ReplyBody = truncate(m.ReplyBody, 80)
 	return m, nil
+}
+
+// mediaKindOf backfills the kind of an attachment stored before media_kind
+// existed. Every such row was an image (that was the only attachment type),
+// so a non-empty file with no recorded kind reads back as one.
+func mediaKindOf(kind, file string) string {
+	if kind != "" || file == "" {
+		return kind
+	}
+	return "image"
 }

@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>take-back</title>
+<link rel="icon" type="image/svg+xml" href="/logo-mark.svg">
+<link rel="stylesheet" href="/call.css">
 <style>
   :root {
     color-scheme: dark;
@@ -217,6 +219,55 @@
     transition: opacity .15s ease;
   }
   .msg img.thumb:hover { opacity: .9; }
+  /* Non-image attachments. Video and audio play in place; anything else is a
+     download chip carrying the sender's original filename. */
+  .msg video.att {
+    max-width: 320px; max-height: 260px; border-radius: 10px;
+    margin-top: .35rem; display: block; background: #000;
+  }
+  .msg audio.att { margin-top: .35rem; display: block; width: 260px; max-width: 100%; }
+  .msg .filechip {
+    display: inline-flex; align-items: center; gap: .5rem; margin-top: .35rem;
+    padding: .4rem .65rem; border-radius: 10px; text-decoration: none;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    font-size: .82rem; max-width: 320px;
+  }
+  .msg .filechip:hover { background: var(--surface-2); border-color: var(--accent); }
+  .msg .filechip .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msg .filechip .fsize { color: var(--dim); font-size: .72rem; flex: none; }
+  /* Upload progress for a big attachment — a video can take a while, and a
+     button that just goes quiet reads as broken. */
+  #uploadBar {
+    flex: none; display: none; align-items: center; gap: .6rem;
+    padding: .35rem 1rem; font-size: .76rem; color: var(--muted);
+    border-top: 1px solid var(--border-soft); background: var(--panel);
+  }
+  #uploadBar.on { display: flex; }
+  #uploadBar .track { flex: 1; height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  #uploadBar .track > div { height: 100%; width: 0%; background: var(--accent); transition: width .12s linear; }
+
+  /* ---- In-chat call panel ----
+     The call lives above the message list in the same column, so you can read
+     and type while you're on it. It is a fixed-height flex row (resizable by
+     dragging its bottom edge) and TBCall's own grid fills whatever it gets. */
+  #callPane {
+    flex: none; height: 42vh; min-height: 140px;
+    display: flex; flex-direction: column; min-width: 0;
+    padding: .6rem .75rem .3rem;
+    background: #0e1117; border-bottom: 1px solid var(--border-soft);
+  }
+  #callHost { flex: 1; min-height: 0; display: flex; }
+  /* Drag this to trade space between the call and the conversation. */
+  #callResize {
+    flex: none; height: 9px; cursor: ns-resize; position: relative;
+  }
+  #callResize::after {
+    content: ""; position: absolute; left: 50%; top: 4px; transform: translateX(-50%);
+    width: 46px; height: 3px; border-radius: 999px; background: var(--border);
+  }
+  #callResize:hover::after { background: var(--accent); }
+  body.resizing-call { user-select: none; cursor: ns-resize; }
+  @media (max-width: 760px) { #callPane { height: 38vh; } }
   /* Timestamp: tucked to the right, and only fully visible on hover so it
      doesn't compete with the message text. */
   .msg .time {
@@ -501,6 +552,13 @@
     </aside>
 
     <section id="chat">
+      <!-- The call panel: hidden until you start or join a call, then shown
+           above whichever conversation is open. It deliberately sits OUTSIDE
+           #chatPane so a call survives switching chats. -->
+      <div id="callPane" class="hidden">
+        <div id="callHost"></div>
+        <div id="callResize" title="Drag to resize the call"></div>
+      </div>
       <div id="empty">
         <div class="big">✳</div>
         <div>Pick a conversation to start chatting.</div>
@@ -521,16 +579,22 @@
           <span class="x" id="replyBarCancel" title="Cancel reply">✕</span>
         </div>
         <div id="composer">
-          <button class="secondary icon" id="imgBtn" title="Send image">🖼</button>
-          <input type="file" id="imgInput" accept="image/*" class="hidden">
+          <button class="secondary icon" id="imgBtn" title="Attach a file — image, video, audio, anything">📎</button>
+          <input type="file" id="imgInput" class="hidden">
           <input type="text" id="msgInput" placeholder="Message — markdown supported" autocomplete="off">
           <button id="sendBtn">Send</button>
+        </div>
+        <div id="uploadBar">
+          <span id="uploadName"></span>
+          <span class="track"><div id="uploadFill"></div></span>
+          <span id="uploadPct"></span>
         </div>
       </div>
     </section>
   </div>
 </div>
 
+<script src="/call-core.js"></script>
 <script>
 // Wire-protocol version this client speaks. Must match the server's MAJOR /
 // protocol; see internal/version. Bump only alongside a breaking API change.
@@ -718,6 +782,7 @@ async function openGroupChat(g) {
   openGroup = { id: g.id, name: g.name, callCode: g.callCode };
   $("empty").classList.add("hidden");
   $("chatPane").classList.remove("hidden");
+  syncCallBtn();
   setChatAvatar(g.name, true);
   $("chatNick").textContent = g.name;
   $("membersBtn").classList.remove("hidden");
@@ -1035,6 +1100,7 @@ async function openChat(user) {
   openGroup = null;
   $("empty").classList.add("hidden");
   $("chatPane").classList.remove("hidden");
+  syncCallBtn();
   const f = friendState.get(user.id);
   setChatAvatar(user.nick, false, !!(f && f.online), f && f.user.avatarUrl);
   $("chatNick").textContent = user.nick;
@@ -1129,45 +1195,96 @@ async function sendText() {
 }
 
 $("imgBtn").onclick = () => $("imgInput").click();
-$("imgInput").onchange = () => { uploadImage($("imgInput").files[0]); $("imgInput").value = ""; };
+$("imgInput").onchange = () => { uploadAttachment($("imgInput").files[0]); $("imgInput").value = ""; };
 
-// uploadImage posts one image file to whichever conversation is open, hitting
-// the exact endpoints the 🖼 button uses. Shared by the button, clipboard paste,
-// and drag-and-drop so all three behave identically for DMs and groups.
-async function uploadImage(file) {
-  if (!file || !file.type.startsWith("image/")) return;
+// MAX_ATTACHMENT mirrors the server's cap (api.MaxUploadBytes). Checking here
+// too turns "upload runs for a minute then 400s" into an instant, clear no.
+const MAX_ATTACHMENT = 95 * 1024 * 1024;
+
+// uploadAttachment posts one file — image, video, audio or anything else — to
+// whichever conversation is open. Shared by the 📎 button, clipboard paste and
+// drag-and-drop, so all three behave identically for DMs and groups.
+//
+// XMLHttpRequest rather than fetch: it reports upload progress, and a 100 MB
+// video with no feedback looks exactly like a hung app.
+async function uploadAttachment(file) {
+  if (!file) return;
   if (!openGroup && !openFriend) { toast("Open a conversation first"); return; }
+  if (file.size > MAX_ATTACHMENT) {
+    toast(`That file is ${fmtSize(file.size)} — the limit is ${fmtSize(MAX_ATTACHMENT)}.`);
+    return;
+  }
   const form = new FormData();
-  form.append("image", file);
+  form.append("file", file, file.name);
+  form.append("name", file.name);
+  let url;
+  if (openGroup) { form.append("group", openGroup.id); url = "/api/groups/messages/media"; }
+  else { form.append("with", openFriend.id); url = "/api/messages/media"; }
+
   let msg;
-  try {
-    if (openGroup) {
-      form.append("group", openGroup.id);
-      msg = await api("/api/groups/messages/image", { method: "POST", body: form });
-    } else {
-      form.append("with", openFriend.id);
-      msg = await api("/api/messages/image", { method: "POST", body: form });
-    }
-  } catch (e) { toast(e.message); return; }
+  try { msg = await uploadWithProgress(url, form, file.name); }
+  catch (e) { toast(e.message); return; }
   appendMessage(msg); scrollMessages();
   touchActivity(openGroup ? "group" : "dm", openGroup ? openGroup.id : openFriend.id, msg.created);
 }
 
-// Paste an image straight from the clipboard (a screenshot, or a copied image
-// file) to post it — no need to save-then-attach.
+// uploadWithProgress POSTs a FormData and drives the progress bar under the
+// composer. Resolves with the created message, rejects with a usable error.
+function uploadWithProgress(url, form, label) {
+  return new Promise((resolve, reject) => {
+    const bar = $("uploadBar");
+    bar.classList.add("on");
+    $("uploadName").textContent = label;
+    const setPct = (p) => {
+      $("uploadFill").style.width = p + "%";
+      $("uploadPct").textContent = p + "%";
+    };
+    setPct(0);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setPct(Math.round((e.loaded / e.total) * 100));
+    };
+    const done = () => { bar.classList.remove("on"); };
+    xhr.onload = () => {
+      done();
+      let body = null;
+      try { body = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300 && body) resolve(body);
+      else reject(new Error((body && body.error) || ("upload failed (" + xhr.status + ")")));
+    };
+    xhr.onerror = () => { done(); reject(new Error("upload failed — check your connection")); };
+    xhr.onabort = () => { done(); reject(new Error("upload cancelled")); };
+    xhr.send(form);
+  });
+}
+
+// fmtSize renders a byte count the way a file manager would.
+function fmtSize(n) {
+  if (!n) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return (n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)) + " " + units[i];
+}
+
+// Paste a file straight from the clipboard (a screenshot, a copied image or any
+// other copied file) to post it — no need to save-then-attach.
 document.addEventListener("paste", (e) => {
   if (!openGroup && !openFriend) return;
   const items = (e.clipboardData && e.clipboardData.items) || [];
   for (const it of items) {
-    if (it.kind === "file" && it.type.startsWith("image/")) {
+    if (it.kind === "file") {
       e.preventDefault();
-      uploadImage(it.getAsFile());
-      break; // one image per paste is plenty
+      uploadAttachment(it.getAsFile());
+      break; // one file per paste is plenty
     }
   }
 });
 
-// Drag-and-drop image posting over the chat column, with a dashed overlay while
+// Drag-and-drop file posting over the chat column, with a dashed overlay while
 // a file hovers. We track enter/leave carefully so the overlay doesn't flicker
 // as the pointer crosses child elements.
 (() => {
@@ -1188,7 +1305,8 @@ document.addEventListener("paste", (e) => {
     const files = (e.dataTransfer && e.dataTransfer.files) || [];
     if (!files.length) return;
     e.preventDefault();
-    for (const f of files) if (f.type.startsWith("image/")) uploadImage(f);
+    // Dropping several files posts each of them, in order.
+    (async () => { for (const f of files) await uploadAttachment(f); })();
   });
 })();
 
@@ -1258,8 +1376,7 @@ function messageEl(m) {
     div.append(mkBtn("Join call " + call[1], "", () => joinCall(call[1])));
   } else {
     if (m.body) html += `<div class="body">${renderMarkdown(m.body)}</div>`;
-    if (m.thumbUrl) html += `<a href="${m.imageUrl}" target="_blank" rel="noopener">
-      <img class="thumb" src="${m.thumbUrl}" alt="image"></a>`;
+    html += renderAttachment(m);
     div.innerHTML = html;
   }
 
@@ -1478,8 +1595,45 @@ function applyEdit(m) {
 }
 function scrollMessages() { const m = $("messages"); m.scrollTop = m.scrollHeight; }
 
+// renderAttachment turns a message's attachment into markup, by kind. Images
+// show their thumbnail (click for the full size), video and audio play inline,
+// and anything else is a download chip labelled with the sender's filename.
+//
+// mediaKind is absent on messages from before attachments were generalised, so
+// a thumbnail on its own still means "image".
+function renderAttachment(m) {
+  const url = m.mediaUrl || m.imageUrl;
+  if (!url) return "";
+  const kind = m.mediaKind || (m.thumbUrl ? "image" : "file");
+  const name = m.mediaName || "file";
+  const src = esc(url);
+
+  if (kind === "image") {
+    const thumb = esc(m.thumbUrl || url);
+    return `<a href="${esc(m.imageUrl || url)}" target="_blank" rel="noopener">` +
+           `<img class="thumb" src="${thumb}" alt="${esc(name)}"></a>`;
+  }
+  if (kind === "video") {
+    // preload="metadata" so a chat full of clips doesn't pull down every byte.
+    return `<video class="att" controls preload="metadata" src="${src}"></video>`;
+  }
+  if (kind === "audio") {
+    return `<audio class="att" controls preload="metadata" src="${src}"></audio>`;
+  }
+  return `<a class="filechip" href="${src}" download="${esc(name)}">` +
+         `<span>📎</span><span class="fname">${esc(name)}</span>` +
+         `<span class="fsize">${esc(fmtSize(m.mediaSize))}</span></a>`;
+}
+
 // ---------- Calls ----------
 $("callBtn").onclick = async () => {
+  // Already on a call? The panel is the call — just make sure it's showing,
+  // rather than tearing it down and announcing a second one.
+  if (TBCall.active()) {
+    $("callPane").classList.remove("hidden");
+    TBCall.layout();
+    return;
+  }
   if (openGroup) {
     // Group calls use the group's stable call code; announce it in the chat.
     const code = openGroup.callCode;
@@ -1499,9 +1653,69 @@ $("callBtn").onclick = async () => {
     joinCall(code);
   }
 };
+// joinCall brings the call up INSIDE this page, in the panel above the message
+// list, so chat and video are one thing. The call is deliberately independent of
+// which conversation is open: switching chats (or getting a new message) leaves
+// it running.
 function joinCall(code) {
-  window.open(`/call.html?room=${encodeURIComponent(code)}&nick=${encodeURIComponent(me.nick)}`, "_blank");
+  if (!code) return;
+  if (TBCall.active()) {
+    if (TBCall.room() === code.toUpperCase()) { $("callPane").classList.remove("hidden"); return; }
+    TBCall.leave(); // one microphone, one camera: only one call at a time
+  }
+  $("callPane").classList.remove("hidden");
+  $("callBtn").textContent = "📹 In call";
+  TBCall.mount($("callHost"), {
+    nick: me.nick,
+    room: code,
+    // In a chat the conversation identifies the call, so the code + Copy button
+    // would just be noise. (call.html still shows them — that lobby has nothing
+    // else to identify a room by.)
+    showCode: false,
+    onLeave: () => {
+      $("callPane").classList.add("hidden");
+      $("callBtn").textContent = "📹 Video call";
+    },
+  });
 }
+
+// The call panel outlives any one conversation, so the per-chat header button
+// has to be re-labelled whenever a chat is opened.
+function syncCallBtn() {
+  $("callBtn").textContent = TBCall.active() ? "📹 In call" : "📹 Video call";
+}
+
+// Drag the handle under the call to trade space between video and conversation.
+(function callResizer() {
+  const pane = $("callPane"), handle = $("callResize");
+  let startY = 0, startH = 0;
+  const onMove = (e) => {
+    const y = (e.touches ? e.touches[0].clientY : e.clientY);
+    // Keep both halves usable: never let the call swallow the whole column.
+    const max = $("chat").clientHeight - 180;
+    pane.style.height = Math.max(140, Math.min(max, startH + (y - startY))) + "px";
+    TBCall.layout();
+  };
+  const onUp = () => {
+    document.body.classList.remove("resizing-call");
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("touchmove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    window.removeEventListener("touchend", onUp);
+  };
+  const onDown = (e) => {
+    startY = (e.touches ? e.touches[0].clientY : e.clientY);
+    startH = pane.getBoundingClientRect().height;
+    document.body.classList.add("resizing-call");
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchend", onUp);
+    e.preventDefault();
+  };
+  handle.addEventListener("mousedown", onDown);
+  handle.addEventListener("touchstart", onDown, { passive: false });
+})();
 function randomCode() {
   const a = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   return Array.from({ length: 6 }, () => a[Math.floor(Math.random() * a.length)]).join("");

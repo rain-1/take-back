@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import coil.load
+import com.takeback.app.net.Attachment
 import com.takeback.app.net.Reaction
 import io.noties.markwon.Markwon
 
@@ -26,6 +27,7 @@ data class RMsg(
     val body: String,
     val imageUrl: String?,
     val thumbUrl: String?,
+    val attachment: Attachment? = null,
     val created: Long,
     val reactions: List<Reaction>,
     val replyTo: Long,
@@ -49,7 +51,7 @@ class MessageRenderer(
     private val onReply: (RMsg) -> Unit,
     private val onReact: (id: Long, emoji: String, add: Boolean) -> Unit,
     private val onJoinCall: (code: String) -> Unit,
-    private val onOpenImage: (url: String) -> Unit,
+    private val onOpenAttachment: (url: String) -> Unit,
     private val onEdit: (RMsg) -> Unit = {},
 ) {
     private val d = ctx.resources.displayMetrics.density
@@ -153,15 +155,7 @@ class MessageRenderer(
                 editedMarks[m.id] = mark
                 col.addView(mark)
             }
-            if (m.thumbUrl != null) {
-                col.addView(ImageView(ctx).apply {
-                    adjustViewBounds = true
-                    maxWidth = dp(240)
-                    load(m.thumbUrl)
-                    setOnClickListener { m.imageUrl?.let { onOpenImage(it) } }
-                    val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = dp(6); layoutParams = lp
-                })
-            }
+            attachmentView(m)?.let { col.addView(it) }
         }
 
         val rx = LinearLayout(ctx).apply {
@@ -175,6 +169,77 @@ class MessageRenderer(
 
         messageViews[m.id] = col
         return col
+    }
+
+    /**
+     * The view for a message's attachment, or null when it has none.
+     *
+     * An image shows its server-made thumbnail. Everything else — video, audio,
+     * documents — becomes a tappable chip naming the file, which hands the URL to
+     * whatever app the device uses for that type. Streaming a video inside the
+     * chat list would mean shipping a player and managing its lifecycle across
+     * recycled rows; handing off is both simpler and what people expect.
+     */
+    private fun attachmentView(m: RMsg): View? {
+        // Fall back to the image fields for messages that predate `attachment`.
+        val att = m.attachment ?: m.thumbUrl?.let {
+            Attachment(m.imageUrl ?: it, "image", "image", 0, it)
+        } ?: return null
+
+        if (att.kind == "image" && att.thumbUrl != null) {
+            return ImageView(ctx).apply {
+                adjustViewBounds = true
+                maxWidth = dp(240)
+                load(att.thumbUrl)
+                setOnClickListener { onOpenAttachment(att.url) }
+                val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = dp(6); layoutParams = lp
+            }
+        }
+
+        val icon = when (att.kind) {
+            "video" -> "🎬"
+            "audio" -> "🎵"
+            else -> "📎"
+        }
+        return LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#171B24"))
+                setStroke(dp(1), Color.parseColor("#232936"))
+            }
+            addView(TextView(ctx).apply { text = icon; textSize = 16f })
+            addView(TextView(ctx).apply {
+                text = att.name
+                setTextColor(Color.parseColor("#E8EAF0"))
+                textSize = 13f
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.MIDDLE // keep the extension visible
+                val lp = LinearLayout.LayoutParams(0, -2, 1f); lp.leftMargin = dp(8); layoutParams = lp
+            })
+            if (att.size > 0) {
+                addView(TextView(ctx).apply {
+                    text = formatSize(att.size)
+                    setTextColor(Color.parseColor("#5A6273"))
+                    textSize = 11f
+                    val lp = LinearLayout.LayoutParams(-2, -2); lp.leftMargin = dp(8); layoutParams = lp
+                })
+            }
+            setOnClickListener { onOpenAttachment(att.url) }
+            val lp = LinearLayout.LayoutParams(dp(260), -2); lp.topMargin = dp(6); layoutParams = lp
+        }
+    }
+
+    /** A byte count the way a file manager would show it. */
+    private fun formatSize(n: Long): String {
+        val units = listOf("B", "KB", "MB", "GB")
+        var v = n.toDouble()
+        var i = 0
+        while (v >= 1024 && i < units.size - 1) { v /= 1024; i++ }
+        return if (v < 10 && i > 0) String.format("%.1f %s", v, units[i])
+               else String.format("%.0f %s", v, units[i])
     }
 
     /** Apply an edit to a message already on screen (mine or a peer's). */

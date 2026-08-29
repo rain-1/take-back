@@ -11,17 +11,19 @@ import (
 
 // groupRoutes registers the group endpoints. Called from Routes.
 func (a *API) groupRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/groups", a.auth(a.handleGroups))                    // GET list, POST create
-	mux.HandleFunc("/api/groups/members", a.auth(a.handleGroupMembers))      // GET member list
+	mux.HandleFunc("/api/groups", a.auth(a.handleGroups))               // GET list, POST create
+	mux.HandleFunc("/api/groups/members", a.auth(a.handleGroupMembers)) // GET member list
 	// Kept as /add for older clients; it now sends an invite rather than
 	// dropping someone into the group.
 	mux.HandleFunc("/api/groups/add", a.auth(a.handleGroupInvite))
 	mux.HandleFunc("/api/groups/invite", a.auth(a.handleGroupInvite))
-	mux.HandleFunc("/api/groups/invites", a.auth(a.handleGroupInvites))  // GET pending
-	mux.HandleFunc("/api/groups/respond", a.auth(a.handleGroupRespond)) // POST accept/decline
-	mux.HandleFunc("/api/groups/leave", a.auth(a.handleGroupLeave))          // POST leave
-	mux.HandleFunc("/api/groups/messages", a.auth(a.handleGroupMessages))    // GET list, POST send
-	mux.HandleFunc("/api/groups/messages/image", a.auth(a.handleGroupImage)) // POST image
+	mux.HandleFunc("/api/groups/invites", a.auth(a.handleGroupInvites))   // GET pending
+	mux.HandleFunc("/api/groups/respond", a.auth(a.handleGroupRespond))   // POST accept/decline
+	mux.HandleFunc("/api/groups/leave", a.auth(a.handleGroupLeave))       // POST leave
+	mux.HandleFunc("/api/groups/messages", a.auth(a.handleGroupMessages)) // GET list, POST send
+	// Any attachment; /image is the pre-1.18 name kept for older clients.
+	mux.HandleFunc("/api/groups/messages/media", a.auth(a.handleGroupMedia))
+	mux.HandleFunc("/api/groups/messages/image", a.auth(a.handleGroupMedia))
 }
 
 func (a *API) handleGroups(w http.ResponseWriter, r *http.Request, user *store.User) {
@@ -191,18 +193,22 @@ func (a *API) handleGroupLeave(w http.ResponseWriter, r *http.Request, user *sto
 
 // groupMsgView is a group message prepared for clients (media as URLs).
 type groupMsgView struct {
-	ID       int64  `json:"id"`
-	GroupID  int64  `json:"groupId"`
-	SenderID int64  `json:"senderId"`
-	Body     string `json:"body"`
-	ImageURL string `json:"imageUrl,omitempty"`
-	ThumbURL string `json:"thumbUrl,omitempty"`
-	Created  int64           `json:"created"`
-	EditedAt int64           `json:"editedAt,omitempty"`
-	Reactions []reactionGroup `json:"reactions,omitempty"`
-	ReplyTo     int64  `json:"replyTo,omitempty"`
-	ReplySender int64  `json:"replySender,omitempty"`
-	ReplyBody   string `json:"replyBody,omitempty"`
+	ID          int64           `json:"id"`
+	GroupID     int64           `json:"groupId"`
+	SenderID    int64           `json:"senderId"`
+	Body        string          `json:"body"`
+	ImageURL    string          `json:"imageUrl,omitempty"`
+	ThumbURL    string          `json:"thumbUrl,omitempty"`
+	MediaURL    string          `json:"mediaUrl,omitempty"`
+	MediaKind   string          `json:"mediaKind,omitempty"`
+	MediaName   string          `json:"mediaName,omitempty"`
+	MediaSize   int64           `json:"mediaSize,omitempty"`
+	Created     int64           `json:"created"`
+	EditedAt    int64           `json:"editedAt,omitempty"`
+	Reactions   []reactionGroup `json:"reactions,omitempty"`
+	ReplyTo     int64           `json:"replyTo,omitempty"`
+	ReplySender int64           `json:"replySender,omitempty"`
+	ReplyBody   string          `json:"replyBody,omitempty"`
 }
 
 func toGroupView(m store.GroupMessage) groupMsgView {
@@ -211,10 +217,8 @@ func toGroupView(m store.GroupMessage) groupMsgView {
 		Body: m.Body, Created: m.Created.Unix(), EditedAt: m.EditedAt,
 		ReplyTo: m.ReplyTo, ReplySender: m.ReplySender, ReplyBody: m.ReplyBody,
 	}
-	if m.ImageFile != "" {
-		v.ImageURL = "/media/" + m.ImageFile
-		v.ThumbURL = "/media/" + m.ThumbFile
-	}
+	v.MediaURL, v.ImageURL, v.ThumbURL = mediaURLs(m.ImageFile, m.ThumbFile, m.MediaKind, m.MediaName)
+	v.MediaKind, v.MediaName, v.MediaSize = m.MediaKind, m.MediaName, m.MediaSize
 	return v
 }
 
@@ -277,12 +281,14 @@ func (a *API) handleGroupMessages(w http.ResponseWriter, r *http.Request, user *
 	}
 }
 
-func (a *API) handleGroupImage(w http.ResponseWriter, r *http.Request, user *store.User) {
+// handleGroupMedia is the group counterpart of handleMediaMessage: it serves
+// both /api/groups/messages/media and the legacy .../image.
+func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request, user *store.User) {
 	if r.Method != http.MethodPost {
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
-	if err := r.ParseMultipartForm(16 << 20); err != nil {
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad upload")
 		return
 	}
@@ -290,20 +296,14 @@ func (a *API) handleGroupImage(w http.ResponseWriter, r *http.Request, user *sto
 	if !a.requireMember(w, gid, user.ID) {
 		return
 	}
-	file, _, err := r.FormFile("image")
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "missing image field")
-		return
-	}
-	defer file.Close()
-	imageFile, thumbFile, err := a.Media.SaveImage(file)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+	up, ok := a.readUpload(w, r)
+	if !ok {
 		return
 	}
 	a.storeAndFanout(w, store.GroupMessage{
 		GroupID: gid, SenderID: user.ID, Body: r.FormValue("body"),
-		ImageFile: imageFile, ThumbFile: thumbFile,
+		ImageFile: up.File, ThumbFile: up.Thumb,
+		MediaKind: up.Kind, MediaName: up.Name, MediaSize: up.Size,
 	}, user.ID)
 }
 

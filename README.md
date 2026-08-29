@@ -19,12 +19,15 @@
   passwords.
 - **Friends** — send requests by nickname, accept/decline, remove; live
   **online/offline** presence.
-- **Direct messages** — 1:1 chats with **Markdown** text and **image sharing**;
-  uploaded images are thumbnailed server-side (longest edge 320px) and open full
-  size on click. New messages and presence changes stream live over a WebSocket.
-- **Calls** — nickname → host a call for a shareable code → others join into a
-  **full-mesh** WebRTC audio/video call, with screen sharing and camera flip.
-  Launchable straight from a DM chat.
+- **Direct messages** — 1:1 chats with **Markdown** text and **attachments** of
+  any kind: images are thumbnailed server-side (longest edge 320px) and open full
+  size on click, video and audio play inline, and anything else arrives as a
+  download chip. New messages and presence changes stream live over a WebSocket.
+- **Calls** — a **full-mesh** WebRTC audio/video call, with screen sharing
+  (carrying the shared window's audio) and camera flip. Started from a chat, the
+  call opens **in a panel above the conversation**, so you can read and type
+  while you're on it; `/call.html` is still there as a standalone lobby where a
+  call is joined by code instead.
 
 ## The logo
 
@@ -108,8 +111,12 @@ Two Go programs plus a native Android client:
 - **`android/`** — native Kotlin client for the calls (see `android/README.md`).
 
 Internal packages: `internal/store` (SQLite: users, sessions, friendships,
-messages), `internal/api` (HTTP handlers + image thumbnailing), `internal/presence`
-(online tracking + event push).
+messages), `internal/api` (HTTP handlers, attachment storage + image
+thumbnailing), `internal/presence` (online tracking + event push).
+
+The browser client is `cmd/web/static`: `index.html` (chat, and the call panel
+inside it), `call.html` (the standalone call lobby), and `call-core.js` +
+`call.css` — the call engine both of them mount.
 
 ## Run
 
@@ -132,7 +139,7 @@ each other as friends, and chat or call.
 ## NAT traversal notes
 
 STUN alone punches through most NATs. For symmetric NATs where no direct path
-exists, add a TURN server to `ICE_CONFIG` in `cmd/web/static/call.html`. Testing
+exists, add a TURN server to `ICE_CONFIG` in `cmd/web/static/call-core.js`. Testing
 real NAT passthrough requires the two browsers on different networks with the
 server reachable by both.
 

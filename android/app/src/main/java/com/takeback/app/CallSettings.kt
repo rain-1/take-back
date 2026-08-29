@@ -21,12 +21,21 @@ object CallSettings {
     private const val KEY_MIRROR = "mirror"
     private const val KEY_CAMERA = "cameraName"
     private const val KEY_MIC_GAIN = "micGain"
+    private const val KEY_VIDEO_FILL = "videoFill"
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     /** Self-view mirroring. Defaults to on, like most video apps. */
     fun mirror(c: Context): Boolean = prefs(c).getBoolean(KEY_MIRROR, true)
     fun setMirror(c: Context, on: Boolean) = prefs(c).edit().putBoolean(KEY_MIRROR, on).apply()
+
+    /**
+     * Video scaling. Fit (the default) letterboxes each tile so the whole frame
+     * is visible; fill crops it to the tile's shape. Fill was the old fixed
+     * behaviour, and cropping people out of their own video is the wrong default.
+     */
+    fun videoFill(c: Context): Boolean = prefs(c).getBoolean(KEY_VIDEO_FILL, false)
+    fun setVideoFill(c: Context, on: Boolean) = prefs(c).edit().putBoolean(KEY_VIDEO_FILL, on).apply()
 
     /** Mic gain (1.0 = untouched). Applied to the captured buffer before encoding. */
     fun micGain(c: Context): Float = prefs(c).getFloat(KEY_MIC_GAIN, 1.0f)

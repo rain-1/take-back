@@ -24,6 +24,67 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.18.0
+
+Clears the four requests standing in **#bugrep & featurereq**.
+
+**Added — attachments beyond photos** (@Etheri)
+- **Send any file**, on web and Android: video and audio play inline, images
+  keep their server-made thumbnail, and everything else arrives as a download
+  chip labelled with the sender's filename and size. Web adds an upload progress
+  bar — a 90 MB video that just goes quiet reads as a hung app.
+- Paste and drag-and-drop accept any file now, not only images, and a multi-file
+  drop posts all of them.
+- New `POST /api/messages/media` and `/api/groups/messages/media`. The old
+  `/image` endpoints still work and are wired to the same handler, so a client
+  that hasn't updated keeps posting photos.
+- Single-file cap **95 MB**, set by Cloudflare's free plan refusing bodies over
+  100 MB at the edge (a bigger cap here would only become an unexplained 413).
+  nginx's `client_max_body_size` matches.
+- **Security:** `/media/` now pins the `Content-Type` from an allow-list, sends
+  `nosniff` and a locked-down CSP, and serves anything not provably safe to
+  render as `application/octet-stream` with `Content-Disposition: attachment`.
+  Uploads share an origin with the app, so an uploaded `.html` or `.svg` would
+  otherwise have been same-origin script. Images are still decoded and
+  re-encoded, and one that won't decode is stored as an opaque file rather than
+  served as an image.
+
+**Added — screen sharing carries the shared audio** (@Etheri, web)
+- `getDisplayMedia` now requests audio, and the captured track goes out tagged
+  with the screen's stream, so it lands on the screen tile at the far end
+  instead of over the top of your voice. Echo cancellation and noise
+  suppression are off for it: screen audio is a clean digital feed and the
+  voice-call processing only chews it up. Browsers that don't offer screen
+  audio (Firefox, Safari) fall back to video and say so.
+- **Not on Android.** libwebrtc's Java API has one audio device module and no
+  way to push a second PCM source into a track, so capturing playback audio
+  needs a custom native `AudioDeviceModule`. Deliberately deferred rather than
+  half-shipped.
+
+**Fixed — video is scaled to fit, not cropped** (@river)
+- Tiles letterbox the whole frame instead of cropping it to the tile. This
+  undoes the crop that arrived with 1.17.0's "fill the window" change. **Fill**
+  is still available as a setting on both web and Android; a *shared screen* is
+  always fitted, whatever the setting says, because cropping the edge off
+  someone's slides makes the share useless.
+
+**Changed — chat and video are one screen** (@river, web)
+- Starting or joining a call now opens it **in a panel above the message list**
+  in the same page, instead of a second browser tab. You can read and type
+  during a call, the panel's bottom edge drags to trade space between the two,
+  and the call is independent of which conversation is open — switching chats
+  leaves it running.
+- The call engine moved out of `call.html` into `cmd/web/static/call-core.js`
+  (+ `call.css`), mountable into any container and addressing its own DOM
+  through element references rather than document ids. `call.html` is now just
+  the lobby around it — 1276 lines down to 168 — so both entry points run the
+  same code instead of a copy each.
+
+**Added**
+- **A logo.** A speech bubble with a twelve-petal bloom inside it, in
+  `assets/` — full lockup (light and dark), icon, bare bloom, and a
+  one-colour version. It's the app's favicon now too.
+
 ## 1.17.1
 
 **Fixed (Android)**

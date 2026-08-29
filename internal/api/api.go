@@ -44,7 +44,9 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/friends/remove", a.auth(a.handleFriendRemove))
 
 	mux.HandleFunc("/api/messages", a.auth(a.handleMessages)) // GET list, POST send text
-	mux.HandleFunc("/api/messages/image", a.auth(a.handleImageMessage))
+	// Any attachment; /image is the pre-1.18 name kept for older clients.
+	mux.HandleFunc("/api/messages/media", a.auth(a.handleMediaMessage))
+	mux.HandleFunc("/api/messages/image", a.auth(a.handleMediaMessage))
 	mux.HandleFunc("/api/read", a.auth(a.handleRead)) // mark a conversation read
 	mux.HandleFunc("/api/messages/edit", a.auth(a.handleEditMessage))
 	mux.HandleFunc("/api/reactions", a.auth(a.handleReaction))
@@ -52,10 +54,13 @@ func (a *API) Routes(mux *http.ServeMux) {
 
 	a.groupRoutes(mux)
 
-	// Serve uploaded media (originals + thumbnails). Images are guarded only by
-	// their unguessable hash filenames, so we must NOT expose a directory
-	// listing — that would let anyone enumerate every uploaded image.
-	mux.Handle("/media/", http.StripPrefix("/media/", noDirList(http.FileServer(http.Dir(a.Media.Dir)))))
+	// Serve uploaded attachments (originals + thumbnails). They are guarded only
+	// by their unguessable hash filenames, so we must NOT expose a directory
+	// listing — that would let anyone enumerate every upload. serveMedia also
+	// pins the Content-Type and forces a download for anything not provably safe
+	// to render inline.
+	mux.Handle("/media/", http.StripPrefix("/media/",
+		a.serveMedia(http.FileServer(http.Dir(a.Media.Dir)))))
 }
 
 // noDirList wraps a file server so requests for a directory (a path ending in

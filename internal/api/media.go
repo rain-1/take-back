@@ -8,8 +8,11 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/image/draw"
 
@@ -20,8 +23,27 @@ import (
 // thumbMax is the longest-edge size (px) of generated thumbnails.
 const thumbMax = 320
 
-// MediaStore saves uploaded images and their thumbnails under Dir. Files are
-// served read-only from /media/ by the API router.
+// MaxUploadBytes caps a single attachment. Images were the only attachment for
+// a long time and 16 MB was plenty; video and audio need considerably more.
+//
+// The ceiling is not ours: takeback sits behind Cloudflare, whose free plan
+// rejects request bodies over 100 MB at the edge — a larger cap here would just
+// turn into an unexplained 413 the app never sees. 95 MB leaves room for the
+// multipart envelope. nginx's client_max_body_size is set to match.
+const MaxUploadBytes = 95 << 20
+
+// Media kinds, as stored on a message and sent to clients. Kind decides how a
+// client renders the attachment: inline picture, <video>, <audio>, or a
+// download chip.
+const (
+	KindImage = "image"
+	KindVideo = "video"
+	KindAudio = "audio"
+	KindFile  = "file"
+)
+
+// MediaStore saves uploaded attachments (and thumbnails for images) under Dir.
+// Files are served read-only from /media/ by the API router.
 type MediaStore struct {
 	Dir string
 }
@@ -36,6 +58,9 @@ func NewMediaStore(dir string) (*MediaStore, error) {
 
 // SaveImage decodes an uploaded image, stores the original (re-encoded to a
 // known format) and a downscaled thumbnail, and returns their filenames.
+//
+// Re-encoding is the point: it guarantees the bytes we serve really are an
+// image we produced, so an "image" attachment can never be a disguised script.
 func (m *MediaStore) SaveImage(r io.Reader) (imageFile, thumbFile string, err error) {
 	img, format, err := image.Decode(r)
 	if err != nil {
@@ -57,6 +82,185 @@ func (m *MediaStore) SaveImage(r io.Reader) (imageFile, thumbFile string, err er
 		return "", "", err
 	}
 	return imageFile, thumbFile, nil
+}
+
+// Upload is a stored attachment: the file to serve, an optional thumbnail
+// (images only), and the metadata a client needs to render it.
+type Upload struct {
+	File  string // storage key, e.g. "9f3c….mp4"
+	Thumb string // storage key of the thumbnail, images only
+	Kind  string // KindImage | KindVideo | KindAudio | KindFile
+	Name  string // original filename, for display and download
+	Size  int64
+}
+
+// SaveUpload stores any attachment. Images take the SaveImage path (re-encoded
+// plus a thumbnail); everything else is stored byte-for-byte under a random
+// name, because we can't re-encode a video or a PDF and shouldn't pretend to.
+//
+// Untrusted bytes served from our own origin are the risk here, so the stored
+// extension is normalised and /media/ serves anything that isn't provably safe
+// as an attachment download (see serveMedia).
+func (m *MediaStore) SaveUpload(r io.Reader, filename string) (Upload, error) {
+	// Buffer enough to attempt an image decode without consuming the reader for
+	// the non-image path. Everything under the cap goes through a temp file so a
+	// large video never has to sit in memory.
+	tmp, err := os.CreateTemp(m.Dir, "up-*")
+	if err != nil {
+		return Upload{}, err
+	}
+	tmpName := tmp.Name()
+	defer func() { tmp.Close(); os.Remove(tmpName) }()
+
+	size, err := io.Copy(tmp, io.LimitReader(r, MaxUploadBytes+1))
+	if err != nil {
+		return Upload{}, err
+	}
+	if size > MaxUploadBytes {
+		return Upload{}, fmt.Errorf("file too large (max %d MB)", MaxUploadBytes>>20)
+	}
+	if size == 0 {
+		return Upload{}, fmt.Errorf("empty file")
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return Upload{}, err
+	}
+
+	name := sanitizeName(filename)
+	kind := kindFor(name)
+
+	// Images keep their existing treatment: decode, re-encode, thumbnail. If the
+	// decode fails the file isn't really an image, so fall through and store it
+	// as an opaque file rather than rejecting the whole upload.
+	if kind == KindImage {
+		if imgFile, thumbFile, err := m.SaveImage(tmp); err == nil {
+			return Upload{File: imgFile, Thumb: thumbFile, Kind: KindImage, Name: name, Size: size}, nil
+		}
+		kind = KindFile
+		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+			return Upload{}, err
+		}
+	}
+
+	out := randHex() + extOf(name)
+	if err := os.Rename(tmpName, filepath.Join(m.Dir, out)); err != nil {
+		// Rename can fail across filesystems; fall back to a copy.
+		dst, cerr := os.Create(filepath.Join(m.Dir, out))
+		if cerr != nil {
+			return Upload{}, cerr
+		}
+		defer dst.Close()
+		if _, cerr := io.Copy(dst, tmp); cerr != nil {
+			return Upload{}, cerr
+		}
+	}
+	return Upload{File: out, Kind: kind, Name: name, Size: size}, nil
+}
+
+// sanitizeName reduces a client-supplied filename to a plain base name. It is
+// only ever used for display and for its extension — never to build a path —
+// but stripping directory parts keeps it honest either way.
+func sanitizeName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "." || name == "/" || name == "" {
+		return "file"
+	}
+	// Control characters and quotes would leak into a Content-Disposition header.
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == '"' {
+			return -1
+		}
+		return r
+	}, name)
+	if len(name) > 120 {
+		name = name[len(name)-120:]
+	}
+	if name == "" {
+		return "file"
+	}
+	return name
+}
+
+// extOf returns the lowercased extension of name (with the dot), restricted to
+// a short alphanumeric run so a crafted name can't produce a weird stored path.
+func extOf(name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	if len(ext) < 2 || len(ext) > 8 {
+		return ".bin"
+	}
+	for _, r := range ext[1:] {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return ".bin"
+		}
+	}
+	return ext
+}
+
+// kindFor classifies an attachment by extension. Kind only drives how a client
+// renders it; the security decision is made independently in serveMedia.
+func kindFor(name string) string {
+	switch extOf(name) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
+		return KindImage
+	case ".mp4", ".m4v", ".webm", ".mov", ".mkv", ".avi":
+		return KindVideo
+	case ".mp3", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wav", ".flac":
+		return KindAudio
+	}
+	return KindFile
+}
+
+// inlineTypes maps the extensions we are willing to serve with a real
+// Content-Type for the browser to render in place. Everything else is served as
+// an opaque download, which is what keeps an uploaded .html or .svg from
+// becoming same-origin script (both can carry <script>, and /media/ shares an
+// origin with the app).
+var inlineTypes = map[string]string{
+	".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+	".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+
+	".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
+	".mov": "video/quicktime", ".mkv": "video/x-matroska",
+
+	".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac",
+	".ogg": "audio/ogg", ".oga": "audio/ogg", ".opus": "audio/ogg",
+	".wav": "audio/wav", ".flac": "audio/flac",
+
+	".pdf": "application/pdf",
+}
+
+// serveMedia wraps the media file server with the headers that make serving
+// user-uploaded bytes from our own origin safe:
+//
+//   - nosniff, so the browser never second-guesses the Content-Type we set;
+//   - an explicit Content-Type from the allow-list above, or
+//     application/octet-stream + Content-Disposition: attachment for anything
+//     else (an uploaded .html/.svg/.js must download, never execute);
+//   - a locked-down CSP as belt and braces for the types we do render inline.
+//
+// Directory listings stay blocked by noDirList underneath: filenames are the
+// only access control.
+func (a *API) serveMedia(fs http.Handler) http.Handler {
+	inner := noDirList(fs)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+
+		ext := strings.ToLower(filepath.Ext(r.URL.Path))
+		if ct, ok := inlineTypes[ext]; ok {
+			h.Set("Content-Type", ct)
+		} else {
+			h.Set("Content-Type", "application/octet-stream")
+			// The stored name is a random hash; give the browser the original
+			// name back so a download lands with something recognisable.
+			name := sanitizeName(r.URL.Query().Get("name"))
+			h.Set("Content-Disposition", mime.FormatMediaType("attachment",
+				map[string]string{"filename": name}))
+		}
+		inner.ServeHTTP(w, r)
+	})
 }
 
 func (m *MediaStore) encode(path string, img image.Image, ext string) error {

@@ -39,9 +39,9 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     private var friend: User? = null
     private var replyingTo: Message? = null
 
-    private val pickImage = registerForActivityResult(
+    private val pickAttachment = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> uri?.let { uploadImage(it) } }
+    ) { uri -> uri?.let { uploadAttachment(it) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,12 +57,13 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             onReply = { startReply(it.id, it.senderNick, it.body) },
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
-            onOpenImage = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+            onOpenAttachment = { openAttachment(it) },
             onEdit = { editMessage(it) },
         )
 
         binding.sendBtn.setOnClickListener { sendText() }
-        binding.imgBtn.setOnClickListener { pickImage.launch("image/*") }
+        // "*/*" so it isn't just photos any more — video, audio, documents, anything.
+        binding.imgBtn.setOnClickListener { pickAttachment.launch("*/*") }
         binding.callBtn.setOnClickListener { startCall() }
         binding.replyCancel.setOnClickListener { cancelReply() }
 
@@ -112,7 +113,8 @@ class ChatActivity : AppCompatActivity(), EventsListener {
                 id = m.id, senderId = m.senderId,
                 senderNick = sender?.nick ?: (if (mine) "you" else friendNick),
                 senderAvatar = sender?.avatarUrl ?: "",
-                body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl, created = m.created,
+                body = m.body, imageUrl = m.imageUrl, thumbUrl = m.thumbUrl,
+                attachment = m.attachment, created = m.created,
                 reactions = m.reactions,
                 replyTo = m.replyTo,
                 replyNick = if (m.replySender == me?.id) (me?.nick ?: "you") else friendNick,
@@ -153,15 +155,42 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         }
     }
 
-    private fun uploadImage(uri: Uri) {
+    /**
+     * Post a picked file — image, video, audio or anything else — to this chat.
+     * The size is checked against the server's cap before reading the bytes, so
+     * a 2 GB video fails immediately instead of after filling memory with it.
+     */
+    private fun uploadAttachment(uri: Uri) {
+        val declared = Attachments.size(this, uri)
+        if (declared > Attachments.MAX_BYTES) {
+            toast("That file is ${Attachments.formatSize(declared)} — the limit is " +
+                  Attachments.formatSize(Attachments.MAX_BYTES) + ".")
+            return
+        }
         lifecycleScope.launch {
             try {
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
-                val name = (uri.lastPathSegment ?: "image").substringAfterLast('/')
-                render(ApiClient.sendImage(friendId, name, bytes, "")); renderer.scrollToBottom()
-            } catch (_: Exception) { /* ignore */ }
+                if (bytes.size > Attachments.MAX_BYTES) { // provider didn't declare a size
+                    toast("That file is too big — the limit is " +
+                          Attachments.formatSize(Attachments.MAX_BYTES) + ".")
+                    return@launch
+                }
+                val name = Attachments.displayName(this@ChatActivity, uri)
+                render(ApiClient.sendAttachment(friendId, name, bytes, "")); renderer.scrollToBottom()
+            } catch (e: Exception) {
+                toast("Couldn't send that file: " + (e.message ?: "upload failed"))
+            }
         }
     }
+
+    /** Hand an attachment's URL to whatever app handles that type. */
+    private fun openAttachment(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            .onFailure { toast("No app on this device can open that.") }
+    }
+
+    private fun toast(msg: String) =
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()
 
     private fun startCall() {
         val code = randomCode()
@@ -179,7 +208,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     // ---- replies ----
 
     private fun startReply(id: Long, nick: String, body: String) {
-        replyingTo = Message(id, 0, 0, body, null, null, 0) // only id is used on send
+        replyingTo = Message(id, 0, 0, body, null, null, created = 0) // only id is used on send
         binding.replyBarText.text = "Replying to $nick: ${body.take(50).ifEmpty { "image" }}"
         binding.replyBar.visibility = View.VISIBLE
     }
