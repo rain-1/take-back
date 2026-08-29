@@ -60,9 +60,10 @@ func (a *API) handleReaction(w http.ResponseWriter, r *http.Request, user *store
 		writeErr(w, http.StatusBadRequest, "scope must be dm or group")
 		return
 	}
-	// A single glyph or short ZWJ sequence; reject anything that's clearly not
-	// an emoji so this can't be used as arbitrary text storage.
-	if body.Emoji == "" || len(body.Emoji) > 32 {
+	// Must actually be an emoji. A byte-length cap used to stand in for this,
+	// which let a reaction carry markup into the web client's DOM — see
+	// validEmoji.
+	if !validEmoji(body.Emoji) {
 		writeErr(w, http.StatusBadRequest, "bad emoji")
 		return
 	}

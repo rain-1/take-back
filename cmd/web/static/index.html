@@ -1504,7 +1504,15 @@ function renderReactions(container, m) {
     const pill = document.createElement("span");
     pill.className = "reaction" + (r.mine ? " mine" : "");
     pill.title = (r.nicks || []).join(", "); // hover to see who reacted
-    pill.innerHTML = `${r.emoji} <span class="rc">${r.count}</span>`;
+    // Built as text nodes, never innerHTML: the emoji is another user's input,
+    // and interpolating it into markup made a reaction a stored-XSS vector.
+    // The server validates it too (api.validEmoji); this is the half that
+    // matters, because it holds even if something reaches the DB unvalidated.
+    pill.append(document.createTextNode(r.emoji + " "));
+    const count = document.createElement("span");
+    count.className = "rc";
+    count.textContent = r.count;
+    pill.append(count);
     pill.onclick = () => toggleReaction(m, r.emoji, !r.mine);
     container.append(pill);
   });

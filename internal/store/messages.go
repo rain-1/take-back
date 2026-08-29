@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -56,7 +57,22 @@ type Message struct {
 }
 
 // AddMessage stores a DM and returns it with its assigned id.
+//
+// A non-zero ReplyTo must name a message in THIS conversation; see
+// replyQuoteDM. Otherwise ErrReplyOutOfScope is returned and nothing is stored.
 func (s *Store) AddMessage(m Message) (Message, error) {
+	// Resolve the quote BEFORE inserting: the reply id is caller-supplied, and
+	// an out-of-scope one must not reach the table at all.
+	var replySender int64
+	var replyBody string
+	if m.ReplyTo != 0 {
+		var err error
+		replySender, replyBody, err = s.replyQuoteDM(m.ReplyTo, m.SenderID, m.RecipientID)
+		if err != nil {
+			return Message{}, err
+		}
+	}
+
 	now := time.Now()
 	res, err := s.db.Exec(
 		`INSERT INTO messages (sender_id, recipient_id, body, image_file, thumb_file,
@@ -73,19 +89,34 @@ func (s *Store) AddMessage(m Message) (Message, error) {
 	// The freshly-inserted row only carries reply_to; the quote's sender and
 	// body live on the *replied-to* message. The GET conversation path fills
 	// these via a JOIN, but the send path returns this struct straight to the
-	// sender AND pushes it to the recipient, so populate the quote here too —
+	// sender AND pushes it to the recipient, so carry the quote here too —
 	// otherwise a just-sent / live-received reply shows an empty quote until reload.
-	if m.ReplyTo != 0 {
-		var sender int64
-		var body string
-		if err := s.db.QueryRow(
-			`SELECT sender_id, body FROM messages WHERE id = ?`, m.ReplyTo,
-		).Scan(&sender, &body); err == nil {
-			m.ReplySender = sender
-			m.ReplyBody = truncate(body, 80)
-		}
-	}
+	m.ReplySender, m.ReplyBody = replySender, replyBody
 	return m, nil
+}
+
+// replyQuoteDM resolves the sender and truncated body of the message being
+// replied to, but ONLY if it belongs to the conversation between a and b.
+//
+// Reply ids are global row ids chosen by the caller. Resolving one without this
+// constraint meant anyone could post a reply carrying any id and read back the
+// sender plus the first 80 characters of a stranger's private message — ids are
+// sequential, so the whole table was walkable. The quote is the payload, so the
+// scope check has to live here rather than at the handler.
+func (s *Store) replyQuoteDM(replyTo, a, b int64) (sender int64, body string, err error) {
+	err = s.db.QueryRow(
+		`SELECT sender_id, body FROM messages
+		  WHERE id = ?
+		    AND ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))`,
+		replyTo, a, b, b, a,
+	).Scan(&sender, &body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", ErrReplyOutOfScope
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	return sender, truncate(body, 80), nil
 }
 
 // Conversation returns messages exchanged between the two users, oldest first.
@@ -103,11 +134,16 @@ func (s *Store) Conversation(meID, otherID int64, beforeID int64, limit int) ([]
 		        m.created_at, m.edited_at, m.reply_to,
 		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
 		   FROM messages m
-		   LEFT JOIN messages rm ON rm.id = m.reply_to
+		   -- The join is scoped to this same conversation, not just rm.id: a
+		   -- reply_to stored before that was enforced must not leak a stranger's
+		   -- message text through the quote.
+		   LEFT JOIN messages rm
+		          ON rm.id = m.reply_to
+		         AND ((rm.sender_id = ? AND rm.recipient_id = ?) OR (rm.sender_id = ? AND rm.recipient_id = ?))
 		  WHERE m.id < ?
 		    AND ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
 		  ORDER BY m.id DESC LIMIT ?`,
-		beforeID, meID, otherID, otherID, meID, limit,
+		meID, otherID, otherID, meID, beforeID, meID, otherID, otherID, meID, limit,
 	)
 	if err != nil {
 		return nil, err

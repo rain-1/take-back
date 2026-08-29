@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -288,6 +289,7 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request, user *sto
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes+multipartOverhead)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad upload")
 		return
@@ -310,6 +312,10 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request, user *sto
 // storeAndFanout persists a group message and pushes it to every other member.
 func (a *API) storeAndFanout(w http.ResponseWriter, m store.GroupMessage, senderID int64) {
 	saved, err := a.Store.AddGroupMessage(m)
+	if errors.Is(err, store.ErrReplyOutOfScope) {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

@@ -35,9 +35,18 @@ const defaultServer = "https://takeback.chain-of-thought.org"
 
 // ---- config ----
 
-// config lives in ~/.config/take-back/cli.json (0600). The password is kept so
-// the CLI can silently re-login when its session expires; it's a personal tool
-// talking to the user's own server.
+// config lives in ~/.config/take-back/cli.json (0600).
+//
+// It holds a session token and NOT the account password. It used to keep the
+// password too, so an expired session could be renewed silently — but that meant
+// a readable config (or a backup of one) handed over a reusable credential that
+// survived revoking the session. The server now slides a session's expiry
+// forward whenever it is used (store.SessionTTL), so a CLI in regular use never
+// expires and has nothing to re-authenticate with; if it does lapse, `tb login`
+// is one command.
+//
+// Password is retained only to clear it: a config written by an older build
+// still has one on disk, and loadConfig strips it on sight.
 type config struct {
 	Server   string `json:"server"`
 	Nick     string `json:"nick,omitempty"`
@@ -61,6 +70,12 @@ func loadConfig() *config {
 	}
 	if c.Server == "" {
 		c.Server = defaultServer
+	}
+	// Scrub a password left by an older build. Rewriting the file here means the
+	// upgrade removes it rather than waiting for the next login.
+	if c.Password != "" {
+		c.Password = ""
+		_ = c.save()
 	}
 	return c
 }
@@ -86,14 +101,14 @@ func newClient(cfg *config) *client {
 
 var errUnauthorized = errors.New("not logged in")
 
-// do performs a request, retrying once after a silent re-login if the session
-// has expired (sessions last 30 days, so this is rare but annoying when it hits).
+// do performs a request. An expired session is reported rather than silently
+// renewed: renewing needed the account password on disk, and the server keeps an
+// in-use session alive on its own, so the only way to get here is to have not run
+// tb for a full TTL.
 func (c *client) do(method, path string, body any, out any) error {
 	err := c.once(method, path, body, out)
-	if errors.Is(err, errUnauthorized) && c.cfg.Password != "" {
-		if lerr := c.login(c.cfg.Nick, c.cfg.Password); lerr == nil {
-			return c.once(method, path, body, out)
-		}
+	if errors.Is(err, errUnauthorized) {
+		return fmt.Errorf("session expired — run: tb login %s", c.cfg.Nick)
 	}
 	return err
 }
@@ -161,7 +176,8 @@ func (c *client) login(nick, password string) error {
 	if c.cfg.Session == "" {
 		return errors.New("no session cookie returned")
 	}
-	c.cfg.Nick, c.cfg.Password = nick, password
+	// Deliberately NOT storing the password — only the session token above.
+	c.cfg.Nick = nick
 	return c.cfg.save()
 }
 

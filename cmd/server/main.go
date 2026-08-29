@@ -150,10 +150,20 @@ func (h *hub) leave(c *client) {
 }
 
 var upgrader = websocket.Upgrader{
-	// This is a LAN/prototype tool; accept any origin so the browser served
-	// from the web app (a different port) can connect.
+	// Signaling carries no ambient credentials — a room is joined by knowing its
+	// code, not by a cookie — so an Origin check would buy nothing here and would
+	// break the Android client and local dev on a different port.
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
+
+// Limits on the public signaling socket. It is reachable without a session, so
+// every input has to be bounded: without a read limit a single client could make
+// the server buffer and decode an arbitrarily large frame.
+const (
+	signalReadLimit = 256 << 10 // an SDP offer with many ICE candidates is ~tens of KB
+	maxRoomLen      = 64
+	maxNickLen      = 64
+)
 
 var idCounter struct {
 	sync.Mutex
@@ -188,8 +198,16 @@ func (h *hub) serveWS(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "missing room", http.StatusBadRequest)
 		return
 	}
+	// Bound the identifiers before they are stored in the room map and echoed to
+	// every other peer: they arrive on an unauthenticated endpoint.
+	if len(roomID) > maxRoomLen {
+		http.Error(w, "room too long", http.StatusBadRequest)
+		return
+	}
 	if nick == "" {
 		nick = "anon"
+	} else if len(nick) > maxNickLen {
+		nick = nick[:maxNickLen]
 	}
 
 	conn, err := upgrader.Upgrade(w, req, nil)
@@ -197,6 +215,9 @@ func (h *hub) serveWS(w http.ResponseWriter, req *http.Request) {
 		log.Printf("upgrade: %v", err)
 		return
 	}
+	// Cap inbound frames. ReadJSON otherwise buffers whatever the peer sends,
+	// which on a public socket is an invitation to exhaust memory.
+	conn.SetReadLimit(signalReadLimit)
 
 	c := &client{
 		id:   nextID(),

@@ -273,3 +273,172 @@ func TestLegacyImageRowReadsBackAsImage(t *testing.T) {
 		t.Fatalf("legacy row kind: got %q, want image", msgs[0].MediaKind)
 	}
 }
+
+// TestReplyQuoteCannotCrossConversations is the regression test for the reply-id
+// leak: reply ids are global row ids chosen by the caller, so a reply carrying
+// someone else's id used to read back that message's sender and first 80
+// characters. Ids are sequential, which made the whole table walkable.
+func TestReplyQuoteCannotCrossConversations(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	bob := mustUser(t, s, "bob")
+	mallory := mustUser(t, s, "mallory")
+
+	// A private message between alice and bob.
+	secret, err := s.AddMessage(Message{
+		SenderID: alice.ID, RecipientID: bob.ID, Body: "the vault code is 4815162342",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mallory replies to it from her own conversation with alice.
+	_, err = s.AddMessage(Message{
+		SenderID: mallory.ID, RecipientID: alice.ID, Body: "hi", ReplyTo: secret.ID,
+	})
+	if !errors.Is(err, ErrReplyOutOfScope) {
+		t.Fatalf("cross-conversation reply: got err %v, want ErrReplyOutOfScope", err)
+	}
+
+	// ...and nothing was stored, so there's no row to leak later either.
+	msgs, err := s.Conversation(mallory.ID, alice.ID, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("rejected reply must not be stored, got %d messages", len(msgs))
+	}
+
+	// A reply INSIDE the conversation still works and still carries its quote.
+	reply, err := s.AddMessage(Message{
+		SenderID: bob.ID, RecipientID: alice.ID, Body: "got it", ReplyTo: secret.ID,
+	})
+	if err != nil {
+		t.Fatalf("in-conversation reply should be allowed: %v", err)
+	}
+	if reply.ReplySender != alice.ID || reply.ReplyBody != "the vault code is 4815162342" {
+		t.Fatalf("legitimate quote not populated: %+v", reply)
+	}
+}
+
+// Even a row written before the scope check existed must not leak through the
+// read path's JOIN, so the fetch is constrained identically.
+func TestConversationJoinIgnoresOutOfScopeReplyRows(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	bob := mustUser(t, s, "bob")
+	mallory := mustUser(t, s, "mallory")
+
+	secret, err := s.AddMessage(Message{
+		SenderID: alice.ID, RecipientID: bob.ID, Body: "the vault code is 4815162342",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Write the row the old code would have allowed, straight past the guard.
+	if _, err := s.db.Exec(
+		`INSERT INTO messages (sender_id, recipient_id, body, created_at, reply_to)
+		 VALUES (?, ?, 'hi', 1, ?)`, mallory.ID, alice.ID, secret.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.Conversation(mallory.ID, alice.ID, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 message, got %d", len(msgs))
+	}
+	if msgs[0].ReplyBody != "" || msgs[0].ReplySender != 0 {
+		t.Fatalf("legacy out-of-scope reply leaked a quote: sender=%d body=%q",
+			msgs[0].ReplySender, msgs[0].ReplyBody)
+	}
+}
+
+func TestGroupReplyQuoteCannotCrossGroups(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	mallory := mustUser(t, s, "mallory")
+
+	private, err := s.CreateGroup(alice.ID, "private")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateGroup(mallory.ID, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := s.AddGroupMessage(GroupMessage{
+		GroupID: private.ID, SenderID: alice.ID, Body: "internal only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.AddGroupMessage(GroupMessage{
+		GroupID: other.ID, SenderID: mallory.ID, Body: "hi", ReplyTo: secret.ID,
+	}); !errors.Is(err, ErrReplyOutOfScope) {
+		t.Fatalf("cross-group reply: got err %v, want ErrReplyOutOfScope", err)
+	}
+
+	// Same group is still fine.
+	ok, err := s.AddGroupMessage(GroupMessage{
+		GroupID: private.ID, SenderID: alice.ID, Body: "re", ReplyTo: secret.ID,
+	})
+	if err != nil {
+		t.Fatalf("in-group reply should be allowed: %v", err)
+	}
+	if ok.ReplyBody != "internal only" {
+		t.Fatalf("legitimate group quote not populated: %+v", ok)
+	}
+}
+
+// TestSessionSlidesOnUse: an actively-used session must stay valid without the
+// client holding the account password to re-authenticate. This is what let the
+// `tb` CLI stop persisting a reusable credential.
+func TestSessionSlidesOnUse(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	token, err := s.NewSession(u.ID, SessionTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Age the session so it is close to expiring, the way a month-old one is.
+	nearly := time.Now().Add(2 * time.Hour).Unix()
+	if _, err := s.db.Exec(`UPDATE sessions SET expires_at = ? WHERE token = ?`, nearly, token); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.UserBySession(token); err != nil {
+		t.Fatalf("a live session should resolve: %v", err)
+	}
+
+	var after int64
+	if err := s.db.QueryRow(`SELECT expires_at FROM sessions WHERE token = ?`, token).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after <= nearly {
+		t.Fatalf("expiry did not slide: was %d, still %d", nearly, after)
+	}
+	if want := time.Now().Add(SessionTTL).Unix(); after < want-60 || after > want+60 {
+		t.Fatalf("expiry %d should be ~a full TTL out (%d)", after, want)
+	}
+}
+
+// An expired session must stay expired — sliding applies to live ones only.
+func TestExpiredSessionIsRejected(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	token, err := s.NewSession(u.ID, SessionTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET expires_at = ? WHERE token = ?`,
+		time.Now().Add(-time.Hour).Unix(), token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UserBySession(token); err == nil {
+		t.Fatal("an expired session must not resolve")
+	}
+}

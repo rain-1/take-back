@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/rain1/take-back/internal/presence"
 	"github.com/rain1/take-back/internal/store"
@@ -19,7 +18,7 @@ import (
 
 const (
 	sessionCookie = "tb_session"
-	sessionTTL    = 30 * 24 * time.Hour
+	sessionTTL    = store.SessionTTL
 )
 
 // API bundles the dependencies the handlers need.
@@ -108,7 +107,7 @@ func (a *API) auth(next func(http.ResponseWriter, *http.Request, *store.User)) h
 	}
 }
 
-func (a *API) setSession(w http.ResponseWriter, userID int64) error {
+func (a *API) setSession(w http.ResponseWriter, r *http.Request, userID int64) error {
 	token, err := a.Store.NewSession(userID, sessionTTL)
 	if err != nil {
 		return err
@@ -118,10 +117,32 @@ func (a *API) setSession(w http.ResponseWriter, userID int64) error {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		// Secure whenever the request arrived over TLS, so this 30-day bearer
+		// token is never sent back in plaintext. Derived per-request rather than
+		// hardcoded because `go run ./cmd/web` on localhost is plain HTTP, and a
+		// cookie marked Secure there would simply never be stored.
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
 	return nil
+}
+
+// isHTTPS reports whether the original client request used TLS.
+//
+// r.TLS is nil in production: nginx and cmd/web both terminate/proxy in front of
+// this process, so the only evidence is the forwarded header they set.
+func isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	// X-Forwarded-Proto may be a list ("https, http") when several proxies are
+	// chained; the first entry is the one the client actually spoke.
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if i := strings.IndexByte(proto, ','); i >= 0 {
+		proto = proto[:i]
+	}
+	return strings.EqualFold(strings.TrimSpace(proto), "https")
 }
 
 // ---- version ----
@@ -167,7 +188,7 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
-	if err := a.setSession(w, user.ID); err != nil {
+	if err := a.setSession(w, r, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "session failed")
 		return
 	}
@@ -187,7 +208,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "wrong nick or password")
 		return
 	}
-	if err := a.setSession(w, user.ID); err != nil {
+	if err := a.setSession(w, r, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "session failed")
 		return
 	}
@@ -198,7 +219,10 @@ func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(sessionCookie); err == nil {
 		_ = a.Store.DeleteSession(cookie.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode,
+	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -213,6 +237,10 @@ func (a *API) handleSetAvatar(w http.ResponseWriter, r *http.Request, user *stor
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	// An avatar is one small image; it has no business being anywhere near the
+	// attachment limit, and this path is reachable by any account (no friendship
+	// required), so give it its own much tighter bound.
+	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarBytes)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad upload")
 		return

@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -179,6 +181,11 @@ func TestSaveUploadClassifiesAndStores(t *testing.T) {
 	if up.Kind != KindFile {
 		t.Fatalf("undecodable .png should be KindFile, got %q", up.Kind)
 	}
+	// ...and must lose the image extension, or /media/ would serve it as
+	// image/png for a viewer's browser to try to render.
+	if filepath.Ext(up.File) != ".bin" {
+		t.Fatalf("undecodable .png stored as %q; want a neutral .bin extension", up.File)
+	}
 }
 
 func TestSaveUploadRejectsEmptyAndOversize(t *testing.T) {
@@ -294,4 +301,54 @@ func TestMediaURLsBackCompat(t *testing.T) {
 	if media, _, _ := mediaURLs("", "", "", ""); media != "" {
 		t.Fatalf("no attachment should yield no url, got %q", media)
 	}
+}
+
+// TestSaveImageRejectsPixelBomb: the byte cap says nothing about decoded size.
+// A highly compressible PNG of a few hundred KB can declare hundreds of
+// megapixels, and image.Decode allocates ~4 bytes per pixel before anything
+// else runs — so the dimensions have to be checked from the header first.
+func TestSaveImageRejectsPixelBomb(t *testing.T) {
+	m, err := NewMediaStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A PNG header declaring 30000x30000 (900 MP) over a tiny body. Decoding it
+	// would try to allocate several gigabytes; we must refuse before that.
+	bomb := pngHeaderOnly(t, 30000, 30000)
+	if _, _, err := m.SaveImage(bytes.NewReader(bomb)); err == nil {
+		t.Fatal("expected a pixel bomb to be rejected")
+	} else if !strings.Contains(err.Error(), "megapixel") {
+		t.Fatalf("want a dimension error, got: %v", err)
+	}
+
+	// Nothing was written for the rejected upload.
+	if ents, _ := os.ReadDir(m.Dir); len(ents) != 0 {
+		t.Fatalf("rejected image left files behind: %v", ents)
+	}
+
+	// An ordinary image still round-trips — the guard must not cost us real photos.
+	if _, _, err := m.SaveImage(bytes.NewReader(makePNG(t, 900, 700))); err != nil {
+		t.Fatalf("a normal image should still be accepted: %v", err)
+	}
+}
+
+// pngHeaderOnly builds a PNG whose IHDR claims the given dimensions. The pixel
+// data is deliberately not a valid full image: the point is that we must reject
+// it from the header, before any decode is attempted.
+func pngHeaderOnly(t *testing.T, w, h uint32) []byte {
+	t.Helper()
+	chunk := func(typ string, data []byte) []byte {
+		out := make([]byte, 0, len(data)+12)
+		out = binary.BigEndian.AppendUint32(out, uint32(len(data)))
+		body := append([]byte(typ), data...)
+		out = append(out, body...)
+		return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(body))
+	}
+	ihdr := make([]byte, 0, 13)
+	ihdr = binary.BigEndian.AppendUint32(ihdr, w)
+	ihdr = binary.BigEndian.AppendUint32(ihdr, h)
+	ihdr = append(ihdr, 8, 2, 0, 0, 0) // 8-bit truecolour
+	out := append([]byte("\x89PNG\r\n\x1a\n"), chunk("IHDR", ihdr)...)
+	return append(out, chunk("IDAT", []byte{0x78, 0x9c, 0x00})...)
 }

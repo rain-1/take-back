@@ -6,6 +6,8 @@ package presence
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,14 +32,14 @@ type FriendLookup func(userID int64) ([]int64, error)
 
 // Event is a message pushed to a client's events socket.
 type Event struct {
-	Type      string `json:"type"` // "presence" | "message" | "hello" | "friend_request" | "group_invite"
-	UserID    int64  `json:"userId,omitempty"`
-	Nick      string `json:"nick,omitempty"` // actor's nick (e.g. friend requester, inviter)
-	GroupID   int64  `json:"groupId,omitempty"`
-	GroupName string `json:"groupName,omitempty"`
-	Online  bool            `json:"online,omitempty"`
-	Online0 []int64         `json:"onlineFriends,omitempty"` // sent once on connect
-	Message json.RawMessage `json:"message,omitempty"`
+	Type      string          `json:"type"` // "presence" | "message" | "hello" | "friend_request" | "group_invite"
+	UserID    int64           `json:"userId,omitempty"`
+	Nick      string          `json:"nick,omitempty"` // actor's nick (e.g. friend requester, inviter)
+	GroupID   int64           `json:"groupId,omitempty"`
+	GroupName string          `json:"groupName,omitempty"`
+	Online    bool            `json:"online,omitempty"`
+	Online0   []int64         `json:"onlineFriends,omitempty"` // sent once on connect
+	Message   json.RawMessage `json:"message,omitempty"`
 }
 
 // conn is one open events socket for a user (a user may have several).
@@ -145,7 +147,39 @@ func (h *Hub) NotifyUser(userID int64, ev Event) {
 	h.sendTo(userID, ev)
 }
 
-var upgrader = websocket.Upgrader{CheckOrigin: func(_ *http.Request) bool { return true }}
+// eventsReadLimit caps inbound frames on the events socket. Clients only ever
+// send pong control frames on it, so anything sizeable is either a bug or an
+// attempt to make the server buffer on our behalf.
+const eventsReadLimit = 4 << 10
+
+var upgrader = websocket.Upgrader{CheckOrigin: sameOriginOrNoOrigin}
+
+// sameOriginOrNoOrigin decides which handshakes may open the events stream.
+//
+// This socket is authenticated by the ambient session cookie, so accepting every
+// Origin (which is what it used to do) meant any page the victim visited that
+// could get the browser to attach that cookie — a sibling subdomain, which is
+// same-site for SameSite=Lax — could open the stream and read their private
+// messages, invitations and presence live. WebSockets aren't covered by CORS, so
+// the Origin check is the only thing standing there.
+//
+// Requests with no Origin header at all are allowed: those are non-browser
+// clients (the `tb` CLI, the Android app), which aren't subject to the ambient
+// cookie problem because nothing else is driving them.
+func sameOriginOrNoOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // not a browser
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	// Compare hosts, not full URLs: the page is served from the same host as the
+	// API (cmd/web proxies /api), and the scheme differs between local dev
+	// (http) and production (https).
+	return strings.EqualFold(u.Host, r.Host)
+}
 
 // Serve upgrades an already-authenticated request to the events WebSocket for
 // userID. It marks the user online for the socket's lifetime and streams events
@@ -155,6 +189,7 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, userID int64) {
 	if err != nil {
 		return
 	}
+	ws.SetReadLimit(eventsReadLimit)
 	c := &conn{ws: ws, send: make(chan Event, 32)}
 
 	if h.add(userID, c) {

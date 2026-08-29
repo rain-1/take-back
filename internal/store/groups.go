@@ -282,7 +282,21 @@ func (s *Store) RemoveMember(groupID, userID int64) error {
 }
 
 // AddGroupMessage stores a message posted to a group.
+//
+// A non-zero ReplyTo must name a message in THIS group; otherwise
+// ErrReplyOutOfScope is returned and nothing is stored. See replyQuoteDM for
+// why the scope check belongs here.
 func (s *Store) AddGroupMessage(m GroupMessage) (GroupMessage, error) {
+	var replySender int64
+	var replyBody string
+	if m.ReplyTo != 0 {
+		var err error
+		replySender, replyBody, err = s.replyQuoteGroup(m.ReplyTo, m.GroupID)
+		if err != nil {
+			return GroupMessage{}, err
+		}
+	}
+
 	now := time.Now()
 	res, err := s.db.Exec(
 		`INSERT INTO group_messages (group_id, sender_id, body, image_file, thumb_file,
@@ -296,20 +310,26 @@ func (s *Store) AddGroupMessage(m GroupMessage) (GroupMessage, error) {
 	}
 	m.ID, _ = res.LastInsertId()
 	m.Created = now
-	// Populate the reply quote (sender + truncated body of the replied-to
-	// message) so a just-sent / live-fanned-out reply carries its quote, exactly
-	// like the JOIN in GroupConversation does for the GET path.
-	if m.ReplyTo != 0 {
-		var sender int64
-		var body string
-		if err := s.db.QueryRow(
-			`SELECT sender_id, body FROM group_messages WHERE id = ?`, m.ReplyTo,
-		).Scan(&sender, &body); err == nil {
-			m.ReplySender = sender
-			m.ReplyBody = truncate(body, 80)
-		}
-	}
+	// Carry the reply quote (sender + truncated body of the replied-to message)
+	// so a just-sent / live-fanned-out reply shows it, exactly like the JOIN in
+	// GroupConversation does for the GET path.
+	m.ReplySender, m.ReplyBody = replySender, replyBody
 	return m, nil
+}
+
+// replyQuoteGroup resolves a reply quote, but only within the same group.
+func (s *Store) replyQuoteGroup(replyTo, groupID int64) (sender int64, body string, err error) {
+	err = s.db.QueryRow(
+		`SELECT sender_id, body FROM group_messages WHERE id = ? AND group_id = ?`,
+		replyTo, groupID,
+	).Scan(&sender, &body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", ErrReplyOutOfScope
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	return sender, truncate(body, 80), nil
 }
 
 // GroupConversation returns a page of a group's messages, oldest first.
@@ -326,7 +346,9 @@ func (s *Store) GroupConversation(groupID, beforeID int64, limit int) ([]GroupMe
 		        m.created_at, m.edited_at, m.reply_to,
 		        COALESCE(rm.sender_id, 0), COALESCE(rm.body, '')
 		   FROM group_messages m
-		   LEFT JOIN group_messages rm ON rm.id = m.reply_to
+		   -- Scoped to this group, not just rm.id: a reply_to stored before that
+		   -- was enforced must not leak another group's message text.
+		   LEFT JOIN group_messages rm ON rm.id = m.reply_to AND rm.group_id = m.group_id
 		  WHERE m.group_id = ? AND m.id < ?
 		  ORDER BY m.id DESC LIMIT ?`, groupID, beforeID, limit,
 	)

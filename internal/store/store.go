@@ -20,6 +20,10 @@ var (
 	ErrNotFriends    = errors.New("not friends")
 	ErrSelfFriend    = errors.New("cannot friend yourself")
 	ErrAlreadyFriend = errors.New("already friends or request pending")
+	// ErrReplyOutOfScope: the message being replied to isn't in the conversation
+	// the reply is being posted to. Rejected rather than silently un-quoted, so
+	// a client bug surfaces instead of an id probe passing quietly.
+	ErrReplyOutOfScope = errors.New("reply target is not in this conversation")
 )
 
 // User is a registered account. PassHash is never serialized to clients.
@@ -170,6 +174,15 @@ func (s *Store) SetAvatar(userID int64, file string) error {
 
 // ---- Sessions ----
 
+// SessionTTL is how long a session stays valid after it was last used.
+// UserBySession slides the expiry forward on use, so an actively-used client
+// never has to re-authenticate.
+const SessionTTL = 30 * 24 * time.Hour
+
+// sessionSlideAfter is how much drift is tolerated before the expiry is
+// rewritten, so an active client doesn't cause a write on every request.
+const sessionSlideAfter = time.Hour
+
 // NewSession mints a random session token for userID valid for ttl.
 func (s *Store) NewSession(userID int64, ttl time.Duration) (string, error) {
 	buf := make([]byte, 32)
@@ -184,16 +197,44 @@ func (s *Store) NewSession(userID int64, ttl time.Duration) (string, error) {
 	return token, err
 }
 
-// UserBySession resolves a session token to its (unexpired) user.
+// UserBySession resolves a session token to its (unexpired) user, and slides the
+// session's expiry forward as a side effect.
+//
+// Sliding matters for more than convenience: without it a long-lived client had
+// to keep the account password around to silently re-authenticate every time the
+// 30-day window lapsed (which is exactly what the `tb` CLI used to do). A
+// session that stays valid while it is actually being used means the only
+// credential a client needs to persist is the revocable token itself.
+//
+// The write is skipped unless the expiry has drifted by more than
+// sessionSlideAfter, so a chatty client doesn't turn every request into an UPDATE.
 func (s *Store) UserBySession(token string) (*User, error) {
+	now := time.Now()
+	var expires int64
 	row := s.db.QueryRow(
-		`SELECT u.id, u.nick, u.pass_hash, u.created_at, u.avatar_file
+		`SELECT u.id, u.nick, u.pass_hash, u.created_at, u.avatar_file, s.expires_at
 		   FROM sessions s JOIN users u ON u.id = s.user_id
 		  WHERE s.token = ? AND s.expires_at > ?`,
-		token, time.Now().Unix(),
+		token, now.Unix(),
 	)
-	u, _, err := scanUserWithHash(row)
-	return u, err
+
+	var u User
+	var hash, avatar string
+	var created int64
+	if err := row.Scan(&u.ID, &u.Nick, &hash, &created, &avatar, &expires); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoSuchUser
+		}
+		return nil, err
+	}
+	u.Created = time.Unix(created, 0)
+	u.AvatarURL = avatarURL(avatar)
+
+	full := now.Add(SessionTTL).Unix()
+	if full-expires > int64(sessionSlideAfter.Seconds()) {
+		_, _ = s.db.Exec(`UPDATE sessions SET expires_at = ? WHERE token = ?`, full, token)
+	}
+	return &u, nil
 }
 
 // DeleteSession logs a session out.

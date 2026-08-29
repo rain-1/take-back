@@ -102,6 +102,12 @@ func (a *API) handleMessages(w http.ResponseWriter, r *http.Request, user *store
 			writeErr(w, http.StatusBadRequest, "empty message")
 			return
 		}
+		// The GET and attachment paths have always required an accepted
+		// friendship; this one didn't, so any account could message — and push a
+		// live notification to — any user id it cared to guess.
+		if !a.requireFriend(w, user.ID, body.With) {
+			return
+		}
 		a.storeAndPush(w, store.Message{
 			SenderID: user.ID, RecipientID: body.With, Body: body.Body, ReplyTo: body.ReplyTo,
 		})
@@ -123,8 +129,12 @@ func (a *API) handleMediaMessage(w http.ResponseWriter, r *http.Request, user *s
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
-	// Keep only a modest slice in memory; ParseMultipartForm spills the rest to
-	// disk, which is what makes a 100 MB video upload survivable.
+	// Bound the whole body before parsing: ParseMultipartForm spools past its
+	// in-memory budget to disk, so without this an oversized request is written
+	// out in full before anything gets to reject it.
+	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes+multipartOverhead)
+	// Keep only a modest slice in memory; the rest spills to disk, which is what
+	// makes a large video upload survivable.
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad upload")
 		return
@@ -173,6 +183,12 @@ func (a *API) readUpload(w http.ResponseWriter, r *http.Request) (Upload, bool) 
 // and returns the stored view.
 func (a *API) storeAndPush(w http.ResponseWriter, m store.Message) {
 	saved, err := a.Store.AddMessage(m)
+	if errors.Is(err, store.ErrReplyOutOfScope) {
+		// A caller-supplied reply id pointing outside this conversation: a bad
+		// request, not a server fault, and never a stored message.
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

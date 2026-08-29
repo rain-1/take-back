@@ -24,6 +24,71 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.18.1
+
+Security fixes from an external review of the whole repository. Nothing here was
+known to have been exploited; two of the nine were serious enough to fix
+immediately.
+
+**Fixed — stored XSS through reaction emoji** (high)
+- A reaction was validated only as `len(emoji) <= 32`, and the web client
+  interpolated it into `innerHTML`. `<img src=x onerror=...>` is 30 bytes, so
+  anyone who could react to a shared message could run script in every web
+  participant's session. Fixed at both ends: the client builds text nodes, and
+  the server now requires the value to actually be an emoji (a character-class
+  check, so any real emoji still works — the phone keyboards send thousands).
+
+**Fixed — reply ids leaked text from other conversations** (high)
+- `replyTo` is a caller-supplied global row id and was resolved without checking
+  it belonged to the conversation being posted to, so a reply carrying any id
+  echoed back that message's sender and first 80 characters. Ids are sequential,
+  which made the whole message table walkable. Reply targets are now scoped to
+  the DM pair (or the group) at write time and rejected otherwise, and the
+  read-path JOIN is constrained identically so rows written before the check
+  can't leak either.
+
+**Fixed — image uploads could exhaust memory** (medium)
+- The byte cap said nothing about decoded size: a 62-byte PNG can declare
+  30000x30000 and `image.Decode` allocates ~4 bytes per pixel before anything
+  else runs. Dimensions are now read from the header first and capped at 50 MP.
+  `MaxBytesReader` bounds the request body before multipart parsing, and avatars
+  (reachable without a friendship) get their own 12 MB limit. A file that claims
+  an image extension but won't decode is stored with a neutral one, so it can't
+  be served back as an inline image for a *viewer's* browser to choke on.
+
+**Fixed — events WebSocket accepted any Origin** (medium)
+- `/api/events` is authenticated by the ambient session cookie and accepted every
+  cross-origin handshake, so a page on a same-site sibling origin could open a
+  victim's private event stream and read their messages live. WebSockets aren't
+  covered by CORS, so this check is the only guard. Browser handshakes now
+  require a matching host; requests with no `Origin` (the CLI, the Android app)
+  are still allowed.
+
+**Fixed — session cookie lacked Secure** (medium)
+- The 30-day token is now marked `Secure` whenever the request arrived over TLS,
+  derived per-request from `X-Forwarded-Proto` so local HTTP development still
+  works.
+
+**Fixed — unbounded frames on the public signaling socket** (medium)
+- `/ws` needs no session, and `ReadJSON` would buffer whatever it was sent. Added
+  a 256 KB read limit and bounds on the room and nick parameters.
+
+**Fixed — text DMs skipped the friends-only check** (low)
+- `POST /api/messages` stored and pushed to any user id, while the GET and
+  attachment paths on the same resource required an accepted friendship.
+
+**Fixed — the `tb` CLI stored the account password** (low)
+- It kept the password so it could silently re-authenticate when a session
+  lapsed, which meant a readable config handed over a credential that survived
+  revoking the session. Sessions now slide their expiry forward on use, so a CLI
+  in regular use never expires and only needs the revocable token; an existing
+  config has its password stripped on next run.
+
+**Fixed — Gradle wrapper had no pinned checksum** (low)
+- Android builds downloaded and executed Gradle 8.7 with HTTPS authenticating the
+  host but nothing authenticating the bytes. `distributionSha256Sum` is now
+  pinned, verified against a fresh download.
+
 ## 1.18.0
 
 Clears the four requests standing in **#bugrep & featurereq**.

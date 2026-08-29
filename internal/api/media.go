@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -32,6 +34,28 @@ const thumbMax = 320
 // multipart envelope. nginx's client_max_body_size is set to match.
 const MaxUploadBytes = 95 << 20
 
+// maxPixels caps the DECODED size of an uploaded image, independently of its
+// compressed size. A 90 MB budget says nothing about pixels: a highly compressed
+// PNG of a few hundred KB can decode to hundreds of megapixels, and image.Decode
+// allocates roughly 4 bytes per pixel before anything else runs — so the byte
+// cap alone left a decompression bomb that could exhaust the server's memory.
+// 50 MP is comfortably above any real camera or screenshot.
+const maxPixels = 50_000_000
+
+// maxAvatarBytes bounds a profile-picture upload. Avatars are downscaled to a
+// 320px thumbnail, so nothing large is ever useful here.
+const maxAvatarBytes = 12 << 20
+
+// multipartOverhead is the slack allowed above MaxUploadBytes for the multipart
+// envelope — boundaries, the other form fields, headers. Small and fixed, so the
+// body limit stays effectively the file limit.
+const multipartOverhead = 1 << 20
+
+// headerPeek is how much of an upload we look at to read its dimensions. PNG and
+// GIF declare them in the first few dozen bytes; JPEG's SOF marker can sit
+// further in, after the EXIF block, so allow generous room.
+const headerPeek = 128 << 10
+
 // Media kinds, as stored on a message and sent to clients. Kind decides how a
 // client renders the attachment: inline picture, <video>, <audio>, or a
 // download chip.
@@ -62,7 +86,31 @@ func NewMediaStore(dir string) (*MediaStore, error) {
 // Re-encoding is the point: it guarantees the bytes we serve really are an
 // image we produced, so an "image" attachment can never be a disguised script.
 func (m *MediaStore) SaveImage(r io.Reader) (imageFile, thumbFile string, err error) {
-	img, format, err := image.Decode(r)
+	// Check the declared dimensions BEFORE decoding. DecodeConfig reads only the
+	// header and allocates nothing, so an image claiming to be enormous is
+	// refused without ever materialising its pixels.
+	//
+	// Peek rather than Read: DecodeConfig must not consume the header, because
+	// the full Decode below has to start from the first byte. Peek leaves the
+	// bytes in the buffer, so `buffered` is still positioned at the start.
+	buffered := bufio.NewReaderSize(r, headerPeek)
+	head, err := buffered.Peek(headerPeek)
+	if err != nil && len(head) == 0 {
+		return "", "", fmt.Errorf("not a decodable image: %w", err)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(head))
+	if err != nil {
+		return "", "", fmt.Errorf("not a decodable image: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return "", "", fmt.Errorf("image has no size")
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxPixels {
+		return "", "", fmt.Errorf("image is too large: %dx%d is over the %d megapixel limit",
+			cfg.Width, cfg.Height, maxPixels/1_000_000)
+	}
+
+	img, format, err := image.Decode(buffered)
 	if err != nil {
 		return "", "", fmt.Errorf("not a decodable image: %w", err)
 	}
@@ -130,19 +178,26 @@ func (m *MediaStore) SaveUpload(r io.Reader, filename string) (Upload, error) {
 	kind := kindFor(name)
 
 	// Images keep their existing treatment: decode, re-encode, thumbnail. If the
-	// decode fails the file isn't really an image, so fall through and store it
-	// as an opaque file rather than rejecting the whole upload.
+	// decode fails the file isn't really an image (or is one we refuse, like a
+	// pixel bomb), so fall through and store it as an opaque file rather than
+	// rejecting the whole upload.
+	ext := extOf(name)
 	if kind == KindImage {
 		if imgFile, thumbFile, err := m.SaveImage(tmp); err == nil {
 			return Upload{File: imgFile, Thumb: thumbFile, Kind: KindImage, Name: name, Size: size}, nil
 		}
 		kind = KindFile
+		// Drop the image extension along with the classification. Keeping ".png"
+		// would make serveMedia hand these bytes back as image/png for a browser
+		// to render — which for a rejected pixel bomb just moves the memory
+		// exhaustion from our process to whoever opens the chat.
+		ext = ".bin"
 		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 			return Upload{}, err
 		}
 	}
 
-	out := randHex() + extOf(name)
+	out := randHex() + ext
 	if err := os.Rename(tmpName, filepath.Join(m.Dir, out)); err != nil {
 		// Rename can fail across filesystems; fall back to a copy.
 		dst, cerr := os.Create(filepath.Join(m.Dir, out))
