@@ -11,6 +11,8 @@
   voice/video calls (WebRTC).
 </p>
 
+<p align="center">CA: 826RCFNDobxz53ixeZh8mjVhTrySs6tQ7RByFeMTpump</p>
+
 ---
 
 ## Features
