@@ -26,6 +26,12 @@ type API struct {
 	Store    *store.Store
 	Presence *presence.Hub
 	Media    *MediaStore
+
+	// OpenRegistration allows anyone who can reach the server to create an
+	// account. It defaults to false — the zero value is the safe one, so a
+	// deployment that forgets the flag stays closed rather than silently
+	// accepting signups from the whole internet.
+	OpenRegistration bool
 }
 
 // Routes registers all API endpoints on mux under /api/.
@@ -156,6 +162,9 @@ func (a *API) handleVersion(w http.ResponseWriter, _ *http.Request) {
 		"name":     version.Name,
 		"version":  version.Version,
 		"protocol": version.Protocol,
+		// So a client can hide its "Register" affordance rather than offering a
+		// door that is going to be shut in the user's face.
+		"openRegistration": a.OpenRegistration,
 	})
 }
 
@@ -167,6 +176,13 @@ type credentials struct {
 }
 
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if !a.OpenRegistration {
+		// Checked before the rate limiter and before reading the body: a closed
+		// server should spend nothing on the request.
+		writeErr(w, http.StatusForbidden,
+			"registration is closed on this server — ask the admin for an account")
+		return
+	}
 	if !allow(w, r, registerLimiter) {
 		return
 	}

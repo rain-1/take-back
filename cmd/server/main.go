@@ -313,6 +313,8 @@ func main() {
 	dbPath := flag.String("db", "takeback.db", "SQLite database path")
 	mediaDir := flag.String("media", "media", "directory for uploaded images")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	openReg := flag.Bool("open-registration", false,
+		"allow anyone to create an account via POST /api/register (default: closed)")
 	flag.Parse()
 
 	if *showVersion {
@@ -335,7 +337,7 @@ func main() {
 	// Presence hub is told who each user's friends are so it can route events.
 	pres := presence.NewHub(db.AcceptedFriendIDs)
 
-	restAPI := &api.API{Store: db, Presence: pres, Media: media}
+	restAPI := &api.API{Store: db, Presence: pres, Media: media, OpenRegistration: *openReg}
 
 	// WebRTC signaling hub (unchanged).
 	h := newHub()
@@ -347,6 +349,11 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
+	if *openReg {
+		log.Printf("registration is OPEN — anyone who can reach this server can create an account")
+	} else {
+		log.Printf("registration is CLOSED (start with -open-registration to allow signups)")
+	}
 	log.Printf("take-back server %s (protocol %d) listening on %s (db=%s, media=%s)",
 		version.Version, version.Protocol, *addr, *dbPath, *mediaDir)
 	if err := http.ListenAndServe(*addr, mux); err != nil {

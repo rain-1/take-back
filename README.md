@@ -124,7 +124,9 @@ inside it), `call.html` (the standalone call lobby), and `call-core.js` +
 
 ```sh
 # terminal 1 — backend (API + signaling), default :8081
-go run ./cmd/server                 # -db takeback.db -media media
+# -open-registration lets you create accounts; it is OFF by default so a real
+# deployment can't accidentally accept signups from the whole internet.
+go run ./cmd/server -open-registration   # -db takeback.db -media media
 
 # terminal 2 — web client + proxy, default :8080
 go run ./cmd/web                    # -backend http://localhost:8081
@@ -133,9 +135,15 @@ go run ./cmd/web                    # -backend http://localhost:8081
 Open http://localhost:8080, register two accounts (two browsers/profiles), add
 each other as friends, and chat or call.
 
+**Registration is closed by default.** `POST /api/register` returns 403 unless
+the server was started with `-open-registration`, and `GET /api/version` reports
+`openRegistration` so the clients hide the Register link rather than offering a
+door that is shut. To add someone to a running deployment, restart with the flag,
+have them sign up, and restart without it.
+
 ### Flags
 
-- `server -addr :8081 -db takeback.db -media media`
+- `server -addr :8081 -db takeback.db -media media [-open-registration]`
 - `web -addr :8080 -backend http://localhost:8081`
 
 ## NAT traversal notes

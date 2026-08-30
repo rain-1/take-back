@@ -24,6 +24,20 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.19.1
+
+**Changed — registration is closed by default**
+- `POST /api/register` returns 403 unless the server is started with
+  `-open-registration`. The flag defaults to **off**, so the zero value is the
+  safe one: a deployment that forgets it stays closed rather than silently
+  accepting signups from the whole internet.
+- `GET /api/version` now reports `openRegistration`, and the web client uses it
+  to replace the "No account? Register" link with "Registration is closed — ask
+  the admin for an account", rather than offering a door that is shut.
+- The server logs which mode it started in.
+- To add someone to a running deployment: restart with `-open-registration`, have
+  them sign up, restart without it.
+
 ## 1.19.0
 
 Six requests from #bugrep & featurereq.

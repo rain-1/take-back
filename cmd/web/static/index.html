@@ -653,6 +653,20 @@ const groupMembers = new Map(); // userId -> { nick, online } for the open group
 let groupInvites = [];          // pending invites awaiting my answer
 
 // ---------- Auth ----------
+// When the server has registration closed, don't offer a Register link that is
+// only going to be refused — say so instead. `undefined` means an older server
+// that predates the flag, and those were all open, so leave the link alone.
+function applyRegistrationPolicy(open) {
+  if (open !== false) return;
+  registerMode = false;
+  $("authTitle").textContent = "Log in to take-back";
+  $("authBtn").textContent = "Log in";
+  const toggle = $("authToggle");
+  toggle.onclick = null;
+  toggle.textContent = "Registration is closed — ask the admin for an account.";
+  toggle.style.cursor = "default";
+}
+
 let registerMode = false;
 $("authToggle").onclick = () => {
   registerMode = !registerMode;
@@ -904,6 +918,7 @@ async function checkVersion() {
       $("staleWarn").classList.remove("hidden");
       $("staleWarn").onclick = () => location.reload(true);
     }
+    applyRegistrationPolicy(v.openRegistration);
   } catch { /* offline; ignore */ }
 }
 
