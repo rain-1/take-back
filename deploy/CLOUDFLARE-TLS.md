@@ -74,3 +74,30 @@ rotate: create a new one, copy both files to `/etc/ssl/takeback/`, fix perms
 The ranges in `deploy/nginx-takeback.conf` are hardcoded from
 <https://www.cloudflare.com/ips>. They change rarely; if Cloudflare updates
 them, refresh the `allow` lines, `nginx -t`, and reload.
+
+## The origin allowlist and the realip module (2026-08-31)
+
+The take-back vhost enforces "only Cloudflare may reach this origin". It used to
+do that with `allow <CF range>; deny all;`, and carried a comment warning against
+enabling nginx's realip module, because allow/deny tests `$remote_addr` and
+realip rewrites that to the end user.
+
+realip was later added globally in `conf.d/cloudflare-realip.conf`, so a
+neighbouring site on the same box could rate-limit per real client IP. That took
+take-back down: every visitor's own address was being tested against Cloudflare's
+ranges, and all of them failed.
+
+Both now coexist. `deploy/nginx-cloudflare-peer.conf` (installed as
+`conf.d/takeback-cf-peer.conf`) maps `$realip_remote_addr` — the original TCP
+peer, which realip preserves after rewriting `$remote_addr` — to `$cf_peer`, and
+the vhost returns 403 when it is 0.
+
+`$realip_remote_addr` is empty when realip did not rewrite, i.e. a direct
+connection from a non-Cloudflare address, and `geo` maps that to the default, so
+the origin still fails closed. Verified: through Cloudflare 200; straight to the
+origin IP over http, over https, and with a forged `CF-Connecting-IP` header, all
+403.
+
+**If you put another site behind Cloudflare on this box, use this pattern.** An
+`allow`/`deny` origin lock and the realip module cannot both key off
+`$remote_addr` — the second one to arrive silently breaks the first.
