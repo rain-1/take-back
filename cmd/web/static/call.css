@@ -44,6 +44,11 @@
 .tbc-warn { background: rgba(248,113,113,.13); color: #f87171; }
 .tbc-status { font-size: .78rem; color: var(--tbc-dim); }
 .tbc-hidden { display: none !important; }
+.tbc-notice {
+  flex: none; font-size: .8rem; line-height: 1.4; color: #fcd34d;
+  background: rgba(252,211,77,.08); border: 1px solid rgba(252,211,77,.25);
+  border-radius: 10px; padding: .45rem .7rem;
+}
 
 /* ---- video grid ----
    flex:1 + min-height:0 means the grid takes exactly the space its container

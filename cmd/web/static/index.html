@@ -1877,6 +1877,9 @@ function joinCall(code) {
       $("callPane").classList.add("hidden");
       $("callBtn").textContent = "📹 Video call";
     },
+    // e.g. joined without the camera because another app has it. The call
+    // panel keeps the message too; the toast makes sure it's noticed.
+    onWarning: (msg) => toast(msg, 9000),
   });
 }
 
@@ -2050,12 +2053,13 @@ function connectEvents() {
 
 // ---------- Helpers ----------
 let toastTimer = null;
-function toast(msg) {
+// ms defaults to a glance; pass longer for something the reader has to act on.
+function toast(msg, ms = 2600) {
   const t = $("toast");
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+  toastTimer = setTimeout(() => t.classList.remove("show"), ms);
 }
 
 function mkBtn(label, cls, onclick) {

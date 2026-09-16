@@ -66,6 +66,9 @@ window.TBCall = (function () {
       room: (opts.room || "").toUpperCase(),
       onLeave: opts.onLeave || function () {},
       onStatus: opts.onStatus || function () {},
+      // Something the user should know but that doesn't end the call (e.g. we
+      // joined without their camera). The host decides how to show it.
+      onWarning: opts.onWarning || function () {},
       // Whether to show the call code + Copy. A call launched from a chat is
       // identified by the conversation, not by a code you read out loud.
       showCode: opts.showCode !== false,
@@ -163,11 +166,14 @@ window.TBCall = (function () {
       document.createTextNode("Only changes your own preview — peers always see you un-mirrored."));
     row("Mirror my video", mirrorNote);
 
+    // Things you need to act on (e.g. joined without your camera). Unlike the
+    // status line below the grid, connection chatter never overwrites it.
+    u.notice = el("div", "tbc-notice tbc-hidden");
     u.grid = el("div", "tbc-grid");
     u.log = el("p", "tbc-status");
     u.log.style.margin = "0";
 
-    root.append(bar, panel, u.grid, u.log);
+    root.append(bar, u.notice, panel, u.grid, u.log);
     u.root = root;
     u.panel = panel;
     S.ui = u;
@@ -188,32 +194,90 @@ window.TBCall = (function () {
   // ---- starting and leaving ------------------------------------------------
 
   async function start() {
-    try {
-      // First try to REQUIRE the saved devices (deviceId: {exact}). Firefox
-      // silently ignores `ideal` device hints and grabs its own default mic, so
-      // an {ideal} constraint meant the saved microphone was never actually used
-      // there — exact makes the chosen device stick on both Firefox and Chrome.
-      S.cameraStream = await navigator.mediaDevices.getUserMedia(gumConstraints(true));
-    } catch (err) {
-      // A saved device can be gone (unplugged, or a permission/enumeration
-      // quirk), in which case `exact` rejects. Retry once PREFERRING the saved
-      // devices so the call still starts on whatever is available.
+    // Joining must not depend on having a working camera AND microphone.
+    //
+    // This used to try camera+mic twice and, if both failed, close the call —
+    // silently, since the error went into the panel that was being removed. On
+    // Windows a webcam is often held exclusively by another app (Discord, OBS,
+    // Teams), so "another app has my camera" meant "I can't join calls at all".
+    // Now we step down: camera+mic, then mic only, then camera only, then join
+    // with nothing — you can still see and hear everyone, and screen-share —
+    // and say which device was unavailable and why.
+    const want = gumConstraints(true), prefer = gumConstraints(false);
+    const attempts = [
+      // First REQUIRE the saved devices (deviceId: {exact}): Firefox silently
+      // ignores `ideal` device hints and grabs its own default mic.
+      { constraints: want, missing: "" },
+      // A saved device can be gone (unplugged, or an enumeration quirk), in
+      // which case `exact` rejects; retry merely PREFERRING it.
+      { constraints: prefer, missing: "" },
+      { constraints: { audio: prefer.audio, video: false }, missing: "camera" },
+      { constraints: { audio: false, video: prefer.video }, missing: "microphone" },
+    ];
+    let firstError = null;
+    let missing = "camera and microphone";
+    for (const a of attempts) {
       try {
-        S.cameraStream = await navigator.mediaDevices.getUserMedia(gumConstraints(false));
-      } catch (err2) {
-        log("Could not access camera/microphone: " + err2.message);
-        const failed = S;
-        unmount();
-        S = null;
-        failed.onLeave({ error: err2 });
-        return false;
+        S.cameraStream = await navigator.mediaDevices.getUserMedia(a.constraints);
+        missing = a.missing;
+        break;
+      } catch (err) {
+        if (!firstError) firstError = err; // the full request says most about why
       }
+      if (!S) return false; // left while we were waiting on the browser
     }
+    if (!S.cameraStream) S.cameraStream = new MediaStream(); // watch and listen only
+
+    S.micOn = S.cameraStream.getAudioTracks().length > 0;
+    S.camOn = S.cameraStream.getVideoTracks().length > 0;
+    syncDeviceButtons();
+    if (missing) {
+      const message = `Joined without your ${missing}: ${whyUnavailable(firstError)}`;
+      S.ui.notice.textContent = "⚠ " + message;
+      S.ui.notice.classList.remove("tbc-hidden");
+      console.log("[take-back]", message);
+      S.onWarning(message);
+    }
+
     addTile("local", S.nick + " (you)", S.cameraStream, true);
+    // Without a camera, show your avatar rather than an empty black frame;
+    // without a mic, show the muted badge.
+    setTileVideo("local", S.camOn);
+    setTileMuted("local", !S.micOn);
     applyMirror();
     connectSignaling();
     layoutGrid();
     return true;
+  }
+
+  // whyUnavailable turns a getUserMedia failure into something a person can act
+  // on. The exception's name carries the reason; its message is browser jargon.
+  function whyUnavailable(err) {
+    switch (err && err.name) {
+      case "NotReadableError":
+      case "TrackStartError":
+        return "it's being used by another app (Discord, OBS, Teams…). Close that and rejoin to use it.";
+      case "NotAllowedError":
+      case "PermissionDeniedError":
+        return "permission was denied. Allow camera and microphone for this site, then rejoin.";
+      case "NotFoundError":
+      case "DevicesNotFoundError":
+      case "OverconstrainedError":
+        return "no such device was found.";
+      default:
+        return (err && err.message) || "the browser couldn't open it.";
+    }
+  }
+
+  // A device we couldn't open can't be toggled on, so its button says so.
+  function syncDeviceButtons() {
+    const u = S.ui;
+    const hasMic = S.cameraStream.getAudioTracks().length > 0;
+    const hasCam = S.cameraStream.getVideoTracks().length > 0;
+    u.mic.disabled = !hasMic;
+    u.cam.disabled = !hasCam;
+    u.mic.textContent = !hasMic ? "🎤 No mic" : S.micOn ? "🎤 Mic on" : "🔇 Mic off";
+    u.cam.textContent = !hasCam ? "📷 No camera" : S.camOn ? "📷 Camera on" : "📷 Camera off";
   }
 
   function leave() {
@@ -882,6 +946,11 @@ window.TBCall = (function () {
     S.peers.set(peerId, entry);
 
     S.cameraStream.getTracks().forEach((t) => pc.addTrack(t, S.cameraStream));
+    // Without a local track of a kind, the offer would have no media section to
+    // RECEIVE that kind on either. Ask for it explicitly, so someone who joined
+    // without a camera still sees everyone else's.
+    if (!S.cameraStream.getAudioTracks().length) pc.addTransceiver("audio", { direction: "recvonly" });
+    if (!S.cameraStream.getVideoTracks().length) pc.addTransceiver("video", { direction: "recvonly" });
     // Already sharing when this peer arrives? Send them the screen too.
     if (S.screenStream) entry.screenSenders = addScreenTracks(pc, S.screenStream);
 
@@ -917,6 +986,12 @@ window.TBCall = (function () {
         clearTimeout(entry.dropTimer);
         entry.dropTimer = null;
         markReconnecting(peerId, false); // recovered
+        // Someone who joined with no camera and no microphone sends no tracks,
+        // so ontrack never fires and they'd get no tile — present in the call,
+        // listening, and invisible to everyone else. Give every connected
+        // person a tile (their avatar, marked muted) so nobody lurks unseen.
+        // A real track that arrives later takes the tile over via addTile.
+        if (!tileEl(peerId)) addTile(peerId, entry.nick, new MediaStream(), false);
       }
     };
 

@@ -24,6 +24,26 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.20.1
+
+**Fixed — a busy or blocked camera made calls close instantly** (@river, web)
+- Joining asked for camera and microphone together, retried once, then closed
+  the call — with no message, because the error was written into the call panel
+  that was being removed. On Windows a webcam is often held exclusively by
+  another app (Discord, OBS, Teams), so for River "another app has my camera"
+  meant "can't join calls at all".
+- Joining now steps down instead: camera + mic, then mic only, then camera only,
+  then **no devices at all** — you can still see and hear everyone and share
+  your screen. A notice pinned in the call says what's missing and why, in terms
+  you can act on: in use by another app, permission denied, or no such device.
+  The chat page also shows it as a toast. Buttons for a device you don't have
+  read "No camera" / "No mic" and are disabled.
+- Someone with nothing to send still gets a tile on everyone else's screen — their
+  avatar, marked muted. Without that, a participant who joined with no camera and
+  no mic would have been in the call and listening, but invisible.
+- Receiving still works with nothing to send: the connection explicitly asks for
+  audio and video it has no local track for.
+
 ## 1.20.0
 
 Android catches up with four web features (@river asked for these).
