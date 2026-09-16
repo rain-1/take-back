@@ -59,7 +59,9 @@ async function connectToApp(port) {
   const lines = [];
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "tb-desktop-profile-"));
   const downloads = fs.mkdtempSync(path.join(os.tmpdir(), "tb-desktop-dl-"));
-  const env = { TB_START_URL: "", TB_DEBUG_PORT: String(DEBUG_PORT), TB_CONTROL_PORT: String(CONTROL_PORT),
+  // TB_TEST_SHOW: this audit minimizes and restores the window, so it needs a
+  // real one on screen — warn whoever is at the PC before running it on WSL.
+  const env = { TB_TEST_SHOW: "1", TB_START_URL: "", TB_DEBUG_PORT: String(DEBUG_PORT), TB_CONTROL_PORT: String(CONTROL_PORT),
                 TB_USER_DATA: userData, TB_DOWNLOAD_DIR: downloads };
   let app, conn;
   try {

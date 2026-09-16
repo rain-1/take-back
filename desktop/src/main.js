@@ -12,6 +12,14 @@ const fs = require("fs");
 const path = require("path");
 const audio = require("./audio-sources");
 
+// Losing stdout/stderr must never crash the app. When whatever launched it
+// closes the pipe (a terminal, a test runner that stopped first), the next
+// console.log throws EPIPE — uncaught in the main process that's a modal error
+// dialog, which is exactly what popped up on River's screen.
+for (const stream of [process.stdout, process.stderr]) {
+  if (stream && stream.on) stream.on("error", () => {});
+}
+
 const SERVER = (process.env.TB_SERVER || "https://takeback.chain-of-thought.org").replace(/\/$/, "");
 const START_URL = process.env.TB_START_URL || SERVER + "/";
 
@@ -23,7 +31,18 @@ const TEST = process.env.TB_TEST === "1";
 if (TEST) {
   app.commandLine.appendSwitch("use-fake-device-for-media-stream");
   app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+  // A test app must not outlive its test runner: if the runner is killed, an
+  // orphaned app keeps running (and, on WSL, keeps a window on the Windows
+  // desktop). Quit as soon as the parent process is gone.
+  const parent = process.ppid;
+  setInterval(() => {
+    try { process.kill(parent, 0); } catch (_) { app.quit(); }
+  }, 1000).unref();
 }
+// Test windows stay hidden unless a test needs one on screen (TB_TEST_SHOW=1):
+// on WSL every Linux window appears on the Windows desktop of whoever is
+// sitting at that PC.
+const SHOW_WINDOW = !TEST || process.env.TB_TEST_SHOW === "1";
 // Lets a test drive the real window with Puppeteer.
 if (process.env.TB_DEBUG_PORT) {
   app.commandLine.appendSwitch("remote-debugging-port", process.env.TB_DEBUG_PORT);
@@ -73,6 +92,7 @@ function createWindow() {
     ...(saved ? { x: saved.x, y: saved.y } : {}),
     minWidth: 420,
     minHeight: 360,
+    show: SHOW_WINDOW,
     title: "take-back",
     icon: path.join(__dirname, "..", "build", "icon.png"),
     backgroundColor: "#0b0d11",
@@ -86,6 +106,9 @@ function createWindow() {
       // The call engine starts an AudioContext without a click when a call
       // auto-joins from a link; a desktop app shouldn't need the gesture.
       autoplayPolicy: "no-user-gesture-required",
+      // A hidden test window must still run its timers, WebRTC and audio at
+      // full speed, or tests would measure throttling instead of the app.
+      backgroundThrottling: SHOW_WINDOW,
     },
   });
   // The preload bridge belongs to the take-back server only. Links in chat go
@@ -108,6 +131,12 @@ function createWindow() {
   });
 
   if (TEST) {
+    // Tests run on real people's computers too: keep the app's own speakers
+    // silent. The other participant in a test call is a browser with Chromium's
+    // fake microphone, which beeps once a second — and it played out loud on
+    // River's PC. Muting playback changes nothing that's measured: the checks
+    // listen on the far side. TB_TEST_AUDIBLE=1 opts back in.
+    if (process.env.TB_TEST_AUDIBLE !== "1") win.webContents.setAudioMuted(true);
     win.webContents.on("console-message", (event) => {
       console.log(`[page] ${event.message}`);
     });
@@ -238,6 +267,7 @@ app.whenReady().then(() => {
   if (TEST) {
     // Proves which capture backend a packaged build found (names only).
     audio.list().then((l) => console.log(`[test] audio sources: ${l.map((a) => a.name).join(", ")}`));
+    console.log(`[test] window visible: ${win.isVisible()}`);
   }
   if (TEST && process.env.TB_TEST_PRESENT === "1") runTestScript();
   if (TEST && process.env.TB_CONTROL_PORT) startTestControl(Number(process.env.TB_CONTROL_PORT));
