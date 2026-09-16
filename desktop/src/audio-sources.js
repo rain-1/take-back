@@ -21,9 +21,27 @@ const CHANNELS = 2;
 // A generated sine, so the pipeline (helper -> IPC -> AudioWorklet -> WebRTC ->
 // the other person's screen tile) can be proven on any machine, including one
 // with no capturable apps at all.
+// "tone:melody" is the same idea in a form that's pleasant to listen to in a
+// live demo: a slow looping arpeggio with a soft pluck envelope.
+const MELODY = [261.63, 329.63, 392.0, 493.88, 523.25, 493.88, 392.0, 329.63]; // Cmaj7 up and down
+const NOTE_FRAMES = Math.round(RATE * 0.28);
+
+function melodySample(n) {
+  const i = Math.floor(n / NOTE_FRAMES);
+  const t = (n % NOTE_FRAMES) / RATE;
+  const f = MELODY[i % MELODY.length];
+  const env = Math.exp(-t * 7) * Math.min(1, t * 400); // quick attack, gentle decay
+  const g = 2 * Math.PI * f * (n / RATE);
+  return 0.16 * env * (Math.sin(g) + 0.25 * Math.sin(2 * g));
+}
+
 const tone = {
-  list: () => [{ id: "tone:440", name: "Test tone (440 Hz)" }],
+  list: () => [
+    { id: "tone:melody", name: "Demo music (looping arpeggio)" },
+    { id: "tone:440", name: "Test tone (440 Hz)" },
+  ],
   start(id, onChunk) {
+    const melody = id === "tone:melody";
     const freq = Number(id.split(":")[1]) || 440;
     const frame = 480; // 10 ms
     let phase = 0;
@@ -37,7 +55,7 @@ const tone = {
       for (let n = 0; n + frame <= due; n += frame) {
         const buf = new Float32Array(frame * CHANNELS);
         for (let i = 0; i < frame; i++) {
-          const s = 0.25 * Math.sin(phase);
+          const s = melody ? melodySample(sent + i) : 0.25 * Math.sin(phase);
           phase += (2 * Math.PI * freq) / RATE;
           buf[i * 2] = s;
           buf[i * 2 + 1] = s;

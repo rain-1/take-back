@@ -167,8 +167,17 @@ function runTestScript() {
     const b = [...document.querySelectorAll('button')].find(x => /Present screen/.test(x.textContent));
     if (b) { b.click(); return true; } return false;
   })()`;
+  // TB_TEST_MUTE_MIC=1: mute the fake microphone first, so a live demo call
+  // isn't full of Chromium's test beeps.
+  const muteMic = `(() => {
+    const b = [...document.querySelectorAll('button')].find(x => /Mic on/.test(x.textContent));
+    if (b) { b.click(); return true; } return false;
+  })()`;
   const tryClick = async (attempt = 0) => {
     if (!win) return;
+    if (process.env.TB_TEST_MUTE_MIC === "1") {
+      await win.webContents.executeJavaScript(muteMic).catch(() => false);
+    }
     const ok = await win.webContents.executeJavaScript(click).catch(() => false);
     if (ok) { console.log("[test] pressed Present"); return; }
     if (attempt < 60) setTimeout(() => tryClick(attempt + 1), 500);
