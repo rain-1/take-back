@@ -12,3 +12,10 @@ node test/e2e/servers-events.mjs   # live events reach members, and only members
 `servers-events.mjs` logs in as accounts `servers-authz.mjs` creates, because
 sign-ups are rate-limited to 5 per 12 minutes per IP — run the authz check first
 on a fresh database.
+
+The UI flow drives two real browsers (needs Chrome and `puppeteer-core`), on a
+fresh database since it registers `alice` and `bob`:
+
+```sh
+PUPPETEER=/path/to/node_modules/puppeteer-core node test/e2e/servers-ui.cjs
+```

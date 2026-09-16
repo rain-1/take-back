@@ -453,6 +453,75 @@
     letter-spacing: .01em; pointer-events: none;
   }
 
+  /* ---- Collapsible sidebar sections ---- */
+  .section h3.collapser { display: flex; align-items: center; gap: .3rem; cursor: pointer; user-select: none; }
+  .section h3 .chev { display: inline-block; transition: transform .15s ease; font-size: .7rem; }
+  .section.collapsed h3 .chev { transform: rotate(-90deg); }
+  .section.collapsed .section-body { display: none; }
+  .section.collapsed { flex: none !important; }
+  .h3-actions { margin-left: auto; display: flex; gap: .2rem; text-transform: none; letter-spacing: 0; }
+  button.tiny { padding: .1rem .4rem; font-size: .72rem; border-radius: 6px; }
+
+  /* Server icons: rounded squares, so they read as places rather than people. */
+  .server-icon {
+    width: 32px; height: 32px; border-radius: 10px; flex: none; object-fit: cover;
+    display: grid; place-items: center; font-size: .78rem; font-weight: 700; color: #fff;
+  }
+
+  /* ---- Chat area: [channels] [conversation] [members] ---- */
+  #chatRow { flex: 1; display: flex; min-height: 0; }
+  #convCol { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #channelCol {
+    width: 230px; flex: none; background: var(--panel); border-right: 1px solid var(--border-soft);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  #serverHead {
+    height: 56px; flex: none; display: flex; align-items: center; gap: .4rem; padding: 0 .75rem;
+    border-bottom: 1px solid var(--border-soft); font-weight: 650;
+  }
+  #serverHeadName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #channelList { flex: 1; overflow-y: auto; padding: .5rem .45rem; }
+  .chan-head {
+    display: flex; align-items: center; margin: .7rem .35rem .25rem; font-size: .64rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .09em; color: var(--dim);
+  }
+  .chan-head:first-child { margin-top: .2rem; }
+  .chan-head button { margin-left: auto; }
+  .chan {
+    display: flex; align-items: center; gap: .45rem; padding: .35rem .5rem; border-radius: 8px;
+    cursor: pointer; color: var(--muted); font-size: .9rem;
+  }
+  .chan:hover { background: var(--surface); color: var(--text); }
+  .chan.active { background: var(--surface-2); color: var(--text); }
+  .chan.unread { color: var(--text); font-weight: 650; }
+  .chan .glyph { width: 1rem; text-align: center; opacity: .7; flex: none; }
+  .chan .cname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chan .admin-acts { display: none; gap: .1rem; }
+  .chan:hover .admin-acts { display: flex; }
+  .chan.voice { cursor: default; }
+  #memberCol {
+    width: 220px; flex: none; background: var(--panel); border-left: 1px solid var(--border-soft);
+    overflow-y: auto; padding: .6rem .5rem;
+  }
+  .member { display: flex; align-items: center; gap: .5rem; padding: .3rem .4rem; border-radius: 8px; font-size: .88rem; }
+  .member.offline { opacity: .5; }
+  .member .role { margin-left: auto; font-size: .62rem; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+  @media (max-width: 1000px) { #memberCol { display: none !important; } }
+  @media (max-width: 720px) { #channelCol { width: 170px; } }
+
+  /* Dialog content */
+  .dlg-field { display: flex; flex-direction: column; gap: .35rem; margin: .8rem 0; }
+  .dlg-field label { font-size: .76rem; color: var(--muted); }
+  .dlg-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; flex-wrap: wrap; }
+  .dlg-danger { background: var(--danger) !important; }
+  .dlg-preview { display: flex; align-items: center; gap: .8rem; padding: .7rem; border-radius: 12px; background: var(--surface); margin: .6rem 0; }
+  .dlg-preview .server-icon { width: 48px; height: 48px; font-size: 1rem; border-radius: 14px; }
+  .invite-link { display: flex; gap: .4rem; }
+  .invite-link input { flex: 1; font-family: ui-monospace, monospace; font-size: .8rem; }
+  .kind-pick { display: flex; gap: .5rem; }
+  .kind-pick label { flex: 1; display: flex; gap: .4rem; align-items: center; padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; color: var(--text); font-size: .85rem; }
+  .kind-pick input { width: auto; }
+
   /* ---- Modal (settings) ---- */
   .modal-overlay {
     position: fixed; inset: 0; z-index: 40; padding: 1rem;
@@ -583,21 +652,36 @@
         </div>
         <div class="err" id="addErr" style="color:#f87171;font-size:.75rem;"></div>
       </div>
-      <div class="section">
-        <h3>Groups</h3>
-        <div class="addrow">
-          <input id="groupName" placeholder="new group name" autocomplete="off">
-          <button id="newGroupBtn">Create</button>
+      <div class="section" data-section="servers">
+        <h3 class="collapser"><span class="chev">▾</span> Servers
+          <span class="h3-actions">
+            <button class="ghost tiny" id="joinServerBtn" title="Join a server with an invite">Join</button>
+            <button class="ghost tiny" id="newServerBtn" title="Create a server">＋</button>
+          </span>
+        </h3>
+        <div class="section-body">
+          <div id="servers"></div>
         </div>
-        <div id="groups" style="margin-top:.4rem;"></div>
+      </div>
+      <div class="section" data-section="groups">
+        <h3 class="collapser"><span class="chev">▾</span> Groups</h3>
+        <div class="section-body">
+          <div class="addrow">
+            <input id="groupName" placeholder="new group name" autocomplete="off">
+            <button id="newGroupBtn">Create</button>
+          </div>
+          <div id="groups" style="margin-top:.4rem;"></div>
+        </div>
       </div>
       <div class="section hidden" id="requestsSection">
         <h3>Requests</h3>
         <div id="requests"></div>
       </div>
-      <div class="section" style="flex:1;">
-        <h3>Friends</h3>
-        <div id="friends"></div>
+      <div class="section" data-section="friends" style="flex:1;">
+        <h3 class="collapser"><span class="chev">▾</span> Friends</h3>
+        <div class="section-body">
+          <div id="friends"></div>
+        </div>
       </div>
     </aside>
 
@@ -609,9 +693,19 @@
         <div id="callHost"></div>
         <div id="callResize" title="Drag to resize the call"></div>
       </div>
+      <div id="chatRow">
+      <!-- A server's channels, when a server is open. -->
+      <nav id="channelCol" class="hidden">
+        <div id="serverHead">
+          <span id="serverHeadName"></span>
+          <button class="ghost tiny" id="serverMenuBtn" title="Server options">⚙</button>
+        </div>
+        <div id="channelList"></div>
+      </nav>
+      <div id="convCol">
       <div id="empty">
         <div class="big">✳</div>
-        <div>Pick a conversation to start chatting.</div>
+        <div id="emptyText">Pick a conversation to start chatting.</div>
       </div>
       <div id="chatPane" class="hidden" style="flex:1; display:flex; flex-direction:column; min-height:0;">
         <div id="chatHeader">
@@ -640,7 +734,22 @@
           <span id="uploadPct"></span>
         </div>
       </div>
+      </div>
+      <!-- Who's in the open server. -->
+      <aside id="memberCol" class="hidden">
+        <div id="memberList"></div>
+      </aside>
+      </div>
     </section>
+    <!-- One reusable dialog for the server screens (create, join, invite,
+         settings, new channel). Filled in by openDialog(). -->
+    <div id="dialog" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-head"><h2 id="dialogTitle"></h2>
+          <button class="ghost" id="dialogClose" title="Close" style="font-size:1rem;">✕</button></div>
+        <div class="modal-body" id="dialogBody"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -666,6 +775,17 @@ const friendState = new Map(); // id -> friend view
 const groupState = new Map();   // id -> group
 const groupMembers = new Map(); // userId -> { nick, online } for the open group
 let groupInvites = [];          // pending invites awaiting my answer
+let openServer = null;           // { id, name, role, ownerId, iconUrl } when a server is open
+let openChannel = null;          // { id, serverId, name } when a text channel is open
+const serverState = new Map();   // id -> server, with unread / mentioned
+let serverChannels = [];         // channels of the open server
+const serverMembers = new Map(); // userId -> { nick, online, role, avatarUrl } in the open server
+
+// convKind names the open conversation. Everything that talks to the server
+// about "this conversation" (send, upload, read, react, edit, delete) goes
+// through it, so a third kind of conversation doesn't mean a third branch in
+// every function.
+function convKind() { return openChannel ? "channel" : openGroup ? "group" : openFriend ? "dm" : null; }
 
 // ---------- Auth ----------
 // When the server has registration closed, don't offer a Register link that is
@@ -768,8 +888,17 @@ async function enterApp() {
   requestNotifyPermission();
   await loadFriends();
   await loadGroups();
+  await loadServers();
   connectEvents();
-  restoreLastChat(); // reopen the conversation we had open last time
+  restoreCollapsed();
+  // An invite link (/?invite=CODE) wins over reopening the last chat.
+  const invite = new URLSearchParams(location.search).get("invite");
+  if (invite) {
+    history.replaceState(null, "", location.pathname);
+    joinServerDialog(invite);
+  } else {
+    restoreLastChat(); // reopen the conversation we had open last time
+  }
 }
 
 // ---------- Groups ----------
@@ -842,6 +971,7 @@ function renderGroups() {
 
 async function openGroupChat(g) {
   cancelReply();
+  closeServerView();
   openFriend = null;
   openGroup = { id: g.id, name: g.name, callCode: g.callCode };
   $("empty").classList.add("hidden");
@@ -1052,6 +1182,7 @@ function byRecency(nameOf) {
 // touchActivity bumps a conversation's last-activity so it moves to the top the
 // moment a message is sent or received, without refetching the list.
 function touchActivity(kind, id, created) {
+  if (kind === "channel") return; // channels keep their admin-set order
   const state = kind === "dm" ? friendState.get(id) : groupState.get(id);
   if (!state) return;
   state.lastActivity = created || Math.floor(Date.now() / 1000);
@@ -1200,7 +1331,9 @@ function avatarUrlFor(userId) {
   const f = friendState.get(userId);
   if (f && f.user.avatarUrl) return f.user.avatarUrl;
   const gm = groupMembers.get(userId);
-  return (gm && gm.avatarUrl) || "";
+  if (gm && gm.avatarUrl) return gm.avatarUrl;
+  const sm = serverMembers.get(userId);
+  return (sm && sm.avatarUrl) || "";
 }
 
 async function respond(userId, accept) {
@@ -1230,7 +1363,8 @@ function showEmpty() {
 // reload (or a fresh login on this browser) reopens where you left off.
 function rememberOpenChat() {
   try {
-    if (openGroup) localStorage.setItem("tb.lastChat", JSON.stringify({ kind: "group", id: openGroup.id }));
+    if (openChannel) localStorage.setItem("tb.lastChat", JSON.stringify({ kind: "channel", id: openChannel.id, serverId: openChannel.serverId }));
+    else if (openGroup) localStorage.setItem("tb.lastChat", JSON.stringify({ kind: "group", id: openGroup.id }));
     else if (openFriend) localStorage.setItem("tb.lastChat", JSON.stringify({ kind: "dm", id: openFriend.id }));
   } catch {}
 }
@@ -1238,7 +1372,10 @@ function restoreLastChat() {
   let saved;
   try { saved = JSON.parse(localStorage.getItem("tb.lastChat") || "null"); } catch {}
   if (!saved) return;
-  if (saved.kind === "group") {
+  if (saved.kind === "channel") {
+    const sv = serverState.get(saved.serverId);
+    if (sv) openServerView(sv, saved.id);
+  } else if (saved.kind === "group") {
     const g = groupState.get(saved.id);
     if (g) openGroupChat(g);
   } else if (saved.kind === "dm") {
@@ -1249,6 +1386,7 @@ function restoreLastChat() {
 
 async function openChat(user) {
   cancelReply();
+  closeServerView();
   openFriend = { id: user.id, nick: user.nick };
   openGroup = null;
   $("empty").classList.add("hidden");
@@ -1274,6 +1412,19 @@ async function openChat(user) {
 // message, and clears the local pip immediately.
 async function markRead(kind, id, msgs) {
   const lastId = msgs && msgs.length ? msgs[msgs.length - 1].id : 0;
+  if (kind === "channel") {
+    const ch = serverChannels.find((c) => c.id === id);
+    if (ch && (ch.unread || ch.mentioned)) {
+      ch.unread = 0; ch.mentioned = false;
+      recountServerUnread(ch.serverId);
+      renderChannels(); renderServers();
+    }
+    if (lastId) {
+      await api("/api/read", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, id, lastId }) }).catch(() => {});
+    }
+    return;
+  }
   const state = kind === "dm" ? friendState.get(id) : groupState.get(id);
   const hadUnread = state && (state.unread > 0 || state.mentioned);
   if (state) { state.unread = 0; state.mentioned = false; }
@@ -1348,7 +1499,12 @@ async function sendText() {
   const replyTo = replyingTo ? replyingTo.id : 0;
   cancelReply();
   let msg;
-  if (openGroup) {
+  if (openChannel) {
+    msg = await api("/api/channels/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: openChannel.id, body, replyTo }),
+    });
+  } else if (openGroup) {
     msg = await api("/api/groups/messages", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ group: openGroup.id, body, replyTo }),
@@ -1360,7 +1516,7 @@ async function sendText() {
     });
   } else return;
   appendMessage(msg); scrollMessages();
-  touchActivity(openGroup ? "group" : "dm", openGroup ? openGroup.id : openFriend.id, msg.created);
+  if (!openChannel) touchActivity(openGroup ? "group" : "dm", openGroup ? openGroup.id : openFriend.id, msg.created);
 }
 
 $("imgBtn").onclick = () => $("imgInput").click();
@@ -1378,7 +1534,7 @@ const MAX_ATTACHMENT = 95 * 1024 * 1024;
 // video with no feedback looks exactly like a hung app.
 async function uploadAttachment(file) {
   if (!file) return;
-  if (!openGroup && !openFriend) { toast("Open a conversation first"); return; }
+  if (!convKind()) { toast("Open a conversation first"); return; }
   if (file.size > MAX_ATTACHMENT) {
     toast(`That file is ${fmtSize(file.size)} — the limit is ${fmtSize(MAX_ATTACHMENT)}.`);
     return;
@@ -1387,14 +1543,15 @@ async function uploadAttachment(file) {
   form.append("file", file, file.name);
   form.append("name", file.name);
   let url;
-  if (openGroup) { form.append("group", openGroup.id); url = "/api/groups/messages/media"; }
+  if (openChannel) { form.append("channel", openChannel.id); url = "/api/channels/messages/media"; }
+  else if (openGroup) { form.append("group", openGroup.id); url = "/api/groups/messages/media"; }
   else { form.append("with", openFriend.id); url = "/api/messages/media"; }
 
   let msg;
   try { msg = await uploadWithProgress(url, form, file.name); }
   catch (e) { toast(e.message); return; }
   appendMessage(msg); scrollMessages();
-  touchActivity(openGroup ? "group" : "dm", openGroup ? openGroup.id : openFriend.id, msg.created);
+  if (!openChannel) touchActivity(openGroup ? "group" : "dm", openGroup ? openGroup.id : openFriend.id, msg.created);
 }
 
 // uploadWithProgress POSTs a FormData and drives the progress bar under the
@@ -1487,6 +1644,7 @@ function resetGrouping() { grp = { sender: null, time: 0, main: null }; }
 
 function senderName(senderId) {
   if (senderId === me.id) return me.nick;
+  if (openChannel) return serverMembers.get(senderId)?.nick || "someone";
   if (openGroup) return groupMembers.get(senderId)?.nick || "someone";
   return openFriend ? openFriend.nick : "someone";
 }
@@ -1585,7 +1743,9 @@ function messageEl(m) {
   }
   // Delete your own message, whatever it holds — including an attachment-only
   // one, which is exactly the case you most want to be able to take back.
-  if (mine && !m.deletedAt) {
+  // ...and in a server, an admin may remove anyone's message (moderation).
+  const canModerate = openChannel && openServer && openServer.role === "admin";
+  if ((mine || canModerate) && !m.deletedAt) {
     const del = document.createElement("button");
     del.className = "editbtn delbtn";
     del.textContent = "🗑 delete";
@@ -1660,7 +1820,7 @@ function startEdit(div, m) {
       try {
         const updated = await api("/api/messages/edit", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: m.id, scope: openGroup ? "group" : "dm", body: text }),
+          body: JSON.stringify({ id: m.id, scope: convKind(), body: text }),
         });
         m.body = updated.body;
         m.editedAt = updated.editedAt;
@@ -1678,7 +1838,7 @@ function startEdit(div, m) {
 const REACTION_CHOICES = ["👍","❤️","😂","🎉","🙏","👀","🔥","😮","😢","💯","✅","🚀"];
 let pickerTarget = null; // the message the open picker will react to
 
-function reactionScope() { return openGroup ? "group" : "dm"; }
+function reactionScope() { return convKind() || "dm"; }
 
 // renderReactions (re)builds the pill row for a message from m.reactions.
 function renderReactions(container, m) {
@@ -1792,7 +1952,7 @@ async function deleteMessage(m) {
   try {
     await api("/api/messages/delete", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: m.id, scope: openGroup ? "group" : "dm" }),
+      body: JSON.stringify({ id: m.id, scope: convKind() }),
     });
   } catch (e) { toast(e.message); return; }
   applyDelete(m.id);
@@ -1953,6 +2113,507 @@ function randomCode() {
   return Array.from({ length: 6 }, () => a[Math.floor(Math.random() * a.length)]).join("");
 }
 
+// ---------- Servers ----------
+// Communities: a server has channels (text and voice) and members with a role.
+// Opening one swaps the chat area to [channels | conversation | members].
+
+const jsonPost = (path, body) => api(path, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+});
+
+async function loadServers() {
+  let list = [];
+  try { list = await api("/api/servers"); } catch { return; }
+  const keep = new Map([...serverState].map(([id, sv]) => [id, sv.mentioned]));
+  serverState.clear();
+  for (const sv of list) { sv.mentioned = keep.get(sv.id) || false; serverState.set(sv.id, sv); }
+  renderServers();
+}
+
+// serverIconEl draws a server's icon, or its initials on a colour from its name.
+function serverIconEl(sv) {
+  if (sv.iconUrl) {
+    const img = document.createElement("img");
+    img.className = "server-icon"; img.src = sv.iconUrl; img.alt = "";
+    return img;
+  }
+  const d = document.createElement("div");
+  d.className = "server-icon";
+  d.textContent = sv.name.split(/\s+/).map((w) => w[0] || "").join("").slice(0, 2).toUpperCase() || "?";
+  let h = 0; for (const c of sv.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  d.style.background = `hsl(${h % 360} 45% 38%)`;
+  return d;
+}
+
+function renderServers() {
+  const box = $("servers");
+  box.replaceChildren();
+  if (serverState.size === 0) {
+    box.innerHTML = `<div class="empty-note">No servers yet — create one, or join with an invite.</div>`;
+    return;
+  }
+  for (const sv of serverState.values()) {
+    const row = document.createElement("div");
+    row.className = "row" + (openServer && openServer.id === sv.id ? " active" : "") + (sv.unread > 0 ? " unread" : "");
+    const name = document.createElement("span");
+    name.className = "name"; name.textContent = sv.name;
+    row.append(serverIconEl(sv), name);
+    if (sv.unread > 0) row.append(pip(sv.unread, sv.mentioned));
+    row.onclick = () => openServerView(sv);
+    box.append(row);
+  }
+}
+
+function recountServerUnread(serverId) {
+  const sv = serverState.get(serverId);
+  if (!sv || !openServer || openServer.id !== serverId) return;
+  sv.unread = serverChannels.reduce((n, c) => n + (c.unread || 0), 0);
+  sv.mentioned = serverChannels.some((c) => c.mentioned);
+}
+
+// openServerView opens a server, then a channel: the one asked for, else the
+// first text channel.
+async function openServerView(sv, channelId) {
+  cancelReply();
+  openFriend = null; openGroup = null; openChannel = null;
+  openServer = { id: sv.id, name: sv.name, role: sv.role, ownerId: sv.ownerId, iconUrl: sv.iconUrl };
+  $("channelCol").classList.remove("hidden");
+  $("memberCol").classList.remove("hidden");
+  $("serverHeadName").textContent = sv.name;
+  $("chatPane").classList.add("hidden");
+  $("empty").classList.remove("hidden");
+  $("emptyText").textContent = "Pick a channel.";
+  renderServers(); renderGroups(); renderFriends();
+  await Promise.all([loadChannels(), loadServerMembers()]);
+  const target = serverChannels.find((c) => c.id === channelId && c.kind === "text")
+    || serverChannels.find((c) => c.kind === "text");
+  if (target) openChannelChat(target);
+}
+
+function closeServerView() {
+  if (!openServer) return;
+  openServer = null; openChannel = null; serverChannels = []; serverMembers.clear();
+  $("channelCol").classList.add("hidden");
+  $("memberCol").classList.add("hidden");
+  $("callBtn").classList.remove("hidden");
+  $("emptyText").textContent = "Pick a conversation to start chatting.";
+  renderServers();
+}
+
+async function loadChannels() {
+  if (!openServer) return;
+  const id = openServer.id;
+  let list;
+  try { list = await api(`/api/servers/channels?server=${id}`); } catch (e) { toast(e.message); return; }
+  if (!openServer || openServer.id !== id) return; // switched away meanwhile
+  const mentioned = new Set(serverChannels.filter((c) => c.mentioned).map((c) => c.id));
+  serverChannels = list.map((c) => ({ ...c, mentioned: mentioned.has(c.id) }));
+  renderChannels();
+}
+
+function renderChannels() {
+  const box = $("channelList");
+  box.replaceChildren();
+  if (!openServer) return;
+  const admin = openServer.role === "admin";
+  for (const kind of ["text", "voice"]) {
+    const head = document.createElement("div");
+    head.className = "chan-head";
+    head.textContent = kind === "text" ? "Text channels" : "Voice channels";
+    if (admin) {
+      const add = mkBtn("＋", "ghost tiny", () => channelDialog(kind));
+      add.title = `New ${kind} channel`;
+      head.append(add);
+    }
+    box.append(head);
+    for (const ch of serverChannels.filter((c) => c.kind === kind)) {
+      const row = document.createElement("div");
+      row.className = "chan" + (kind === "voice" ? " voice" : "")
+        + (openChannel && openChannel.id === ch.id ? " active" : "") + (ch.unread > 0 ? " unread" : "");
+      const glyph = document.createElement("span");
+      glyph.className = "glyph"; glyph.textContent = kind === "text" ? "#" : "🔊";
+      const name = document.createElement("span");
+      name.className = "cname"; name.textContent = ch.name;
+      row.append(glyph, name);
+      if (ch.unread > 0) row.append(pip(ch.unread, ch.mentioned));
+      if (admin) {
+        const acts = document.createElement("span");
+        acts.className = "admin-acts";
+        acts.append(
+          mkBtn("✎", "ghost tiny", (e) => { e.stopPropagation(); renameChannelDialog(ch); }),
+          mkBtn("🗑", "ghost tiny", (e) => { e.stopPropagation(); deleteChannel(ch); }));
+        row.append(acts);
+      }
+      if (kind === "text") row.onclick = () => openChannelChat(ch);
+      else row.title = "Voice channels arrive in the next update";
+      box.append(row);
+    }
+  }
+}
+
+async function loadServerMembers() {
+  if (!openServer) return;
+  const id = openServer.id;
+  let list;
+  try { list = await api(`/api/servers/members?server=${id}`); } catch { return; }
+  if (!openServer || openServer.id !== id) return;
+  serverMembers.clear();
+  for (const m of list) {
+    serverMembers.set(m.user.id, { nick: m.user.nick, online: m.online || m.user.id === me.id, role: m.role, avatarUrl: m.user.avatarUrl || "" });
+  }
+  // My role can change (or I can be removed); keep the view in step.
+  const mine = serverMembers.get(me.id);
+  if (mine) openServer.role = mine.role;
+  renderMemberCol();
+}
+
+function renderMemberCol() {
+  const box = $("memberList");
+  box.replaceChildren();
+  const members = [...serverMembers.entries()];
+  const head = document.createElement("div");
+  head.className = "chan-head";
+  head.textContent = `Members — ${members.length}`;
+  box.append(head);
+  members.sort(([, a], [, b]) => (b.online - a.online) || a.nick.localeCompare(b.nick));
+  for (const [id, m] of members) {
+    const row = document.createElement("div");
+    row.className = "member" + (m.online ? "" : " offline");
+    row.append(avatarWrap(m.nick, false, m.online, m.avatarUrl));
+    const n = document.createElement("span");
+    n.textContent = m.nick + (id === me.id ? " (you)" : "");
+    row.append(n);
+    if (m.role === "admin") {
+      const r = document.createElement("span");
+      r.className = "role"; r.textContent = "admin";
+      row.append(r);
+    }
+    box.append(row);
+  }
+}
+
+async function openChannelChat(ch) {
+  if (!openServer || ch.serverId !== openServer.id) return;
+  cancelReply();
+  openChannel = { id: ch.id, serverId: ch.serverId, name: ch.name };
+  $("empty").classList.add("hidden");
+  $("chatPane").classList.remove("hidden");
+  $("callBtn").classList.add("hidden");
+  $("membersBtn").classList.add("hidden");
+  $("membersPanel").classList.add("hidden");
+  setChatAvatar(openServer.name, true);
+  $("chatNick").textContent = "# " + ch.name;
+  $("chatSub").textContent = openServer.name;
+  renderChannels();
+  let msgs;
+  try { msgs = await api(`/api/channels/messages?channel=${ch.id}`); } catch (e) { toast(e.message); return; }
+  if (!openChannel || openChannel.id !== ch.id) return; // switched away meanwhile
+  $("messages").innerHTML = ""; resetGrouping();
+  msgs.forEach(appendMessage);
+  scrollMessages();
+  markRead("channel", ch.id, msgs);
+  rememberOpenChat();
+}
+
+function onChannelMessage(m) {
+  if (openChannel && m.channelId === openChannel.id) {
+    appendMessage(m); scrollMessages();
+    markRead("channel", openChannel.id, [m]);
+    return;
+  }
+  const mentioned = mentionsMe(m.body);
+  const ch = serverChannels.find((c) => c.id === m.channelId);
+  if (ch) { ch.unread = (ch.unread || 0) + 1; if (mentioned) ch.mentioned = true; renderChannels(); }
+  const sv = serverState.get(m.serverId);
+  if (sv) { sv.unread = (sv.unread || 0) + 1; if (mentioned) sv.mentioned = true; renderServers(); }
+  const where = sv ? sv.name : "a server";
+  notify(mentioned ? `You were mentioned in ${where}` : `Message in ${where}`,
+    m.body ? m.body.slice(0, 80) : attachmentPreview(m),
+    () => { if (sv) openServerView(sv, m.channelId); });
+}
+
+async function onServerUpdate(d) {
+  await loadServers();
+  if (!openServer || openServer.id !== d.serverId) return;
+  if (d.deleted || !serverState.has(d.serverId)) {
+    toast(d.deleted ? "This server was deleted." : "You're no longer in this server.");
+    closeServerView(); showEmpty();
+    return;
+  }
+  const sv = serverState.get(d.serverId);
+  openServer.name = sv.name; openServer.iconUrl = sv.iconUrl;
+  $("serverHeadName").textContent = sv.name;
+  await Promise.all([loadChannels(), loadServerMembers()]);
+  if (openChannel) {
+    const still = serverChannels.find((c) => c.id === openChannel.id);
+    if (!still) { toast("That channel was deleted."); openChannel = null; $("chatPane").classList.add("hidden"); $("empty").classList.remove("hidden"); }
+    else { $("chatNick").textContent = "# " + still.name; $("chatSub").textContent = sv.name; }
+  }
+}
+
+// ---------- Dialogs ----------
+function openDialog(title, build) {
+  $("dialogTitle").textContent = title;
+  const body = $("dialogBody");
+  body.replaceChildren();
+  build(body);
+  $("dialog").classList.remove("hidden");
+  const first = body.querySelector("input:not([type=file]):not([type=radio])");
+  if (first) setTimeout(() => first.focus(), 30);
+}
+function closeDialog() { $("dialog").classList.add("hidden"); }
+$("dialogClose").onclick = closeDialog;
+$("dialog").addEventListener("click", (e) => { if (e.target.id === "dialog") closeDialog(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("dialog").classList.contains("hidden")) closeDialog(); });
+
+function field(label, input) {
+  const f = document.createElement("div");
+  f.className = "dlg-field";
+  const l = document.createElement("label"); l.textContent = label;
+  f.append(l, input);
+  return f;
+}
+function textInput(placeholder, value = "") {
+  const i = document.createElement("input");
+  i.placeholder = placeholder; i.value = value; i.autocomplete = "off";
+  return i;
+}
+function actions(...buttons) {
+  const a = document.createElement("div");
+  a.className = "dlg-actions";
+  a.append(...buttons);
+  return a;
+}
+// A button that shows it's busy and reports failures in place.
+function busyBtn(label, cls, fn) {
+  const b = mkBtn(label, cls, async () => {
+    b.disabled = true;
+    try { await fn(); } catch (e) { toast(e.message); } finally { b.disabled = false; }
+  });
+  return b;
+}
+function submitOnEnter(input, button) {
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") button.click(); });
+}
+
+async function uploadServerIcon(serverId, file) {
+  const form = new FormData();
+  form.append("server", serverId);
+  form.append("image", file);
+  const res = await fetch("/api/servers/icon", { method: "POST", body: form, credentials: "same-origin" });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "icon upload failed");
+}
+
+$("newServerBtn").onclick = (e) => { e.stopPropagation(); createServerDialog(); };
+$("joinServerBtn").onclick = (e) => { e.stopPropagation(); joinServerDialog(""); };
+$("serverMenuBtn").onclick = () => serverMenuDialog();
+
+function createServerDialog() {
+  openDialog("Create a server", (body) => {
+    const name = textInput("e.g. Movie night crew");
+    const icon = document.createElement("input");
+    icon.type = "file"; icon.accept = "image/*";
+    const create = busyBtn("Create", "", async () => {
+      if (!name.value.trim()) { name.focus(); return; }
+      const sv = await jsonPost("/api/servers", { name: name.value });
+      if (icon.files[0]) await uploadServerIcon(sv.id, icon.files[0]).catch((e) => toast("Server created, but the icon failed: " + e.message));
+      closeDialog();
+      await loadServers();
+      openServerView(serverState.get(sv.id) || sv);
+    });
+    submitOnEnter(name, create);
+    body.append(field("Server name", name), field("Icon (optional)", icon), actions(mkBtn("Cancel", "secondary", closeDialog), create));
+  });
+}
+
+// joinServerDialog takes a code or a whole invite link, shows the server, then joins.
+function joinServerDialog(prefill) {
+  const parseCode = (v) => {
+    v = v.trim();
+    try { const u = new URL(v); return u.searchParams.get("invite") || ""; } catch {}
+    return v;
+  };
+  openDialog("Join a server", (body) => {
+    const code = textInput("Invite link or code", prefill || "");
+    const preview = document.createElement("div");
+    const join = busyBtn("Join", "", async () => {
+      const c = parseCode(code.value);
+      if (!c) { code.focus(); return; }
+      const res = await jsonPost("/api/invites/join", { code: c });
+      closeDialog();
+      await loadServers();
+      toast(res.joined ? `Joined ${res.server.name}!` : `You're already in ${res.server.name}.`);
+      openServerView(serverState.get(res.server.id) || res.server);
+    });
+    const look = async () => {
+      preview.replaceChildren();
+      const c = parseCode(code.value);
+      if (!c) return;
+      try {
+        const info = await api(`/api/invites?code=${encodeURIComponent(c)}`);
+        const p = document.createElement("div");
+        p.className = "dlg-preview";
+        const t = document.createElement("div");
+        t.innerHTML = `<div style="font-weight:650">${esc(info.server.name)}</div>
+          <div class="setting-sub">${info.server.memberCount} member${info.server.memberCount === 1 ? "" : "s"}${info.member ? " · you're already in it" : ""}</div>`;
+        p.append(serverIconEl(info.server), t);
+        preview.append(p);
+      } catch (e) {
+        preview.innerHTML = `<div class="setting-sub" style="color:var(--danger)">${esc(e.message)}</div>`;
+      }
+    };
+    code.addEventListener("change", look);
+    submitOnEnter(code, join);
+    body.append(field("Invite", code), preview, actions(mkBtn("Cancel", "secondary", closeDialog), join));
+    if (prefill) look();
+  });
+}
+
+async function inviteDialog() {
+  const sv = openServer;
+  let res;
+  try { res = await jsonPost("/api/servers/invites", { server: sv.id }); } catch (e) { toast(e.message); return; }
+  const link = location.origin + res.path;
+  openDialog(`Invite people to ${sv.name}`, (body) => {
+    const note = document.createElement("div");
+    note.className = "setting-sub";
+    note.textContent = "Anyone with this link can join (they'll need a take-back account). The code works too, typed into Join.";
+    const box = document.createElement("div");
+    box.className = "invite-link";
+    const input = textInput("", link); input.readOnly = true;
+    const copy = mkBtn("Copy", "", async () => {
+      try { await navigator.clipboard.writeText(link); copy.textContent = "Copied!"; }
+      catch { input.select(); document.execCommand("copy"); copy.textContent = "Copied!"; }
+    });
+    box.append(input, copy);
+    const code = document.createElement("div");
+    code.className = "setting-sub"; code.style.marginTop = ".5rem";
+    code.innerHTML = `Code: <b style="font-family:ui-monospace,monospace;letter-spacing:.08em">${esc(res.code)}</b>`;
+    body.append(note, field("Invite link", box), code, actions(mkBtn("Done", "", closeDialog)));
+  });
+}
+
+function serverMenuDialog() {
+  const sv = openServer;
+  if (!sv) return;
+  const admin = sv.role === "admin", owner = sv.ownerId === me.id;
+  openDialog(sv.name, (body) => {
+    const rows = [];
+    const row = (title, sub, btn) => {
+      const r = document.createElement("div");
+      r.className = "setting-row";
+      r.innerHTML = `<div class="setting-label"><div class="setting-title">${esc(title)}</div><div class="setting-sub">${esc(sub)}</div></div>`;
+      r.append(btn);
+      rows.push(r);
+    };
+    row("Invite people", "Get a link or code to share.", mkBtn("Invite", "", () => { closeDialog(); inviteDialog(); }));
+    if (admin) {
+      const name = textInput("Server name", sv.name); name.style.width = "150px";
+      const save = busyBtn("Rename", "secondary", async () => {
+        await jsonPost("/api/servers/update", { server: sv.id, name: name.value });
+        closeDialog(); onServerUpdate({ serverId: sv.id });
+      });
+      const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:.35rem";
+      wrap.append(name, save);
+      row("Name", "Shown to everyone in the server.", wrap);
+
+      const icon = document.createElement("input");
+      icon.type = "file"; icon.accept = "image/*"; icon.className = "hidden";
+      icon.onchange = async () => {
+        if (!icon.files[0]) return;
+        try { await uploadServerIcon(sv.id, icon.files[0]); closeDialog(); onServerUpdate({ serverId: sv.id }); }
+        catch (e) { toast(e.message); }
+      };
+      const iconBtn = mkBtn("Change…", "secondary", () => icon.click());
+      const iw = document.createElement("div"); iw.append(icon, iconBtn);
+      row("Icon", "A square picture works best.", iw);
+      row("Channels", "Add text or voice channels from the ＋ next to each list.", mkBtn("New channel", "secondary", () => { closeDialog(); channelDialog("text"); }));
+    }
+    if (owner) {
+      row("Delete server", "Removes every channel and message, for everyone. Can't be undone.",
+        busyBtn("Delete", "dlg-danger", async () => {
+          if (!confirm(`Delete ${sv.name} and everything in it? This can't be undone.`)) return;
+          await jsonPost("/api/servers/delete", { server: sv.id });
+          closeDialog(); closeServerView(); showEmpty(); loadServers();
+        }));
+    } else {
+      row("Leave server", "You can rejoin with an invite.",
+        busyBtn("Leave", "secondary", async () => {
+          if (!confirm(`Leave ${sv.name}?`)) return;
+          await jsonPost("/api/servers/leave", { server: sv.id });
+          closeDialog(); closeServerView(); showEmpty(); loadServers();
+        }));
+    }
+    body.append(...rows);
+  });
+}
+
+function channelDialog(kind) {
+  const sv = openServer;
+  openDialog("New channel", (body) => {
+    const name = textInput(kind === "voice" ? "e.g. Hangout" : "e.g. announcements");
+    const pick = document.createElement("div");
+    pick.className = "kind-pick";
+    for (const [value, label] of [["text", "# Text"], ["voice", "🔊 Voice"]]) {
+      const l = document.createElement("label");
+      const r = document.createElement("input");
+      r.type = "radio"; r.name = "chankind"; r.value = value; r.checked = value === kind;
+      l.append(r, document.createTextNode(label));
+      pick.append(l);
+    }
+    const create = busyBtn("Create", "", async () => {
+      if (!name.value.trim()) { name.focus(); return; }
+      const k = pick.querySelector("input:checked").value;
+      const ch = await jsonPost("/api/servers/channels", { server: sv.id, name: name.value, kind: k });
+      closeDialog();
+      await loadChannels();
+      if (k === "text") openChannelChat(serverChannels.find((c) => c.id === ch.id) || ch);
+    });
+    submitOnEnter(name, create);
+    body.append(field("Type", pick), field("Channel name", name), actions(mkBtn("Cancel", "secondary", closeDialog), create));
+  });
+}
+
+function renameChannelDialog(ch) {
+  openDialog("Rename channel", (body) => {
+    const name = textInput("Channel name", ch.name);
+    const save = busyBtn("Save", "", async () => {
+      await jsonPost("/api/channels/update", { channel: ch.id, name: name.value });
+      closeDialog(); onServerUpdate({ serverId: ch.serverId });
+    });
+    submitOnEnter(name, save);
+    body.append(field("Channel name", name), actions(mkBtn("Cancel", "secondary", closeDialog), save));
+  });
+}
+
+async function deleteChannel(ch) {
+  if (!confirm(`Delete ${ch.kind === "text" ? "#" : "🔊 "}${ch.name}? Its messages go with it, for everyone.`)) return;
+  try { await jsonPost("/api/channels/delete", { channel: ch.id }); }
+  catch (e) { toast(e.message); return; }
+  onServerUpdate({ serverId: ch.serverId });
+}
+
+// ---------- Collapsible sidebar sections ----------
+function restoreCollapsed() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("tb.collapsed") || "{}"); } catch {}
+  document.querySelectorAll("#sidebar .section[data-section]").forEach((sec) => {
+    sec.classList.toggle("collapsed", !!saved[sec.dataset.section]);
+  });
+}
+document.querySelectorAll("#sidebar .section[data-section] h3.collapser").forEach((h) => {
+  h.addEventListener("click", (e) => {
+    if (e.target.closest(".h3-actions")) return; // the header's buttons aren't a toggle
+    const sec = h.closest(".section");
+    sec.classList.toggle("collapsed");
+    try {
+      const saved = JSON.parse(localStorage.getItem("tb.collapsed") || "{}");
+      saved[sec.dataset.section] = sec.classList.contains("collapsed");
+      localStorage.setItem("tb.collapsed", JSON.stringify(saved));
+    } catch {}
+  });
+});
+
 // ---------- Live events ----------
 // The server sends an app-level {"type":"ping"} every ~20s. We record when we
 // last heard anything and, if a proxy silently drops the socket (the browser
@@ -2006,6 +2667,8 @@ function connectEvents() {
       // Update the open group's member roster dot too.
       const gm = groupMembers.get(e.userId);
       if (gm) { gm.online = e.online; if (openGroup) renderMembersPanel(); }
+      const sm = serverMembers.get(e.userId);
+      if (sm && e.userId !== me.id) { sm.online = e.online; if (openServer) renderMemberCol(); }
     } else if (e.type === "hello") {
       (e.onlineFriends || []).forEach((id) => { const f = friendState.get(id); if (f) f.online = true; });
       renderFriends();
@@ -2037,13 +2700,22 @@ function connectEvents() {
       if (openFriend && e.message.senderId === openFriend.id) applyEdit(e.message);
     } else if (e.type === "group_message_edited") {
       if (openGroup && e.message.groupId === openGroup.id) applyEdit(e.message);
+    } else if (e.type === "channel_message_edited") {
+      if (openChannel && e.message.channelId === openChannel.id) applyEdit(e.message);
     } else if (e.type === "message_deleted") {
-      // Someone withdrew a message; drop its content wherever it's on screen.
+      // Someone withdrew a message; drop its content if that conversation is
+      // on screen. Match the scope EXACTLY: DM, group and channel message ids
+      // are separate sequences, so channel message #5 is not DM message #5.
       const d = e.message || {};
-      const forThisChat = d.scope === "group"
-        ? (openGroup && d.groupId === openGroup.id)
-        : !!openFriend;
+      const forThisChat =
+        d.scope === "channel" ? !!(openChannel && d.channelId === openChannel.id) :
+        d.scope === "group" ? !!(openGroup && d.groupId === openGroup.id) :
+        convKind() === "dm";
       if (forThisChat) applyDelete(d.id);
+    } else if (e.type === "channel_message") {
+      onChannelMessage(e.message);
+    } else if (e.type === "server_update") {
+      onServerUpdate(e.message || {});
     } else if (e.type === "reaction") {
       applyReaction(e.message);
     } else if (e.type === "group_message") {
@@ -2138,6 +2810,9 @@ function knownNick(nick) {
     if (f.user.nick.toLowerCase() === want) return f.user.nick;
   }
   for (const m of groupMembers.values()) {
+    if (m.nick.toLowerCase() === want) return m.nick;
+  }
+  for (const m of serverMembers.values()) {
     if (m.nick.toLowerCase() === want) return m.nick;
   }
   return null;

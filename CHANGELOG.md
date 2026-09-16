@@ -24,6 +24,25 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.21.0
+
+**New — servers** (@Etheri; web and desktop, phone later)
+- **Create a server** with a name and an icon. It starts with a **#general**
+  text channel and a **General** voice channel. You're its **admin**.
+- **Invite people** with a link or a code from the server's ⚙ menu. Opening a
+  link shows the server and its member count before you join.
+- **Text channels** work like DMs: attachments, replies, reactions, editing,
+  deleting, mentions, unread pips and notifications, all live.
+- **Admins** add, rename and delete channels, rename the server, change its
+  icon, and can delete anyone's message. Members can chat and invite. Only the
+  creator can delete the server; everyone else can leave it.
+- The left side now has **Servers**, **Groups** and **Friends** sections, each
+  collapsible (remembered per browser). A server opens a channel column and a
+  member list; on narrow windows the member list hides.
+- Voice channels are listed but not joinable yet; that's the next release,
+  along with the list of who's active in a server.
+- Groups stay as they are, for a simple chat away from a community.
+
 ## 1.20.3
 
 **Fixed — multi-line messages lost their formatting** (@Etheri, web)
