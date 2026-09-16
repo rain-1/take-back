@@ -20,7 +20,9 @@
   .src .n { font-size:12px; margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   footer { border-top:1px solid var(--border); padding:12px 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   label { color:var(--muted); font-size:12px; }
-  select { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 8px; font:inherit; min-width:260px; }
+  .check { display:flex; align-items:center; gap:6px; color:var(--text); font-size:13px; cursor:pointer; }
+  .audiolabel { color:var(--muted); font-size:12px; }
+  .audiolabel.none { color:#fcd34d; }
   .spacer { flex:1; }
   .btn { border-radius:8px; padding:7px 14px; font:inherit; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text); }
   .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; } .btn:disabled { opacity:.45; cursor:default; }
@@ -30,13 +32,13 @@
 <body>
 <header>
   <h1>Share your screen</h1>
-  <div class="sub">Pick what to show, and which app's sound to send with it — just that app, not your whole computer.</div>
+  <div class="sub">Pick a window to send just that app's sound, or the entire screen to send everything except this call.</div>
 </header>
 <div class="tabs"><button data-kind="window" class="on">Windows</button><button data-kind="screen">Entire screen</button></div>
 <div id="grid"></div>
 <footer>
-  <label for="audio">Audio</label>
-  <select id="audio"><option value="">No audio</option></select>
+  <label class="check"><input type="checkbox" id="shareAudio" checked> Share audio</label>
+  <span class="audiolabel" id="audioLabel">Pick something to share</span>
   <span class="spacer"></span>
   <button class="btn" id="cancel">Cancel</button>
   <button class="btn primary" id="share" disabled>Share</button>
@@ -55,15 +57,28 @@
       const img = document.createElement("img"); img.src = s.thumb; img.alt = "";
       const n = document.createElement("div"); n.className = "n"; n.textContent = s.name;
       card.append(img, n);
-      card.onclick = () => { selected = s.id; $("share").disabled = false; render(); };
+      card.onclick = () => { selected = s.id; $("share").disabled = false; render(); describe(); };
       card.ondblclick = share;
       grid.append(card);
     }
   }
 
+  // Say, before sharing, exactly whose sound would go out with this choice.
+  let describing = 0;
+  async function describe() {
+    const mine = ++describing;
+    const label = $("audioLabel");
+    label.className = "audiolabel";
+    label.textContent = "Finding this window's app…";
+    const d = await window.picker.describe(selected);
+    if (mine !== describing) return; // a newer selection won
+    label.textContent = d.label;
+    label.classList.toggle("none", !d.available);
+  }
+
   function share() {
     if (!selected) return;
-    window.picker.choose({ cancelled: false, sourceId: selected, audioId: $("audio").value || null });
+    window.picker.choose({ cancelled: false, sourceId: selected, shareAudio: $("shareAudio").checked });
   }
 
   document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
@@ -76,17 +91,8 @@
 
   window.picker.data().then((d) => {
     data = d;
-    const sel = $("audio");
-    for (const a of d.apps) {
-      const o = document.createElement("option");
-      o.value = a.id;
-      o.textContent = a.name + (a.pid ? ` (pid ${a.pid})` : "");
-      sel.append(o);
-    }
-    const real = d.apps.filter((a) => !a.id.startsWith("tone:")).length;
-    $("hint").textContent = real
-      ? "Only apps currently holding an audio session are listed — start playback first if yours is missing."
-      : "No capturable apps found on this computer yet. The test tone checks that sound reaches everyone.";
+    $("hint").textContent = "Sharing a browser window sends that whole browser's sound (every tab). " +
+      "An app turned down in the volume mixer is shared turned down.";
     if (!d.sources.some((s) => s.id.startsWith("window:"))) {
       document.querySelector('.tabs [data-kind="screen"]').click();
     }

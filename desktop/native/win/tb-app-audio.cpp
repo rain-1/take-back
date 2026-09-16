@@ -9,6 +9,18 @@
 //       that process (and its child processes) plays. Runs until stdout closes
 //       or the process exits.
 //
+//   tb-app-audio --resolve <hwnd>
+//       Which application a window belongs to: {"pid":1234,"name":"Spotify.exe"}.
+//
+//   tb-app-audio --window <hwnd>
+//       Like --capture, for the application that owns that window — so sharing
+//       a window brings its sound without the user picking the app separately.
+//
+//   tb-app-audio --capture-except <pid>
+//       Everything the computer plays EXCEPT that process and its children. Used
+//       for whole-screen shares with take-back's own pid: all your sound, minus
+//       the call, so nobody hears themselves echoed back.
+//
 //   tb-app-audio --tone <hz> [--seconds N] [--volume 0..1] [--muted]
 //       Plays a sine through the default output device, so a test has an app
 //       whose audio is known in advance to capture.
@@ -213,16 +225,58 @@ class ActivationHandler : public IActivateAudioInterfaceCompletionHandler, publi
   }
 };
 
-static int capture(DWORD pid) {
+// ---- window -> owning application ----------------------------------------------
+
+// Windows Store (UWP) apps are drawn inside a frame window owned by
+// ApplicationFrameHost.exe; the app's real process owns a child CoreWindow.
+// Capturing the frame host would capture nothing useful, so look past it.
+struct ChildSearch { DWORD hostPid; DWORD found; };
+
+static BOOL CALLBACK findRealChild(HWND child, LPARAM lp) {
+  auto *s = (ChildSearch *)lp;
+  DWORD pid = 0;
+  GetWindowThreadProcessId(child, &pid);
+  if (pid && pid != s->hostPid) { s->found = pid; return FALSE; }
+  return TRUE;
+}
+
+static DWORD windowProcess(HWND hwnd) {
+  DWORD pid = 0;
+  if (!IsWindow(hwnd) || !GetWindowThreadProcessId(hwnd, &pid) || !pid) return 0;
+  std::string name = processName(pid);
+  if (_stricmp(name.c_str(), "ApplicationFrameHost.exe") == 0) {
+    ChildSearch s = {pid, 0};
+    EnumChildWindows(hwnd, findRealChild, (LPARAM)&s);
+    // A minimized or suspended Store app detaches its CoreWindow from the
+    // frame, leaving nothing to find. Say "no app" rather than return the frame
+    // host: capturing that would silently share nothing.
+    return s.found;
+  }
+  return pid;
+}
+
+static HWND parseHwnd(const wchar_t *text) {
+  return (HWND)(ULONG_PTR)wcstoull(text, nullptr, 10);
+}
+
+static int resolveWindow(HWND hwnd) {
+  DWORD pid = windowProcess(hwnd);
+  if (!pid) { printf("null\n"); return 2; }
+  printf("{\"pid\":%lu,\"name\":\"%s\"}\n", (unsigned long)pid, jsonEscape(processName(pid)).c_str());
+  return 0;
+}
+
+static int capture(DWORD pid, PROCESS_LOOPBACK_MODE mode) {
   HANDLE target = OpenProcess(SYNCHRONIZE, FALSE, pid);
   if (!target) { fprintf(stderr, "no such process: %lu\n", (unsigned long)pid); return 2; }
 
   AUDIOCLIENT_ACTIVATION_PARAMS params = {};
   params.ActivationType = AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK;
   params.ProcessLoopbackParams.TargetProcessId = pid;
-  // Include the process's children too: browsers and Electron apps play audio
-  // from a helper process, not the one that owns the window.
-  params.ProcessLoopbackParams.ProcessLoopbackMode = PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE;
+  // INCLUDE: that process and its children (browsers and Electron apps play
+  // audio from a helper process, not the one that owns the window).
+  // EXCLUDE: everything else on the system.
+  params.ProcessLoopbackParams.ProcessLoopbackMode = mode;
 
   PROPVARIANT pv;
   PropVariantInit(&pv);
@@ -370,7 +424,15 @@ int wmain(int argc, wchar_t **argv) {
   if (argc >= 2 && wcscmp(argv[1], L"--list") == 0) {
     rc = listSessions();
   } else if (argc >= 3 && wcscmp(argv[1], L"--capture") == 0) {
-    rc = capture((DWORD)wcstoul(argv[2], nullptr, 10));
+    rc = capture((DWORD)wcstoul(argv[2], nullptr, 10), PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE);
+  } else if (argc >= 3 && wcscmp(argv[1], L"--capture-except") == 0) {
+    rc = capture((DWORD)wcstoul(argv[2], nullptr, 10), PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE);
+  } else if (argc >= 3 && wcscmp(argv[1], L"--resolve") == 0) {
+    rc = resolveWindow(parseHwnd(argv[2]));
+  } else if (argc >= 3 && wcscmp(argv[1], L"--window") == 0) {
+    DWORD pid = windowProcess(parseHwnd(argv[2]));
+    if (!pid) { fprintf(stderr, "no such window\n"); rc = 2; }
+    else rc = capture(pid, PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE);
   } else if (argc >= 3 && wcscmp(argv[1], L"--tone") == 0) {
     double seconds = 5;
     float volume = 0.05f;
@@ -383,7 +445,8 @@ int wmain(int argc, wchar_t **argv) {
     }
     rc = tone(wcstod(argv[2], nullptr), seconds, volume, muted);
   } else {
-    fwprintf(stderr, L"usage: tb-app-audio --list | --capture <pid> | --tone <hz> [--seconds N] [--volume 0..1] [--muted]\n");
+    fwprintf(stderr, L"usage: tb-app-audio --list | --capture <pid> | --capture-except <pid> | --resolve <hwnd> | --window <hwnd>\n"
+                    L"                    | --tone <hz> [--seconds N] [--volume 0..1] [--muted]\n");
   }
   CoUninitialize();
   return rc;

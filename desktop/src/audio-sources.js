@@ -98,7 +98,20 @@ function winHelperPath() {
   return candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch (_) { return false; } });
 }
 
+function runHelper(args, timeout = 5000) {
+  const exe = winHelperPath();
+  if (!exe) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile(exe, args, { timeout, windowsHide: true }, (err, stdout) => resolve(err && !stdout ? null : stdout));
+  });
+}
+
 const windows = {
+  // Which application owns a captured window, or null.
+  async resolveWindow(hwnd) {
+    const out = await runHelper(["--resolve", String(hwnd)]);
+    try { return out ? JSON.parse(out) : null; } catch (_) { return null; }
+  },
   list() {
     const exe = winHelperPath();
     if (!exe) return Promise.resolve([]);
@@ -114,8 +127,10 @@ const windows = {
   start(id, onChunk) {
     const exe = winHelperPath();
     if (!exe) throw new Error("tb-app-audio.exe not found");
-    const pid = id.split(":")[1];
-    return pcmFromChild(spawn(exe, ["--capture", pid], { windowsHide: true }), onChunk);
+    const [kind, value] = id.split(":");
+    const args = { pid: ["--capture", value], hwnd: ["--window", value], except: ["--capture-except", value] }[kind];
+    if (!args) throw new Error(`unknown audio source ${id}`);
+    return pcmFromChild(spawn(exe, args, { windowsHide: true }), onChunk);
   },
 };
 
@@ -155,6 +170,60 @@ const linux = {
 
 const platform = process.platform === "win32" ? windows : process.platform === "linux" ? linux : null;
 
+// Desktop-capturer ids look like "window:<id>:0" and "screen:<id>:0". On
+// Windows the window id is the HWND.
+function parseSourceId(sourceId) {
+  const [kind, id] = String(sourceId).split(":");
+  return { kind, id };
+}
+
+// audioForShare decides what sound goes with a screen share, so the user never
+// has to pick an app separately (Etheri's feedback on the first test build):
+//   a window        -> the application that owns it (and its child processes)
+//   the whole screen -> everything EXCEPT take-back itself, so the call isn't
+//                      echoed back to the people in it
+// Returns { audioId, label } — audioId null when nothing can be captured, with
+// the label saying why.
+async function audioForShare(sourceId, selfPid) {
+  const { kind, id } = parseSourceId(sourceId);
+  if (process.platform === "win32") {
+    if (kind === "screen") {
+      return { audioId: `except:${selfPid}`, label: "All your computer's sound, except take-back" };
+    }
+    if (kind === "window") {
+      const owner = await windows.resolveWindow(id);
+      return owner
+        ? { audioId: `hwnd:${id}`, label: `Sound from ${owner.name}` }
+        : { audioId: null, label: "Couldn't find the app behind this window, so no sound" };
+    }
+  }
+  if (process.platform === "linux") {
+    return linuxAudioForShare(kind, id);
+  }
+  return { audioId: null, label: `Sharing sound isn't supported on ${process.platform} yet` };
+}
+
+// Linux: X11 windows carry their process id in _NET_WM_PID, and every app
+// playing audio is a PipeWire node tagged with application.process.id. Wayland
+// hides window ownership, so there it can't be matched.
+// NOTE: not yet run on a real PipeWire desktop.
+async function linuxAudioForShare(kind, id) {
+  if (kind !== "window") {
+    return { audioId: null, label: "Whole-screen sound isn't supported on Linux yet" };
+  }
+  const pid = await new Promise((resolve) => {
+    execFile("xprop", ["-id", id, "_NET_WM_PID"], { timeout: 3000 }, (err, out) => {
+      const m = !err && /=\s*(\d+)/.exec(out || "");
+      resolve(m ? Number(m[1]) : null);
+    });
+  });
+  if (!pid) return { audioId: null, label: "Couldn't tell which app owns this window, so no sound" };
+  const app = (await linux.list()).find((a) => a.pid === pid);
+  return app
+    ? { audioId: app.id, label: `Sound from ${app.name}` }
+    : { audioId: null, label: "This app isn't playing any sound right now" };
+}
+
 async function list() {
   const apps = platform ? await platform.list() : [];
   // The tone is always offered: it's how you check the pipeline end to end.
@@ -167,4 +236,4 @@ function start(id, onChunk) {
   return platform.start(id, onChunk);
 }
 
-module.exports = { list, start, RATE, CHANNELS };
+module.exports = { list, start, audioForShare, parseSourceId, resolveWindow: windows.resolveWindow, RATE, CHANNELS };

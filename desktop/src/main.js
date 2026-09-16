@@ -178,10 +178,7 @@ async function openPicker() {
   if (TEST) {
     return { sourceId: "frame", audioId: process.env.TB_TEST_AUDIO ?? "tone:440" };
   }
-  const [sources, apps] = await Promise.all([
-    desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 } }),
-    audio.list(),
-  ]);
+  const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 } });
   return new Promise((resolve) => {
     const picker = new BrowserWindow({
       parent: win, modal: true, width: 860, height: 640, title: "Share your screen",
@@ -193,14 +190,19 @@ async function openPicker() {
       if (done) return;
       done = true;
       ipcMain.removeHandler("picker:data");
+      ipcMain.removeHandler("picker:describe");
       ipcMain.removeAllListeners("picker:choose");
       if (!picker.isDestroyed()) picker.close();
       resolve(choice);
     };
     ipcMain.handle("picker:data", () => ({
       sources: sources.map((s) => ({ id: s.id, name: s.name, thumb: s.thumbnail.toDataURL() })),
-      apps,
     }));
+    // What sound would come with this source — shown under the checkbox.
+    ipcMain.handle("picker:describe", async (_e, sourceId) => {
+      const { audioId, label } = await audio.audioForShare(sourceId, process.pid);
+      return { available: !!audioId, label };
+    });
     ipcMain.on("picker:choose", (_e, choice) => finish(choice));
     picker.on("closed", () => finish({ cancelled: true }));
     picker.setMenuBarVisibility(false);
@@ -218,8 +220,14 @@ function stopAppAudio() {
 ipcMain.handle("share:pick", async () => {
   const choice = await openPicker();
   if (!choice || choice.cancelled) return { cancelled: true };
+  // Tests name their audio source explicitly; people just tick "Share audio"
+  // and the sound follows from what they chose to share.
+  let audioId = choice.audioId || null;
+  if (!audioId && choice.shareAudio) {
+    audioId = (await audio.audioForShare(choice.sourceId, process.pid)).audioId;
+  }
   pendingShare = choice;
-  return { cancelled: false, audioId: choice.audioId || null };
+  return { cancelled: false, audioId };
 });
 
 ipcMain.handle("audio:start", (event, id) => {
@@ -267,6 +275,17 @@ app.whenReady().then(() => {
   if (TEST) {
     // Proves which capture backend a packaged build found (names only).
     audio.list().then((l) => console.log(`[test] audio sources: ${l.map((a) => a.name).join(", ")}`));
+    if (process.env.TB_TEST_LIST_SOURCES === "1") {
+      // Which sound each shareable source would bring. Ids and app names only:
+      // window TITLES can contain private text (tabs, messages), so never log them.
+      desktopCapturer.getSources({ types: ["window", "screen"], thumbnailSize: { width: 0, height: 0 } })
+        .then(async (list) => {
+          for (const src of list) {
+            const { audioId, label } = await audio.audioForShare(src.id, process.pid);
+            console.log(`[test] source ${src.id} -> ${audioId || "no audio"} (${label})`);
+          }
+        });
+    }
     console.log(`[test] window visible: ${win.isVisible()}`);
   }
   if (TEST && process.env.TB_TEST_PRESENT === "1") runTestScript();
