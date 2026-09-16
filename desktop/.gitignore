@@ -1,0 +1,3 @@
+node_modules/
+native/win/bin/
+native/win/build.log

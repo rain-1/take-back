@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Share your screen</title>
+<style>
+  :root { color-scheme: dark; --bg:#11141b; --surface:#171b24; --border:#232936; --text:#e8eaf0; --muted:#8a93a6; --accent:#5b8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px ui-sans-serif, system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--text);
+         display:flex; flex-direction:column; height:100vh; }
+  header { padding:14px 18px 6px; } h1 { font-size:15px; margin:0 0 4px; } .sub { color:var(--muted); font-size:12px; }
+  .tabs { display:flex; gap:6px; padding:8px 18px; }
+  .tabs button { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 12px; cursor:pointer; font:inherit; }
+  .tabs button.on { border-color:var(--accent); color:#fff; }
+  #grid { flex:1; overflow:auto; padding:8px 18px; display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; align-content:start; }
+  .src { background:var(--surface); border:2px solid transparent; border-radius:10px; padding:6px; cursor:pointer; }
+  .src:hover { border-color:var(--border); } .src.sel { border-color:var(--accent); }
+  .src img { width:100%; aspect-ratio:16/9; object-fit:contain; background:#000; border-radius:6px; display:block; }
+  .src .n { font-size:12px; margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  footer { border-top:1px solid var(--border); padding:12px 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  label { color:var(--muted); font-size:12px; }
+  select { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 8px; font:inherit; min-width:260px; }
+  .spacer { flex:1; }
+  .btn { border-radius:8px; padding:7px 14px; font:inherit; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; } .btn:disabled { opacity:.45; cursor:default; }
+  .hint { width:100%; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Share your screen</h1>
+  <div class="sub">Pick what to show, and which app's sound to send with it — just that app, not your whole computer.</div>
+</header>
+<div class="tabs"><button data-kind="window" class="on">Windows</button><button data-kind="screen">Entire screen</button></div>
+<div id="grid"></div>
+<footer>
+  <label for="audio">Audio</label>
+  <select id="audio"><option value="">No audio</option></select>
+  <span class="spacer"></span>
+  <button class="btn" id="cancel">Cancel</button>
+  <button class="btn primary" id="share" disabled>Share</button>
+  <div class="hint" id="hint"></div>
+</footer>
+<script>
+  let data = { sources: [], apps: [] }, kind = "window", selected = null;
+  const $ = (id) => document.getElementById(id);
+
+  function render() {
+    const grid = $("grid");
+    grid.replaceChildren();
+    for (const s of data.sources.filter((s) => s.id.startsWith(kind + ":"))) {
+      const card = document.createElement("div");
+      card.className = "src" + (s.id === selected ? " sel" : "");
+      const img = document.createElement("img"); img.src = s.thumb; img.alt = "";
+      const n = document.createElement("div"); n.className = "n"; n.textContent = s.name;
+      card.append(img, n);
+      card.onclick = () => { selected = s.id; $("share").disabled = false; render(); };
+      card.ondblclick = share;
+      grid.append(card);
+    }
+  }
+
+  function share() {
+    if (!selected) return;
+    window.picker.choose({ cancelled: false, sourceId: selected, audioId: $("audio").value || null });
+  }
+
+  document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+    kind = b.dataset.kind; render();
+  });
+  $("share").onclick = share;
+  $("cancel").onclick = () => window.picker.choose({ cancelled: true });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("cancel").click(); });
+
+  window.picker.data().then((d) => {
+    data = d;
+    const sel = $("audio");
+    for (const a of d.apps) {
+      const o = document.createElement("option");
+      o.value = a.id;
+      o.textContent = a.name + (a.pid ? ` (pid ${a.pid})` : "");
+      sel.append(o);
+    }
+    const real = d.apps.filter((a) => !a.id.startsWith("tone:")).length;
+    $("hint").textContent = real
+      ? "Only apps currently holding an audio session are listed — start playback first if yours is missing."
+      : "No capturable apps found on this computer yet. The test tone checks that sound reaches everyone.";
+    if (!d.sources.some((s) => s.id.startsWith("window:"))) {
+      document.querySelector('.tabs [data-kind="screen"]').click();
+    }
+    render();
+  });
+</script>
+</body>
+</html>

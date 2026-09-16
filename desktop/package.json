@@ -1,0 +1,18 @@
+{
+  "name": "take-back-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "take-back desktop proof of concept: screen share with per-application audio",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test:pipeline": "node test/pipeline.test.js"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "puppeteer-core": "^25.11.0"
+  },
+  "allowScripts": {
+    "electron@38.8.6": true
+  }
+}
