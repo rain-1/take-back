@@ -31,7 +31,8 @@ and plays from the screen tile.
 |---|---|
 | Pipeline (Electron → WebRTC → other person's screen tile) | ✅ `npm run test:pipeline` — 440 Hz tone arrives at the right frequency and level; control run sends no audio |
 | Windows per-app capture | ✅ run on real Windows 11: lists audio apps, captures one app's audio in isolation |
-| Windows capture inside the Electron app, in a call | ⏳ next |
+| Windows build | ✅ `scripts/package-win.sh` (from Linux/WSL, no Windows toolchain). Ran on real Windows 11 in a call: the other side received the source at 441 Hz within 0.25 s |
+| Real app capture inside the Windows build, in a call | ⏳ needs a human test on Windows |
 | Linux (PipeWire) | ⚠️ written, not yet run on a PipeWire desktop |
 | macOS | ❌ not started (ScreenCaptureKit) |
 
@@ -53,4 +54,19 @@ ZIG=/path/to/zig native/win/build.sh        # -> native/win/bin/tb-app-audio.exe
 native/win/bin/tb-app-audio.exe --list
 ```
 
-Pipeline test (needs Go, Chrome and a display): `GO=go npm run test:pipeline`
+Tests (need Go, Chrome and a display):
+
+```sh
+GO=go npm run test:pipeline     # app audio reaches the other person's screen tile
+GO=go node test/audit.test.js   # web-parity checks against the real window
+```
+
+Windows package (from Linux/WSL):
+
+```sh
+ZIG=/path/to/zig scripts/package-win.sh   # -> dist/take-back-desktop-win32-x64-<version>.zip
+```
+
+It downloads the official Electron Windows build, verifies it against
+Electron's published SHA-256 sums, adds the app and the cross-compiled audio
+helper, and zips it. Unsigned, so Windows SmartScreen will warn on first run.

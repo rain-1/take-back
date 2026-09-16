@@ -235,6 +235,10 @@ app.whenReady().then(() => {
       item.once("done", (_ev, state) => console.log(`[test] download ${state} ${item.getFilename()}`));
     });
   }
+  if (TEST) {
+    // Proves which capture backend a packaged build found (names only).
+    audio.list().then((l) => console.log(`[test] audio sources: ${l.map((a) => a.name).join(", ")}`));
+  }
   if (TEST && process.env.TB_TEST_PRESENT === "1") runTestScript();
   if (TEST && process.env.TB_CONTROL_PORT) startTestControl(Number(process.env.TB_CONTROL_PORT));
 });
