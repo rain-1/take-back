@@ -7,7 +7,9 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+// The take-back checkout whose server the tests run. TB_SOURCE_ROOT points at
+// another one, e.g. a newer web client than this branch has.
+const ROOT = process.env.TB_SOURCE_ROOT || path.resolve(__dirname, "..", "..");
 const DESKTOP = path.resolve(__dirname, "..");
 const GO = process.env.GO || "go";
 const CHROME = process.env.CHROME || "/usr/bin/google-chrome";
@@ -52,9 +54,9 @@ async function startTakeBack({ apiPort, webPort, openRegistration = false }) {
 }
 
 // Launch the desktop app. Lines it prints go to onLine as well as the console.
-function startElectron(env, onLine = () => {}) {
+function startElectron(env, onLine = () => {}, extraArgs = []) {
   const electron = require("electron"); // the binary's path, when required from Node
-  const p = run(electron, [DESKTOP, "--no-sandbox"], { env: { ...process.env, TB_TEST: "1", ...env } });
+  const p = run(electron, [DESKTOP, "--no-sandbox", ...extraArgs], { env: { ...process.env, TB_TEST: "1", ...env } });
   const handle = (d) => {
     for (const line of String(d).split("\n")) {
       if (!line.trim()) continue;

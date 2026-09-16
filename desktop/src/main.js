@@ -56,6 +56,7 @@ function openExternal(url) {
 }
 
 let win = null;
+const allowedOrigin = new URL(START_URL).origin;
 let pendingShare = null; // { sourceId, audioId } chosen for the next getDisplayMedia
 let stopAudio = null;
 
@@ -114,9 +115,10 @@ function createWindow() {
   // The preload bridge belongs to the take-back server only. Links in chat go
   // to the system browser, and the window can't be navigated to another site
   // with the bridge still attached.
-  const allowedOrigin = new URL(START_URL).origin;
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) openExternal(url);
+    const invite = inviteCodeOf(url);
+    if (invite) openInvite(invite); // a server invite joins here, not in a browser
+    else if (/^https?:\/\//i.test(url)) openExternal(url);
     return { action: "deny" };
   });
   // Leaving take-back in this window is simply refused. Links people click
@@ -124,6 +126,13 @@ function createWindow() {
   // that tries to navigate ITSELF elsewhere is not a click, and must not be
   // able to open things on the user's machine either.
   win.webContents.on("will-navigate", (event, url) => {
+    const invite = inviteCodeOf(url);
+    if (invite) {
+      // Reloading the page to reach the dialog would hang up a call in progress.
+      event.preventDefault();
+      openInvite(invite);
+      return;
+    }
     if (new URL(url).origin !== allowedOrigin) {
       event.preventDefault();
       if (TEST) console.log(`[test] blocked navigation to ${url}`);
@@ -151,6 +160,41 @@ function createWindow() {
   win.on("close", saveBounds);
   win.on("closed", () => { stopAppAudio(); win = null; });
 }
+
+// ---- server invite links ------------------------------------------------------
+
+// inviteCodeOf returns the code of a take-back server invite link
+// (<this server>/?invite=CODE), or null for any other URL.
+function inviteCodeOf(url) {
+  try {
+    const u = new URL(url);
+    const code = u.searchParams.get("invite");
+    return u.origin === allowedOrigin && code && /^[A-Za-z0-9]{4,32}$/.test(code) ? code : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// openInvite shows the web client's join dialog for an invite, in this window.
+// Signed out (or a page too old to have the dialog), it loads the invite link,
+// which the web client picks up once you've signed in.
+async function openInvite(code) {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  if (SHOW_WINDOW) { win.show(); win.focus(); }
+  const shown = await win.webContents.executeJavaScript(`(() => {
+    const main = document.getElementById("main");
+    if (typeof joinServerDialog !== "function" || !main || main.classList.contains("hidden")) return false;
+    joinServerDialog(${JSON.stringify(code)});
+    return true;
+  })()`).catch(() => false);
+  if (TEST) console.log(`[test] invite ${code} ${shown ? "opened in app" : "loaded as a link"}`);
+  if (!shown) win.loadURL(`${allowedOrigin}/?invite=${encodeURIComponent(code)}`);
+}
+
+// An invite link handed to the app on its command line (e.g. a shortcut, or
+// "Open with" take-back), on first launch or to the copy already running.
+const inviteInArgs = (argv) => argv.map(inviteCodeOf).find(Boolean) || null;
 
 // ---- screen source selection -----------------------------------------------
 
@@ -250,20 +294,27 @@ ipcMain.handle("audio:stop", () => { stopAppAudio(); return true; });
 
 // One window, however many times it's launched: a second launch brings the
 // existing window forward instead of opening a second, separately-logged-in copy.
-if (!app.requestSingleInstanceLock()) {
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
     if (!win) return;
     if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+    if (SHOW_WINDOW) { win.show(); win.focus(); }
+    const invite = inviteInArgs(argv);
+    if (invite) openInvite(invite);
   });
 }
 
 app.whenReady().then(() => {
+  // quit() above is asynchronous: a second copy still reaches ready, and would
+  // open (and on screen, flash) a window of its own before it exits.
+  if (!firstInstance) return;
   installDisplayMediaHandler();
   createWindow();
+  const invite = inviteInArgs(process.argv);
+  if (invite) win.webContents.once("did-finish-load", () => setTimeout(() => openInvite(invite), 1500));
   if (TEST) {
     // Save downloads somewhere known instead of prompting, and say how it went.
     session.defaultSession.on("will-download", (_e, item) => {

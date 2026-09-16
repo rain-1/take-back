@@ -59,7 +59,13 @@ Tests (need Go, Chrome and a display):
 ```sh
 GO=go npm run test:pipeline     # app audio reaches the other person's screen tile
 GO=go node test/audit.test.js   # web-parity checks against the real window
+GO=go TB_SOURCE_ROOT=/path/to/take-back node test/servers.test.js
+                                # servers, invite links and voice channels (needs a v1.22.0+ checkout)
 ```
+
+Server invite links (`<server>/?invite=CODE`) open the join dialog **in the
+app**: clicked in chat, or passed on the command line, including to a copy
+that's already running (`take-back.exe https://…/?invite=CODE`).
 
 Windows package (from Linux/WSL):
 
