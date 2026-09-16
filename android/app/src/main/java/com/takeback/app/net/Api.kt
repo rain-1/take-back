@@ -27,7 +27,16 @@ class ApiException(message: String) : Exception(message)
 data class User(val id: Long, val nick: String, val avatarUrl: String = "")
 
 /** Server identity + wire-protocol version, from GET /api/version. */
-data class ServerVersion(val name: String, val version: String, val protocol: Int) {
+/**
+ * [openRegistration] is null for a server that predates the field — those all
+ * accepted signups, so the app keeps offering Register in that case.
+ */
+data class ServerVersion(
+    val name: String,
+    val version: String,
+    val protocol: Int,
+    val openRegistration: Boolean? = null,
+) {
     /** True when this app can talk to that server (see internal/version). */
     val compatible: Boolean get() = protocol == BuildConfig.PROTOCOL
 }
@@ -170,7 +179,10 @@ object ApiClient {
     /** Ask the server what it is and whether we speak its protocol. */
     suspend fun serverVersion(): ServerVersion {
         val o = JSONObject(get("/api/version"))
-        return ServerVersion(o.optString("name"), o.optString("version"), o.optInt("protocol"))
+        return ServerVersion(
+            o.optString("name"), o.optString("version"), o.optInt("protocol"),
+            if (o.has("openRegistration")) o.optBoolean("openRegistration") else null,
+        )
     }
 
     // ---- auth ----
@@ -183,7 +195,7 @@ object ApiClient {
 
     private suspend fun userCall(path: String, nick: String, password: String): User {
         val body = JSONObject().put("nick", nick).put("password", password)
-        return parseUser(post(path, jsonBody(body)))
+        return parseUser(post(path, jsonBody(body))).also { myId = it.id; myNick = it.nick }
     }
 
     suspend fun logout() {
@@ -195,7 +207,11 @@ object ApiClient {
     @Volatile var myId: Long = 0
         private set
 
-    suspend fun me(): User = parseUser(get("/api/me")).also { myId = it.id }
+    /** Our own nick, cached for mention detection on incoming messages. */
+    @Volatile var myNick: String = ""
+        private set
+
+    suspend fun me(): User = parseUser(get("/api/me")).also { myId = it.id; myNick = it.nick }
 
     /**
      * Aggregate a raw per-user reaction list (as pushed in a reaction event)

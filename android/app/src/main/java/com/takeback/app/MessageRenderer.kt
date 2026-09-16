@@ -55,10 +55,17 @@ class MessageRenderer(
     private val onOpenAttachment: (url: String) -> Unit,
     private val onEdit: (RMsg) -> Unit = {},
     private val onDelete: (RMsg) -> Unit = {},
+    /** Canonical nick for a name someone @-mentioned, or null if they aren't here. */
+    private val knownNick: (String) -> String? = { null },
+    private val onMentionTap: (nick: String) -> Unit = {},
 ) {
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
     private val groupWindow = 5 * 60 // seconds
+
+    private companion object {
+        val MENTION = Regex("(^|[^\\w@/])@([A-Za-z0-9_-]{1,32})")
+    }
 
     private var lastSender = -1L
     private var lastTime = 0L
@@ -159,7 +166,11 @@ class MessageRenderer(
         } else {
             if (m.body.isNotEmpty()) {
                 val tv = TextView(ctx).apply { setTextColor(Color.parseColor("#E8EAF0")); textSize = 15f }
-                markwon.setMarkdown(tv, m.body)
+                renderBody(tv, m.body)
+                // Tappable mentions/links give the text view its own touch
+                // handling, which would otherwise swallow the long-press that
+                // opens this message's Reply/React/Edit/Delete menu.
+                tv.setOnLongClickListener { col.performLongClick() }
                 bodyViews[m.id] = tv
                 col.addView(tv)
                 // Muted "· edited" marker, shown once a message has been edited.
@@ -259,7 +270,7 @@ class MessageRenderer(
 
     /** Apply an edit to a message already on screen (mine or a peer's). */
     fun updateMessage(id: Long, body: String, editedAt: Long) {
-        bodyViews[id]?.let { markwon.setMarkdown(it, body) }
+        bodyViews[id]?.let { renderBody(it, body) }
         editedMarks[id]?.visibility = if (editedAt > 0) View.VISIBLE else View.GONE
     }
 
@@ -284,6 +295,51 @@ class MessageRenderer(
         editedMarks.remove(id)
         reactionRows.remove(id)
         reactionState.remove(id)
+    }
+
+    /** Markdown, then @mentions on top of it. */
+    private fun renderBody(tv: TextView, body: String) {
+        markwon.setMarkdown(tv, body)
+        applyMentions(tv)
+    }
+
+    /**
+     * Highlight @mentions of people in this conversation and make them tappable.
+     *
+     * Runs over the text Markwon produced, so it never has to understand Markdown.
+     * Same rule as the web client: the @ can't follow a word character, another @
+     * or a slash (so an email address isn't a mention), and only names that
+     * [knownNick] recognises count — a stray "@" in prose is left alone. Your own
+     * name is coloured differently, because that's the one you scan for.
+     */
+    private fun applyMentions(tv: TextView) {
+        val text = tv.text ?: return
+        val ssb = android.text.SpannableStringBuilder(text)
+        var any = false
+        for (m in MENTION.findAll(ssb)) {
+            val name = m.groups[2] ?: continue
+            val nick = knownNick(name.value) ?: continue
+            val start = name.range.first - 1 // include the @
+            val end = name.range.last + 1
+            val isMe = nick.equals(com.takeback.app.net.ApiClient.myNick, ignoreCase = true)
+            val fg = Color.parseColor(if (isMe) "#FFD7A8" else "#9EC1FF")
+            val bg = Color.parseColor(if (isMe) "#33E8935F" else "#265B8CFF")
+            ssb.setSpan(object : android.text.style.ClickableSpan() {
+                override fun onClick(widget: View) = onMentionTap(nick)
+                override fun updateDrawState(ds: android.text.TextPaint) {
+                    ds.color = fg
+                    ds.isUnderlineText = false
+                    ds.isFakeBoldText = true
+                }
+            }, start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            ssb.setSpan(android.text.style.BackgroundColorSpan(bg), start, end,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            any = true
+        }
+        if (any) {
+            tv.text = ssb
+            tv.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+        }
     }
 
     /** Whether a message with this id is currently on screen. */

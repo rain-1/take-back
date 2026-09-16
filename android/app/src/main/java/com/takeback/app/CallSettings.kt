@@ -22,6 +22,7 @@ object CallSettings {
     private const val KEY_CAMERA = "cameraName"
     private const val KEY_MIC_GAIN = "micGain"
     private const val KEY_VIDEO_FILL = "videoFill"
+    private const val KEY_STEREO = "stereo"
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -36,6 +37,15 @@ object CallSettings {
      */
     fun videoFill(c: Context): Boolean = prefs(c).getBoolean(KEY_VIDEO_FILL, false)
     fun setVideoFill(c: Context, on: Boolean) = prefs(c).edit().putBoolean(KEY_VIDEO_FILL, on).apply()
+
+    /**
+     * Transmit stereo instead of mono (the default — most phone mics are mono,
+     * and stereo roughly doubles the audio bitrate). Read when a call starts,
+     * because the capture channel count is fixed when the audio device module is
+     * built; changing it applies from the next call. Mirrors the web toggle.
+     */
+    fun stereo(c: Context): Boolean = prefs(c).getBoolean(KEY_STEREO, false)
+    fun setStereo(c: Context, on: Boolean) = prefs(c).edit().putBoolean(KEY_STEREO, on).apply()
 
     /** Mic gain (1.0 = untouched). Applied to the captured buffer before encoding. */
     fun micGain(c: Context): Float = prefs(c).getFloat(KEY_MIC_GAIN, 1.0f)

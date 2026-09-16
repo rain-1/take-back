@@ -286,6 +286,14 @@
                     android:paddingTop="8dp" />
 
                 <CheckBox
+                    android:id="@+id/stereoChk"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/transmit_stereo"
+                    android:textColor="#E8EAF0"
+                    android:paddingTop="4dp" />
+
+                <CheckBox
                     android:id="@+id/fillChk"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

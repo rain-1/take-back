@@ -284,6 +284,10 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         })
 
         // Video scaling: fit (whole frame, letterboxed) or fill (cropped).
+        // Stereo: read when the engine is built, so it applies to the next call.
+        binding.stereoChk.isChecked = CallSettings.stereo(this)
+        binding.stereoChk.setOnCheckedChangeListener { _, on -> CallSettings.setStereo(this, on) }
+
         binding.fillChk.isChecked = CallSettings.videoFill(this)
         binding.fillChk.setOnCheckedChangeListener { _, on ->
             CallSettings.setVideoFill(this, on)
@@ -391,6 +395,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
                 tiles.remove("$fromId-screen")?.let { t ->
                     binding.videoGrid.removeView(t.root); t.renderer.release()
                 }
+                applySpotlight()
             }
         }
 
@@ -454,6 +459,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             binding.videoGrid.removeView(t.root)
             t.renderer.release()
         }
+        applySpotlight()
     }
 
     override fun onRemoteAudio(peerId: String) = runOnUiThread {
@@ -481,6 +487,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             binding.videoGrid.removeView(t.root)
             t.renderer.release()
         }
+        applySpotlight()
         peerState.remove(peerId)
         remoteTracks.remove(peerId)
         peerVolumes.remove(peerId)
@@ -575,6 +582,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             setMargins(8, 8, 8, 8)
         }
         binding.videoGrid.addView(root, params)
+        // Tap to fill the call area with this feed; tap again for everyone.
+        root.setOnClickListener { toggleSpotlight(key) }
 
         val tile = Tile(root, renderer, avatar, micBadge, label, reconnect)
         tiles[key] = tile
@@ -584,6 +593,49 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         // State may have arrived before this peer's track did.
         peerState[key]?.let { (video, audio, _) -> applyState(key, video, audio) }
         refreshTile(key)
+        applySpotlight() // someone joining mid-spotlight stays out of the way
+    }
+
+    // ---- Spotlight ----
+    // One tile blown up across both columns, the others hidden. Hiding is safe
+    // here in a way it isn't on web: Android plays call audio through the audio
+    // device module, not through each tile's view, so a hidden peer is still
+    // heard. Matches the web client's click-to-maximise.
+
+    /** Key of the spotlit tile, or null for the normal grid. */
+    private var spotlight: String? = null
+
+    private fun toggleSpotlight(key: String) {
+        val entering = spotlight != key
+        spotlight = if (entering) key else null
+        applySpotlight()
+        if (entering && tiles.size > 1) {
+            android.widget.Toast.makeText(this, R.string.spotlight_hint, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Lay the grid out for the current spotlight (or none). */
+    private fun applySpotlight() {
+        // The spotlit person left or stopped sharing: back to everyone.
+        if (spotlight != null && spotlight !in tiles) spotlight = null
+        val screenH = resources.displayMetrics.heightPixels
+        for ((key, t) in tiles) {
+            val lp = t.root.layoutParams as android.widget.GridLayout.LayoutParams
+            when (spotlight) {
+                null -> {
+                    t.root.visibility = View.VISIBLE
+                    lp.columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1, 1f)
+                    lp.height = screenH / 3
+                }
+                key -> {
+                    t.root.visibility = View.VISIBLE
+                    lp.columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 2, 1f)
+                    lp.height = (screenH * 0.68).toInt()
+                }
+                else -> t.root.visibility = View.GONE
+            }
+            t.root.layoutParams = lp
+        }
     }
 
     /** Circle behind the initials; gains a green stroke while speaking. */

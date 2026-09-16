@@ -99,6 +99,9 @@ class RtcEngine(
     private val events: RtcEvents,
 ) {
     private val factory: PeerConnectionFactory
+
+    /** Stereo transmit, fixed for the life of this call (see CallSettings.stereo). */
+    private val stereo = CallSettings.stereo(appContext)
     private val iceServers = listOf(
         IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
     )
@@ -175,6 +178,10 @@ class RtcEngine(
         //  - setSamplesReadyCallback is monitoring only (it gets a copy), which
         //    is all the level meter needs.
         val adm = JavaAudioDeviceModule.builder(appContext)
+            // Capture in stereo only when asked; always PLAY stereo, so a web
+            // peer who transmits stereo is heard that way.
+            .setUseStereoInput(stereo)
+            .setUseStereoOutput(true)
             .setAudioRecordDataCallback { _, _, _, buffer -> applyMicGain(buffer) }
             .setSamplesReadyCallback { samples -> onMicSamples(samples) }
             .createAudioDeviceModule()
@@ -284,7 +291,8 @@ class RtcEngine(
     fun offerTo(peerId: String, nick: String) {
         val box = createPeer(peerId, nick)
         box.pc.createOffer(object : SdpAdapter() {
-            override fun onCreateSuccess(sdp: SessionDescription) {
+            override fun onCreateSuccess(created: SessionDescription) {
+                val sdp = tuned(created)
                 box.pc.setLocalDescription(SdpAdapter(), sdp)
                 signaler.sendOffer(peerId, sdp.toJson())
             }
@@ -308,7 +316,8 @@ class RtcEngine(
             box.pc.setRemoteDescription(object : SdpAdapter() {
                 override fun onSetSuccess() {
                     box.pc.createAnswer(object : SdpAdapter() {
-                        override fun onCreateSuccess(sdp: SessionDescription) {
+                        override fun onCreateSuccess(created: SessionDescription) {
+                            val sdp = tuned(created)
                             box.pc.setLocalDescription(SdpAdapter(), sdp)
                             signaler.sendAnswer(peerId, sdp.toJson())
                         }
@@ -474,6 +483,10 @@ class RtcEngine(
         events.onLocalScreenEnded()
     }
 
+    /** [sdp] with the Opus stereo flags applied when this call transmits stereo. */
+    private fun tuned(sdp: SessionDescription): SessionDescription =
+        if (stereo) SessionDescription(sdp.type, tuneOpusStereo(sdp.description)) else sdp
+
     /**
      * renegotiate re-offers to one peer after our track set changed. We only
      * initiate this for screen add/remove; incoming re-offers (e.g. a web peer
@@ -482,7 +495,8 @@ class RtcEngine(
     private fun renegotiate(peerId: String, box: PeerBox) {
         box.makingOffer = true
         box.pc.createOffer(object : SdpAdapter() {
-            override fun onCreateSuccess(sdp: SessionDescription) {
+            override fun onCreateSuccess(created: SessionDescription) {
+                val sdp = tuned(created)
                 box.pc.setLocalDescription(object : SdpAdapter() {
                     override fun onSetSuccess() {
                         signaler.sendOffer(peerId, sdp.toJson())
@@ -552,6 +566,28 @@ class RtcEngine(
         surfaceHelper?.dispose()
         factory.dispose()
     }
+}
+
+/**
+ * tuneOpusStereo adds `stereo=1;sprop-stereo=1` to the Opus fmtp line so the
+ * far side decodes (and sends) two channels. Same rewrite as the web client's
+ * tuneAudio, so a phone and a browser agree. Mono calls never come here, which
+ * keeps the default SDP byte-for-byte what it was before stereo existed.
+ */
+internal fun tuneOpusStereo(sdp: String): String {
+    val pt = Regex("a=rtpmap:(\\d+) opus/48000", RegexOption.IGNORE_CASE).find(sdp)?.groupValues?.get(1)
+        ?: return sdp
+    val params = "stereo=1;sprop-stereo=1"
+    val lines = sdp.split("\r\n").toMutableList()
+    val fmtp = lines.indexOfFirst { it.startsWith("a=fmtp:$pt ") }
+    if (fmtp >= 0) {
+        if (!lines[fmtp].contains("stereo=1")) lines[fmtp] = lines[fmtp] + ";" + params
+    } else {
+        // No fmtp line for Opus yet: add one straight after its rtpmap.
+        val rtpmap = lines.indexOfFirst { it.startsWith("a=rtpmap:$pt ") }
+        if (rtpmap >= 0) lines.add(rtpmap + 1, "a=fmtp:$pt $params")
+    }
+    return lines.joinToString("\r\n")
 }
 
 // ---- Small JSON <-> WebRTC adapters, matching the web client's wire shapes ----

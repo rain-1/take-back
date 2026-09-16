@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.takeback.app.databinding.ActivityHomeBinding
 import com.takeback.app.net.ApiClient
+import com.takeback.app.net.Mentions
 import com.takeback.app.net.Events
 import com.takeback.app.net.EventsListener
 import com.takeback.app.net.Friend
@@ -51,6 +52,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         binding.newGroupBtn.setOnClickListener { createGroup() }
         binding.logout.setOnClickListener { logout() }
 
+        Mentions.init(this)
         Events.addListener(this)
     }
 
@@ -131,7 +133,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 if (g.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 20 }
             })
-            if (g.unread > 0) row.addView(pip(g.unread)) else row.addView(TextView(this).apply {
+            if (g.unread > 0) row.addView(pip(g.unread, Mentions.has(Mentions.groupKey(g.id)))) else row.addView(TextView(this).apply {
                 text = g.memberCount.toString()
                 setTextColor(Color.parseColor("#5A6273")); textSize = 13f
             })
@@ -193,7 +195,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             if (f.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 16 }
         })
-        if (f.unread > 0) row.addView(pip(f.unread)) else row.addView(Button(this).apply {
+        if (f.unread > 0) row.addView(pip(f.unread, Mentions.has(Mentions.dmKey(f.user.id)))) else row.addView(Button(this).apply {
             text = "✕"
             setOnClickListener { remove(f) }
         })
@@ -250,15 +252,20 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         return row
     }
 
-    /** pip is the unread badge: an accent pill with the count (99+ capped). */
-    private fun pip(n: Int): View = TextView(this).apply {
+    /**
+     * pip is the unread badge: an accent pill with the count (99+ capped). It's
+     * RED when someone mentioned you in that conversation — "you're being asked
+     * for" is a different signal from "there's something new". Same as web.
+     */
+    private fun pip(n: Int, mentioned: Boolean = false): View = TextView(this).apply {
         text = if (n > 99) "99+" else n.toString()
         setTextColor(Color.WHITE)
         textSize = 11f
         setPadding(14, 4, 14, 4)
+        if (mentioned) contentDescription = "$n unread, you were mentioned"
         background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = 999f
-            setColor(Color.parseColor("#5B8CFF"))
+            setColor(Color.parseColor(if (mentioned) "#F87171" else "#5B8CFF"))
         }
     }
 
@@ -338,6 +345,10 @@ class HomeActivity : AppCompatActivity(), EventsListener {
     override fun onFriendRequest(fromId: Long, fromNick: String) = runOnUiThread { refresh() }
 
     override fun onFriendUpdate() = runOnUiThread { refresh() }
+
+    // A mention just arrived: re-fetch so the count AND the red pip update now,
+    // rather than on the next resume.
+    override fun onMentionsChanged() = runOnUiThread { refresh() }
 
     override fun onGroupUpdate(groupId: Long) = runOnUiThread { refresh() }
 

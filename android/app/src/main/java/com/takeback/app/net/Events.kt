@@ -29,6 +29,9 @@ interface EventsListener {
     /** A message's reactions changed. [reactions] is the fresh aggregate. */
     fun onReaction(scope: String, messageId: Long, reactions: List<Reaction>) {}
 
+    /** A conversation gained or lost its "you were mentioned" flag. */
+    fun onMentionsChanged() {}
+
     /** Someone withdrew a message. [scope] is "dm" or "group". */
     fun onMessageDeleted(scope: String, messageId: Long, groupId: Long) {}
     /** Someone invited me to a group — it needs an accept/decline. */
@@ -75,6 +78,7 @@ object Events {
     @Synchronized
     fun start(context: Context) {
         appContext = context.applicationContext
+        Mentions.init(appContext)
         createChannel()
         // Already connected (or about to reconnect): reopening the app must not
         // add a second connection.
@@ -151,7 +155,13 @@ object Events {
             "message" -> {
                 val m = parsePushedMessage(msg.getJSONObject("message"))
                 listeners.forEach { it.onMessage(m) }
-                if (openFriendId != m.senderId) notifyMessage(m)
+                if (openFriendId != m.senderId) {
+                    val mentioned = Mentions.mentions(m.body, ApiClient.myNick)
+                    if (mentioned && Mentions.mark(Mentions.dmKey(m.senderId))) {
+                        listeners.forEach { it.onMentionsChanged() }
+                    }
+                    notifyMessage(m, mentioned)
+                }
             }
             "message_edited" -> {
                 val m = parsePushedMessage(msg.getJSONObject("message"))
@@ -160,7 +170,13 @@ object Events {
             "group_message" -> {
                 val m = ApiClient.parseGroupMessage(msg.getJSONObject("message"))
                 listeners.forEach { it.onGroupMessage(m) }
-                if (openGroupId != m.groupId) notifyGroupMessage(m)
+                if (openGroupId != m.groupId) {
+                    val mentioned = Mentions.mentions(m.body, ApiClient.myNick)
+                    if (mentioned && Mentions.mark(Mentions.groupKey(m.groupId))) {
+                        listeners.forEach { it.onMentionsChanged() }
+                    }
+                    notifyGroupMessage(m, mentioned)
+                }
             }
             "group_message_edited" -> {
                 val m = ApiClient.parseGroupMessage(msg.getJSONObject("message"))
@@ -227,14 +243,16 @@ object Events {
     private fun notifyFriendRequest(nick: String) =
         post(NOTIF_FRIEND, "Friend request", "$nick wants to be your friend")
 
-    private fun notifyMessage(m: Message) {
+    private fun notifyMessage(m: Message, mentioned: Boolean) {
         val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
-        post(NOTIF_MESSAGE_BASE + m.senderId.toInt(), "New message", preview)
+        post(NOTIF_MESSAGE_BASE + m.senderId.toInt(),
+            if (mentioned) "You were mentioned" else "New message", preview)
     }
 
-    private fun notifyGroupMessage(m: GroupMessage) {
+    private fun notifyGroupMessage(m: GroupMessage, mentioned: Boolean) {
         val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
-        post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(), "New group message", preview)
+        post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(),
+            if (mentioned) "You were mentioned in a group" else "New group message", preview)
     }
 
     /** Notification text for a message that is nothing but an attachment. */

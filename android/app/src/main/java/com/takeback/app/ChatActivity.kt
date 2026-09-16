@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.takeback.app.databinding.ActivityChatBinding
 import com.takeback.app.net.ApiClient
+import com.takeback.app.net.Mentions
 import com.takeback.app.net.Events
 import com.takeback.app.net.EventsListener
 import com.takeback.app.net.Message
@@ -60,7 +61,19 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             onOpenAttachment = { openAttachment(it) },
             onDelete = { deleteMessage(it) },
             onEdit = { editMessage(it) },
+            // In a DM the only people who can be mentioned are you and them.
+            knownNick = { n ->
+                listOf(ApiClient.myNick, friendNick).firstOrNull { it.isNotEmpty() && it.equals(n, ignoreCase = true) }
+            },
+            onMentionTap = { nick ->
+                val isMe = nick.equals(ApiClient.myNick, ignoreCase = true)
+                ProfileCard.show(this, nick, if (isMe) "This is you." else "Your friend — you're in your chat with them.")
+            },
         )
+        // Your own nick is needed to highlight your name. It's normally cached by
+        // the home screen, but this screen can be restored directly after the
+        // process was killed.
+        if (ApiClient.myNick.isEmpty()) lifecycleScope.launch { runCatching { ApiClient.me() } }
 
         binding.sendBtn.setOnClickListener { sendText() }
         // "*/*" so it isn't just photos any more — video, audio, documents, anything.
@@ -76,6 +89,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         super.onResume()
         Events.openFriendId = friendId
         Events.clearMessageNotification(friendId) // viewing it dismisses its notification
+        Mentions.clear(Mentions.dmKey(friendId)) // and clears its red "you were mentioned" pip
     }
 
     override fun onPause() {

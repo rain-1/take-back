@@ -24,6 +24,41 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.20.0
+
+Android catches up with four web features (@river asked for these).
+
+**Added — @mentions** (Android)
+- A mention of someone in the conversation is highlighted and tappable, opening a
+  profile card: presence, their role in a group, and "Message them" when you're
+  friends. Your own name is coloured differently.
+- A message mentioning you turns that conversation's pip **red** on the home
+  screen and the notification says "You were mentioned". The flag latches until
+  you open the conversation, and unlike the web client's it's persisted, so it
+  survives the app being closed.
+- Same matching rule as web: an email address, a URL path or `@@name` isn't a
+  mention, and only people actually in the conversation match.
+- Mentions and links make message text tappable, which would have swallowed
+  the long-press menu; long-pressing the text still opens Reply/React/Edit/Delete.
+
+**Added — tap a tile to maximise it** (Android)
+- Tap any camera or screen tile to span it across the call area; tap again to see
+  everyone. Hiding the other tiles is safe on Android in a way it isn't on web:
+  call audio plays through the audio device module, not through each tile's view,
+  so nobody goes silent.
+
+**Added — mono/stereo transmit toggle** (Android)
+- "Transmit stereo audio" in the call settings, off by default. It captures in
+  stereo and adds the same Opus `stereo=1;sprop-stereo=1` flags as the web client.
+  The capture channel count is fixed when a call's audio pipeline is built, so it
+  applies **from your next call** and says so. Stereo from other people now plays
+  in stereo regardless.
+
+**Changed — no Register option when signups are closed** (Android)
+- The login screen reads `openRegistration` from `/api/version` and replaces the
+  Register link with "Registration is closed — ask the admin for an account",
+  matching web, instead of refusing someone after they've filled the form in.
+
 ## 1.19.2
 
 **Fixed — incoming messages shown two (or more) times** (@river, @Etheri; web + Android)

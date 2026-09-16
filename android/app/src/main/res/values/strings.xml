@@ -54,4 +54,7 @@
     <string name="mirror_my_video">Mirror my video</string>
     <string name="mirror_note">Only changes your own preview — peers always see you un-mirrored.</string>
     <string name="crop_video_to_fill">Crop video to fill the tile</string>
+    <string name="registration_closed">Registration is closed — ask the admin for an account.</string>
+    <string name="transmit_stereo">Transmit stereo audio (from your next call)</string>
+    <string name="spotlight_hint">Tap again to show everyone</string>
 </resources>

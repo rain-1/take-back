@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import coil.load
 import com.takeback.app.databinding.ActivityGroupChatBinding
 import com.takeback.app.net.ApiClient
+import com.takeback.app.net.Mentions
 import com.takeback.app.net.Events
 import com.takeback.app.net.EventsListener
 import com.takeback.app.net.GroupMember
@@ -70,6 +71,11 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             onJoinCall = { joinCall(it) },
             onOpenAttachment = { openAttachment(it) },
             onDelete = { deleteMessage(it) },
+            knownNick = { n ->
+                members.firstOrNull { it.nick.equals(n, ignoreCase = true) }?.nick
+                    ?: ApiClient.myNick.takeIf { it.isNotEmpty() && it.equals(n, ignoreCase = true) }
+            },
+            onMentionTap = { nick -> showMentionProfile(nick) },
             onEdit = { editMessage(it) },
         )
 
@@ -88,6 +94,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         super.onResume()
         Events.openGroupId = groupId
         Events.clearGroupMessageNotification(groupId) // viewing it dismisses its notification
+        Mentions.clear(Mentions.groupKey(groupId)) // and clears its red "you were mentioned" pip
     }
 
     override fun onPause() {
@@ -211,6 +218,34 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             runCatching { ApiClient.deleteMessage(m.id, "group") }
                 .onSuccess { renderer.markDeleted(m.id) }
                 .onFailure { toast("Couldn't delete: " + (it.message ?: "failed")) }
+        }
+    }
+
+    /**
+     * Profile card for a mentioned member: presence, their role here, and a
+     * shortcut to a DM when you're friends (the friend list is fetched on tap,
+     * since this screen doesn't otherwise need it).
+     */
+    private fun showMentionProfile(nick: String) {
+        if (nick.equals(ApiClient.myNick, ignoreCase = true)) {
+            ProfileCard.show(this, nick, "This is you.")
+            return
+        }
+        val member = members.firstOrNull { it.nick.equals(nick, ignoreCase = true) }
+        val status = buildString {
+            append(if (member?.online == true) "Online" else "Offline")
+            append(" · in this group")
+            if (member?.owner == true) append(" · owner")
+        }
+        lifecycleScope.launch {
+            val friend = runCatching { ApiClient.friends() }.getOrDefault(emptyList())
+                .firstOrNull { it.status == "accepted" && it.user.nick.equals(nick, ignoreCase = true) }
+            ProfileCard.show(this@GroupChatActivity, nick, status,
+                onMessage = friend?.let { f -> {
+                    startActivity(Intent(this@GroupChatActivity, ChatActivity::class.java)
+                        .putExtra(ChatActivity.EXTRA_FRIEND_ID, f.user.id)
+                        .putExtra(ChatActivity.EXTRA_FRIEND_NICK, f.user.nick))
+                } })
         }
     }
 

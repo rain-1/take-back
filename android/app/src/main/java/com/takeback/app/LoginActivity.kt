@@ -57,6 +57,7 @@ class LoginActivity : AppCompatActivity() {
             val v = runCatching { ApiClient.serverVersion() }.getOrNull() ?: return@launch
             binding.serverLabel.text =
                 "${ApiClient.base} · app v${BuildConfig.VERSION_NAME} · server v${v.version}"
+            applyRegistrationPolicy(v.openRegistration)
             if (!v.compatible) {
                 AlertDialog.Builder(this@LoginActivity)
                     .setTitle("Update required")
@@ -69,6 +70,26 @@ class LoginActivity : AppCompatActivity() {
                     .show()
             }
         }
+    }
+
+    /**
+     * With signups closed on the server, don't offer a Register option that will
+     * only be refused after someone has filled the form in — say so instead.
+     * Matches the web login page.
+     */
+    private fun applyRegistrationPolicy(open: Boolean?) {
+        if (open != false) {
+            if (!binding.toggle.isEnabled) {
+                binding.toggle.isEnabled = true
+                binding.toggle.setText(if (registerMode) R.string.have_account else R.string.need_account)
+                binding.toggle.setOnClickListener { toggleMode() }
+            }
+            return
+        }
+        if (registerMode) toggleMode() // back to the login form
+        binding.toggle.isEnabled = false
+        binding.toggle.setOnClickListener(null)
+        binding.toggle.setText(R.string.registration_closed)
     }
 
     private fun toggleMode() {
