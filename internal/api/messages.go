@@ -218,6 +218,25 @@ func (a *API) handleEditMessage(w http.ResponseWriter, r *http.Request, user *st
 		return
 	}
 
+	if body.Scope == store.KindChannel {
+		saved, err := a.Store.EditChannelMessage(user.ID, body.ID, body.Body)
+		if err != nil {
+			writeEditErr(w, err)
+			return
+		}
+		ch, err := a.Store.ChannelByID(saved.ChannelID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		view := toChannelView(saved, ch.ServerID)
+		if raw, err := json.Marshal(view); err == nil {
+			a.notifyServer(ch.ServerID, presence.Event{Type: "channel_message_edited", Message: raw}, user.ID)
+		}
+		writeJSON(w, http.StatusOK, view)
+		return
+	}
+
 	if body.Scope == "group" {
 		saved, err := a.Store.EditGroupMessage(user.ID, body.ID, body.Body)
 		if err != nil {
@@ -303,7 +322,9 @@ func (a *API) handleDeleteMessage(w http.ResponseWriter, r *http.Request, user *
 		del store.DeletedMessage
 		err error
 	)
-	if body.Scope == "group" {
+	if body.Scope == store.KindChannel {
+		del, err = a.Store.DeleteChannelMessage(user.ID, body.ID)
+	} else if body.Scope == "group" {
 		del, err = a.Store.DeleteGroupMessage(user.ID, body.ID)
 	} else {
 		del, err = a.Store.DeleteMessage(user.ID, body.ID)
@@ -318,7 +339,12 @@ func (a *API) handleDeleteMessage(w http.ResponseWriter, r *http.Request, user *
 	a.Media.Remove(del.Files...)
 
 	ev := map[string]any{"id": del.ID, "scope": body.Scope}
-	if body.Scope == "group" {
+	if body.Scope == store.KindChannel {
+		ev["serverId"], ev["channelId"] = del.ServerID, del.ChannelID
+		if raw, mErr := json.Marshal(ev); mErr == nil {
+			a.notifyServer(del.ServerID, presence.Event{Type: "message_deleted", Message: raw}, user.ID)
+		}
+	} else if body.Scope == "group" {
 		ev["groupId"] = del.GroupID
 		if raw, mErr := json.Marshal(ev); mErr == nil {
 			a.notifyGroup(del.GroupID, presence.Event{Type: "message_deleted", Message: raw}, user.ID)

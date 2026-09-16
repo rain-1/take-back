@@ -29,6 +29,8 @@ type DeletedMessage struct {
 	SenderID    int64
 	RecipientID int64 // DMs only
 	GroupID     int64 // groups only
+	ServerID    int64 // channel messages only
+	ChannelID   int64 // channel messages only
 	Files       []string
 }
 

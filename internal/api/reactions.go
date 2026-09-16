@@ -56,8 +56,8 @@ func (a *API) handleReaction(w http.ResponseWriter, r *http.Request, user *store
 	if !decode(w, r, &body) {
 		return
 	}
-	if body.Scope != store.KindDM && body.Scope != store.KindGroup {
-		writeErr(w, http.StatusBadRequest, "scope must be dm or group")
+	if body.Scope != store.KindDM && body.Scope != store.KindGroup && body.Scope != store.KindChannel {
+		writeErr(w, http.StatusBadRequest, "scope must be dm, group or channel")
 		return
 	}
 	// Must actually be an emoji. A byte-length cap used to stand in for this,
@@ -112,6 +112,19 @@ func rawReactionsFor(rs []store.Reaction) []store.Reaction {
 // this message (excluding no one — the reactor's own other sessions want it too),
 // and false (after writing an error) if the caller isn't allowed to react.
 func (a *API) reactionAudience(w http.ResponseWriter, scope string, msgID, userID int64) ([]int64, bool) {
+	if scope == store.KindChannel {
+		ch, err := a.Store.ChannelOfMessage(msgID)
+		if err != nil {
+			writeErr(w, http.StatusNotFound, "no such message")
+			return nil, false
+		}
+		if _, err := a.Store.MemberRole(ch.ServerID, userID); err != nil {
+			writeErr(w, http.StatusForbidden, "not a member of this server")
+			return nil, false
+		}
+		ids, _ := a.Store.ServerMemberIDs(ch.ServerID)
+		return ids, true
+	}
 	if scope == store.KindGroup {
 		gid, err := a.Store.GroupOfMessage(msgID)
 		if err != nil || !a.Store.IsMember(gid, userID) {

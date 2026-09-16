@@ -59,6 +59,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/events", a.auth(a.handleEvents)) // presence + message stream (WS)
 
 	a.groupRoutes(mux)
+	a.serverRoutes(mux)
 
 	// Serve uploaded attachments (originals + thumbnails). They are guarded only
 	// by their unguessable hash filenames, so we must NOT expose a directory
@@ -332,8 +333,8 @@ func (a *API) handleRead(w http.ResponseWriter, r *http.Request, user *store.Use
 	if !decode(w, r, &body) {
 		return
 	}
-	if body.Kind != store.KindDM && body.Kind != store.KindGroup {
-		writeErr(w, http.StatusBadRequest, "kind must be dm or group")
+	if body.Kind != store.KindDM && body.Kind != store.KindGroup && body.Kind != store.KindChannel {
+		writeErr(w, http.StatusBadRequest, "kind must be dm, group or channel")
 		return
 	}
 	if err := a.Store.MarkRead(user.ID, body.Kind, body.ID, body.LastID); err != nil {
