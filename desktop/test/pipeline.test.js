@@ -15,67 +15,21 @@
 //   node test/pipeline.test.js         (needs Go, Chrome, and a display)
 "use strict";
 
-const { spawn, execFileSync } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-const os = require("os");
 const puppeteer = require("puppeteer-core");
+const H = require("./harness");
 
-const ROOT = path.resolve(__dirname, "..", "..");
-const DESKTOP = path.resolve(__dirname, "..");
-const GO = process.env.GO || "go";
-const CHROME = process.env.CHROME || "/usr/bin/google-chrome";
 const API_PORT = 18591, WEB_PORT = 18590;
-const WEB = `http://127.0.0.1:${WEB_PORT}`;
 const TONE_HZ = 440;
-
-const procs = [];
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function run(cmd, args, opts = {}) {
-  const p = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...opts });
-  procs.push(p);
-  return p;
-}
-
-async function waitFor(url, ms = 20000) {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    try { if ((await fetch(url)).ok) return; } catch (_) { /* not up yet */ }
-    await sleep(250);
-  }
-  throw new Error(`timed out waiting for ${url}`);
-}
-
-async function startTakeBack() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tb-desktop-test-"));
-  const serverBin = path.join(tmp, "server"), webBin = path.join(tmp, "web");
-  execFileSync(GO, ["build", "-o", serverBin, "./cmd/server"], { cwd: ROOT, stdio: "inherit" });
-  execFileSync(GO, ["build", "-o", webBin, "./cmd/web"], { cwd: ROOT, stdio: "inherit" });
-  fs.mkdirSync(path.join(tmp, "media"));
-  run(serverBin, ["-addr", `127.0.0.1:${API_PORT}`, "-db", path.join(tmp, "t.db"), "-media", path.join(tmp, "media")]);
-  await waitFor(`http://127.0.0.1:${API_PORT}/api/version`);
-  run(webBin, ["-addr", `127.0.0.1:${WEB_PORT}`, "-backend", `http://127.0.0.1:${API_PORT}`]);
-  await waitFor(`${WEB}/api/version`);
-}
+const { sleep, assert } = H;
+let WEB = "";
 
 function startElectron(room, audioId) {
-  const electron = require("electron"); // resolves to the binary path in Node
-  const p = run(electron, [DESKTOP, "--no-sandbox"], {
-    env: {
-      ...process.env,
-      TB_TEST: "1",
-      TB_TEST_AUDIO: audioId,
-      TB_START_URL: `${WEB}/call.html?room=${room}&nick=alice`,
-    },
+  return H.startElectron({
+    TB_TEST_PRESENT: "1",
+    TB_TEST_AUDIO: audioId,
+    TB_START_URL: `${WEB}/call.html?room=${room}&nick=alice`,
+    ...(process.env.TB_USER_DATA ? { TB_USER_DATA: process.env.TB_USER_DATA } : {}),
   });
-  p.stdout.on("data", (d) => process.stdout.write(`  [electron] ${d}`));
-  p.stderr.on("data", (d) => {
-    const s = String(d);
-    // Chromium is chatty on stderr about GPU/dbus on a headless-ish Linux box.
-    if (/\[test\]|error|Error/.test(s) && !/dbus|gpu|GPU|viz|ALSA|Fontconfig/.test(s)) process.stdout.write(`  [electron] ${s}`);
-  });
-  return p;
 }
 
 // Listen to bob's screen tile: how many audio tracks it has, and the loudest
@@ -129,14 +83,12 @@ async function scenario(browser, name, audioId, check) {
   }
 }
 
-function assert(cond, msg) { if (!cond) throw new Error(msg); }
-
 (async () => {
   let browser;
   try {
-    await startTakeBack();
+    WEB = (await H.startTakeBack({ apiPort: API_PORT, webPort: WEB_PORT })).web;
     browser = await puppeteer.launch({
-      executablePath: CHROME,
+      executablePath: H.CHROME,
       headless: true,
       args: ["--no-sandbox", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
              "--autoplay-policy=no-user-gesture-required"],
@@ -160,6 +112,6 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
     process.exitCode = 1;
   } finally {
     if (browser) await browser.close().catch(() => {});
-    for (const p of procs) { try { p.kill(); } catch (_) { /* gone */ } }
+    H.killAll();
   }
 })();

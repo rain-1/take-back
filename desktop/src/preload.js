@@ -14,8 +14,10 @@
 const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 let audioCallback = null;
+const stats = { received: 0, delivered: 0 }; // diagnostics, reported in test mode
 ipcRenderer.on("audio:chunk", (_event, chunk) => {
-  if (audioCallback) audioCallback(chunk);
+  stats.received++;
+  if (audioCallback) { stats.delivered++; audioCallback(chunk); }
 });
 
 contextBridge.exposeInMainWorld("tbDesktop", {
@@ -24,6 +26,10 @@ contextBridge.exposeInMainWorld("tbDesktop", {
   startAudio: (id) => ipcRenderer.invoke("audio:start", String(id)),
   stopAudio: () => ipcRenderer.invoke("audio:stop"),
   onAudio: (cb) => { audioCallback = typeof cb === "function" ? cb : null; },
+  // Per-stage counters for diagnosing audio that doesn't arrive. Only surfaced
+  // (logged) when the app runs in test mode.
+  debug: process.env.TB_TEST === "1",
+  bridgeStats: () => ({ ...stats }),
 });
 
 // Everything below runs in the PAGE's world (it's injected as source text), so
@@ -54,21 +60,26 @@ function installShim() {
         };
       }
       process(inputs, outputs) {
+        this.calls = (this.calls || 0) + 1;
+        if (this.calls % 375 === 0) { // ~1 s of 128-frame quanta
+          this.port.postMessage({ stats: { played: this.played || 0, silent: this.silent || 0, queued: this.frames } });
+        }
         const out = outputs[0];
         const L = out[0], R = out[1] || out[0], n = L.length;
         // Build up ~40 ms before playing, and again after any underrun, so the
         // helper's delivery jitter doesn't become audible clicks.
         if (!this.primed) {
-          if (this.frames < 1920) { L.fill(0); R.fill(0); return true; }
+          if (this.frames < 1920) { L.fill(0); R.fill(0); this.silent = (this.silent || 0) + n; return true; }
           this.primed = true;
         }
         for (let i = 0; i < n; i++) {
-          if (!this.queue.length) { L.fill(0, i); R.fill(0, i); this.primed = false; break; }
+          if (!this.queue.length) { L.fill(0, i); R.fill(0, i); this.primed = false; this.silent = (this.silent || 0) + (n - i); break; }
           const f = this.queue[0];
           L[i] = f[this.offset];
           R[i] = f[this.offset + 1];
           this.offset += 2;
           this.frames--;
+          this.played = (this.played || 0) + 1;
           if (this.offset >= f.length) { this.queue.shift(); this.offset = 0; }
         }
         return true;
@@ -82,7 +93,17 @@ function installShim() {
   let cancelledAt = 0;
 
   async function appAudioTrack(id) {
-    const ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
+    // sinkId "none": this context never plays anything locally — it only feeds
+    // the WebRTC track — so it has no business depending on an output device,
+    // which can be missing or fail to open.
+    //
+    // KNOWN, UNRESOLVED (2026-09-16): on WSL, for about an hour, ~40% of test
+    // runs had the page's main thread block for ~7 s as sharing started, after
+    // which the other side heard silence for good. Neither this change nor
+    // anything else tried fixed it; it then stopped reproducing (21 straight
+    // passes). The per-stage counters below exist to catch it if it returns:
+    // run with TB_TEST=1 and read the [tbdiag] lines to see which stage stops.
+    const ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive", sinkId: { type: "none" } });
     const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
     try { await ctx.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
     const node = new AudioWorkletNode(ctx, "tb-pcm-player",
@@ -91,9 +112,27 @@ function installShim() {
     dest.channelCount = 2;
     node.connect(dest);
     active = { ctx, node };
-    api.onAudio((chunk) => node.port.postMessage(chunk, [chunk.buffer]));
+    let posted = 0;
+    api.onAudio((chunk) => { posted++; node.port.postMessage(chunk, [chunk.buffer]); });
+    if (api.debug) {
+      const started = performance.now();
+      node.port.onmessage = (e) => {
+        if (!e.data || !e.data.stats) return;
+        const b = api.bridgeStats(), w = e.data.stats;
+        console.log(`[tbdiag] t=${((performance.now() - started) / 1000).toFixed(1)}s ctx=${ctx.state}@${ctx.currentTime.toFixed(1)} ` +
+          `ipc-received=${b.received} delivered=${b.delivered} posted=${posted} ` +
+          `worklet-played=${w.played} silent=${w.silent} queued=${w.queued}`);
+      };
+    }
     await api.startAudio(id);
     if (ctx.state === "suspended") await ctx.resume();
+    // One diagnostic line: if app audio ever arrives silent, the first question
+    // is whether this context is actually running (its clock advances).
+    const t0 = ctx.currentTime, w0 = performance.now();
+    setTimeout(() => console.log(`[take-back desktop] app audio context ${ctx.state}, ` +
+      `clock advanced ${(ctx.currentTime - t0).toFixed(2)}s while a 3s timer took ` +
+      `${((performance.now() - w0) / 1000).toFixed(2)}s; page ${document.visibilityState}, ` +
+      `focused ${document.hasFocus()}`), 3000);
     return dest.stream.getAudioTracks()[0];
   }
 

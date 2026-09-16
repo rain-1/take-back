@@ -7,31 +7,78 @@
 // sends to everyone and plays from the screen tile.
 "use strict";
 
-const { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } = require("electron");
+const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } = require("electron");
+const fs = require("fs");
 const path = require("path");
 const audio = require("./audio-sources");
 
 const SERVER = (process.env.TB_SERVER || "https://takeback.chain-of-thought.org").replace(/\/$/, "");
 const START_URL = process.env.TB_START_URL || SERVER + "/";
 
-// Test mode drives the whole flow unattended (see test/pipeline.test.js):
-// fake camera/mic, no picker, share this window's own frame + a test tone.
+// Test mode (see test/): fake camera/mic, no picker (share this window's own
+// frame + TB_TEST_AUDIO), and side effects that would need a person — opening
+// the system browser, a save dialog — are logged instead. TB_TEST_PRESENT=1
+// also presses Present once the call is up.
 const TEST = process.env.TB_TEST === "1";
 if (TEST) {
   app.commandLine.appendSwitch("use-fake-device-for-media-stream");
   app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+}
+// Lets a test drive the real window with Puppeteer.
+if (process.env.TB_DEBUG_PORT) {
+  app.commandLine.appendSwitch("remote-debugging-port", process.env.TB_DEBUG_PORT);
+}
+// A throwaway profile per test run, so tests don't share logins.
+if (process.env.TB_USER_DATA) app.setPath("userData", process.env.TB_USER_DATA);
+
+function openExternal(url) {
+  if (TEST) return console.log(`[test] openExternal ${url}`);
+  shell.openExternal(url);
 }
 
 let win = null;
 let pendingShare = null; // { sourceId, audioId } chosen for the next getDisplayMedia
 let stopAudio = null;
 
+// ---- window size and position, remembered between launches ------------------
+
+const boundsFile = () => path.join(app.getPath("userData"), "window.json");
+
+function loadBounds() {
+  try {
+    const b = JSON.parse(fs.readFileSync(boundsFile(), "utf8"));
+    // A monitor that was unplugged since last time would leave the window
+    // somewhere nobody can see it; only restore bounds that are still on-screen.
+    const area = screen.getDisplayMatching(b).workArea;
+    const visible = b.x < area.x + area.width && b.x + b.width > area.x &&
+                    b.y < area.y + area.height && b.y + b.height > area.y;
+    return visible ? b : null;
+  } catch (_) {
+    return null; // first launch, or an unreadable file: use the defaults
+  }
+}
+
+function saveBounds() {
+  if (!win || win.isDestroyed() || win.isMinimized()) return;
+  try {
+    fs.writeFileSync(boundsFile(), JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() }));
+  } catch (_) { /* not worth failing over */ }
+}
+
 function createWindow() {
+  const saved = loadBounds();
   win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    width: saved ? saved.width : 1280,
+    height: saved ? saved.height : 820,
+    ...(saved ? { x: saved.x, y: saved.y } : {}),
+    minWidth: 420,
+    minHeight: 360,
     title: "take-back",
+    icon: path.join(__dirname, "..", "build", "icon.png"),
     backgroundColor: "#0b0d11",
+    // The default File/Edit/View menu is noise in a chat app, but its
+    // shortcuts (reload, zoom, dev tools) are useful: Alt reveals it.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -46,13 +93,17 @@ function createWindow() {
   // with the bridge still attached.
   const allowedOrigin = new URL(START_URL).origin;
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) openExternal(url);
     return { action: "deny" };
   });
+  // Leaving take-back in this window is simply refused. Links people click
+  // open in new windows (target=_blank) and go to the browser above; a page
+  // that tries to navigate ITSELF elsewhere is not a click, and must not be
+  // able to open things on the user's machine either.
   win.webContents.on("will-navigate", (event, url) => {
     if (new URL(url).origin !== allowedOrigin) {
       event.preventDefault();
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      if (TEST) console.log(`[test] blocked navigation to ${url}`);
     }
   });
 
@@ -63,6 +114,12 @@ function createWindow() {
   }
 
   win.loadURL(START_URL);
+  if (saved && saved.maximized) win.maximize();
+  let saveTimer = null;
+  const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveBounds, 500); };
+  win.on("resize", saveSoon);
+  win.on("move", saveSoon);
+  win.on("close", saveBounds);
   win.on("closed", () => { stopAppAudio(); win = null; });
 }
 
@@ -139,11 +196,14 @@ ipcMain.handle("share:pick", async () => {
 ipcMain.handle("audio:start", (event, id) => {
   stopAppAudio();
   const target = event.sender;
-  stopAudio = audio.start(id, (chunk) => {
+  let sent = 0;
+  const stopSource = audio.start(id, (chunk) => {
     // The sender can disappear mid-stream (window closed, page reloaded).
-    if (!target.isDestroyed()) target.send("audio:chunk", chunk);
+    if (!target.isDestroyed()) { target.send("audio:chunk", chunk); sent++; }
     else stopAppAudio();
   });
+  const diag = TEST ? setInterval(() => console.log(`[tbdiag] main sent=${sent}`), 1000) : null;
+  stopAudio = () => { if (diag) clearInterval(diag); stopSource(); };
   return true;
 });
 
@@ -151,13 +211,53 @@ ipcMain.handle("audio:stop", () => { stopAppAudio(); return true; });
 
 // ---- lifecycle -------------------------------------------------------------------
 
+// One window, however many times it's launched: a second launch brings the
+// existing window forward instead of opening a second, separately-logged-in copy.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+}
+
 app.whenReady().then(() => {
   installDisplayMediaHandler();
   createWindow();
-  if (TEST) runTestScript();
+  if (TEST) {
+    // Save downloads somewhere known instead of prompting, and say how it went.
+    session.defaultSession.on("will-download", (_e, item) => {
+      const dir = process.env.TB_DOWNLOAD_DIR || app.getPath("temp");
+      item.setSavePath(path.join(dir, item.getFilename()));
+      item.once("done", (_ev, state) => console.log(`[test] download ${state} ${item.getFilename()}`));
+    });
+  }
+  if (TEST && process.env.TB_TEST_PRESENT === "1") runTestScript();
+  if (TEST && process.env.TB_CONTROL_PORT) startTestControl(Number(process.env.TB_CONTROL_PORT));
 });
 
 app.on("window-all-closed", () => app.quit());
+
+// Test-only window control, because Electron's DevTools protocol doesn't
+// implement the Browser.*Window* commands. Loopback only, test mode only.
+function startTestControl(port) {
+  require("http").createServer((req, res) => {
+    const act = {
+      "/minimize": () => win.minimize(),
+      "/restore": () => win.restore(),
+      "/state": () => {},
+      "/resize": () => win.setBounds({ width: 900, height: 700 }),
+    }[req.url];
+    if (!act || !win) { res.writeHead(404); return res.end(); }
+    act();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ minimized: win.isMinimized(), focused: win.isFocused(), visible: win.isVisible(),
+                             bounds: win.getNormalBounds() }));
+  }).listen(port, "127.0.0.1");
+}
 
 // In test mode, press Present once the call is up, so the test only has to
 // watch the far side. Kept here (not in the page) so the web client stays
