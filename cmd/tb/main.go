@@ -211,6 +211,8 @@ type message struct {
 	GroupID     int64  `json:"groupId"`
 	Body        string `json:"body"`
 	ImageURL    string `json:"imageUrl"`
+	MediaKind   string `json:"mediaKind"`
+	MediaName   string `json:"mediaName"`
 	Created     int64  `json:"created"`
 	EditedAt    int64  `json:"editedAt"`
 }
@@ -704,7 +706,27 @@ func (c *client) resolveConvo(senderID, groupID int64) (name string, isGroup boo
 }
 
 // cmdWatch live-tails incoming messages over the same events socket the apps use.
+//
+// With -plain it is built to be consumed by another program (in practice, an
+// agent's event monitor) rather than read by a person:
+//
+//   - exactly one line per incoming message, newlines in the body folded, no ANSI;
+//   - the conversation AND the sender, "[#group] nick: body" / "[dm] nick: body" —
+//     the interactive mode prints only the group name for group messages, which
+//     leaves a reader unable to tell who is asking;
+//   - it reconnects with backoff instead of exiting when the socket drops, so a
+//     proxy blip doesn't end the watch silently;
+//   - and it says so on stdout when something is wrong in a way that won't fix
+//     itself (an expired session, or a server unreachable for minutes), because
+//     for a consumer, silence has to mean "no messages", never "watcher dead".
 func cmdWatch(c *client, args []string) error {
+	fs := flag.NewFlagSet("watch", flag.ExitOnError)
+	plain := fs.Bool("plain", false, "one unformatted line per message, auto-reconnect (for scripts)")
+	_ = fs.Parse(args)
+	if *plain {
+		return watchPlain(c)
+	}
+
 	u, err := url.Parse(c.cfg.Server)
 	if err != nil {
 		return err
@@ -767,6 +789,182 @@ func cmdWatch(c *client, args []string) error {
 	}
 }
 
+// watchPlain is `tb watch -plain`; see cmdWatch.
+func watchPlain(c *client) error {
+	u, err := url.Parse(c.cfg.Server)
+	if err != nil {
+		return err
+	}
+	scheme := "wss"
+	if u.Scheme == "http" {
+		scheme = "ws"
+	}
+	wsURL := fmt.Sprintf("%s://%s/api/events", scheme, u.Host)
+
+	var me user
+	if err := c.do("GET", "/api/me", nil, &me); err != nil {
+		return err
+	}
+
+	names := newNickCache(c)
+	backoff := time.Second
+	var downSince time.Time
+	warned := false
+
+	for {
+		hdr := http.Header{}
+		hdr.Set("Cookie", "tb_session="+c.cfg.Session)
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+		if err != nil {
+			if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+				// Not transient: nothing will fix this without a human.
+				fmt.Println("!! tb watch: session expired — run `tb login " + c.cfg.Nick + "`")
+				return errors.New("session expired")
+			}
+			if downSince.IsZero() {
+				downSince = time.Now()
+			}
+			// One notice once an outage is clearly not a blip, not one per retry.
+			if !warned && time.Since(downSince) > 2*time.Minute {
+				fmt.Printf("!! tb watch: can't reach %s for %s, still retrying (%v)\n",
+					u.Host, time.Since(downSince).Round(time.Second), err)
+				warned = true
+			}
+			time.Sleep(backoff)
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
+		if warned {
+			fmt.Printf("!! tb watch: reconnected to %s\n", u.Host)
+		}
+		backoff, downSince, warned = time.Second, time.Time{}, false
+
+		readPlain(conn, me.ID, names)
+		conn.Close()
+		time.Sleep(time.Second) // don't spin if the server closes us immediately
+	}
+}
+
+// readPlain prints messages from one socket until it errors.
+func readPlain(conn *websocket.Conn, meID int64, names *nickCache) {
+	for {
+		var ev struct {
+			Type    string          `json:"type"`
+			Nick    string          `json:"nick"`
+			Message json.RawMessage `json:"message"`
+		}
+		if err := conn.ReadJSON(&ev); err != nil {
+			return
+		}
+		switch ev.Type {
+		case "message", "group_message":
+			var m message
+			if json.Unmarshal(ev.Message, &m) != nil || m.SenderID == meID {
+				continue
+			}
+			where := "[dm]"
+			if m.GroupID != 0 {
+				where = "[#" + strings.TrimPrefix(names.group(m.GroupID), "#") + "]"
+			}
+			fmt.Printf("%s %s: %s\n", where, names.user(m.SenderID, m.GroupID), plainBody(m))
+		case "friend_request":
+			fmt.Printf("[friend-request] %s wants to be friends\n", ev.Nick)
+		case "group_invite":
+			fmt.Printf("[group-invite] from %s\n", ev.Nick)
+		}
+	}
+}
+
+// plainBody folds a message onto one line and names any attachment.
+func plainBody(m message) string {
+	body := strings.Join(strings.Fields(strings.ReplaceAll(m.Body, "\n", " ⏎ ")), " ")
+	if m.MediaKind != "" || m.ImageURL != "" {
+		kind := m.MediaKind
+		if kind == "" {
+			kind = "image"
+		}
+		att := "[" + kind
+		if m.MediaName != "" {
+			att += ": " + m.MediaName
+		}
+		att += "]"
+		if body == "" {
+			return att
+		}
+		body += " " + att
+	}
+	if body == "" {
+		return "(empty)"
+	}
+	return body
+}
+
+// nickCache resolves ids to names for the plain watcher, refreshing on a miss:
+// a group member you aren't friends with isn't in your friend list, so their
+// nick has to come from that group's member list.
+type nickCache struct {
+	c      *client
+	users  map[int64]string
+	groups map[int64]string
+}
+
+func newNickCache(c *client) *nickCache {
+	n := &nickCache{c: c, users: map[int64]string{}, groups: map[int64]string{}}
+	n.refresh()
+	return n
+}
+
+func (n *nickCache) refresh() {
+	var fs []friend
+	if n.c.do("GET", "/api/friends", nil, &fs) == nil {
+		for _, f := range fs {
+			n.users[f.User.ID] = f.User.Nick
+		}
+	}
+	var gs []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	if n.c.do("GET", "/api/groups", nil, &gs) == nil {
+		for _, g := range gs {
+			n.groups[g.ID] = g.Name
+		}
+	}
+}
+
+func (n *nickCache) group(id int64) string {
+	if name, ok := n.groups[id]; ok {
+		return name
+	}
+	n.refresh()
+	if name, ok := n.groups[id]; ok {
+		return name
+	}
+	return fmt.Sprintf("group %d", id)
+}
+
+func (n *nickCache) user(id, groupID int64) string {
+	if name, ok := n.users[id]; ok {
+		return name
+	}
+	if groupID != 0 {
+		var members []user
+		if n.c.do("GET", fmt.Sprintf("/api/groups/members?group=%d", groupID), nil, &members) == nil {
+			for _, m := range members {
+				n.users[m.ID] = m.Nick
+			}
+		}
+	} else {
+		n.refresh()
+	}
+	if name, ok := n.users[id]; ok {
+		return name
+	}
+	return fmt.Sprintf("user %d", id)
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `tb — take-back from the terminal
 
@@ -778,7 +976,8 @@ func usage() {
   tb accept [nick]                            accept incoming friend request(s)
   tb react <nick|#group> <emoji> [msgId]      react to a message (latest if no id)
   tb wait [-timeout D]                        block until ONE new message, print it, exit
-  tb watch                                    live-tail incoming messages
+  tb watch [-plain]                           live-tail incoming messages
+                                              (-plain: one line each, reconnects; for scripts)
   tb whoami                                   show the logged-in account
 
 Run with no command for the inbox.
