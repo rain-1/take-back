@@ -24,6 +24,27 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.20.3
+
+**Fixed — multi-line messages lost their formatting** (@Etheri, web)
+- The message box was a single-line input, which **silently drops line breaks
+  on paste**. It's now a box that grows as you type: **Enter** sends,
+  **Shift+Enter** adds a line (never mid-IME-composition), and pasted text
+  keeps every line.
+- Sending no longer trims the first line's indentation, which is part of a
+  pasted snippet.
+- Rendering keeps spacing: indentation and runs of spaces now display
+  instead of collapsing.
+- **Fenced code blocks** (```` ``` ````) render as a code block with exact
+  whitespace. They used to come out as stray backticks.
+- Nothing inside code is formatted any more: `**x**` in backticks stays
+  literal instead of turning bold, and links and mentions aren't created
+  inside code. Code is set aside before the other rules run and restored
+  after; its contents are still HTML-escaped.
+- Messages render inside a `<div>` rather than a `<p>`, since a code block
+  can't legally sit in a paragraph and the browser was leaving an empty one
+  behind.
+
 ## 1.20.2
 
 **Fixed — wrong screen-audio hint in the desktop app** (web)

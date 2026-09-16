@@ -231,7 +231,7 @@
     transition: background .1s ease;
   }
   .msg:hover { background: var(--surface); }
-  .msg .body p { margin: 0; }
+  .msg .body p, .msg .body .md { margin: 0; }
   .msg .body p + p { margin-top: .4rem; }
   .msg .body code {
     background: rgba(0,0,0,.35); padding: .08rem .32rem; border-radius: 5px;
@@ -411,7 +411,22 @@
     flex: none; border-top: 1px solid var(--border-soft); background: var(--panel);
     padding: .6rem .8rem; display: flex; gap: .45rem; align-items: center;
   }
-  #composer input[type=text] { flex: 1; border-radius: 999px; padding: .55rem .9rem; }
+  #composer #msgInput {
+    flex: 1; border-radius: 18px; padding: .55rem .9rem; resize: none;
+    font: inherit; line-height: 1.35; max-height: 11.5em; overflow-y: auto;
+    background: #0d1016; color: var(--text); border: 1px solid var(--border);
+  }
+  #composer #msgInput:focus { border-color: #2f4a8f; outline: none; }
+  #composer { align-items: flex-end; }
+  /* Keep the spacing people typed or pasted: indentation, runs of spaces. Line
+     breaks already arrive as <br>, so this doesn't double them. */
+  .msg .body { white-space: pre-wrap; }
+  .msg .body pre.codeblock {
+    white-space: pre; overflow-x: auto; margin: .25rem 0; padding: .5rem .65rem;
+    background: #0d1016; border: 1px solid var(--border); border-radius: 8px;
+    font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 100%;
+  }
+  .msg .body pre.codeblock code { background: none; padding: 0; }
   #composer button { border-radius: 999px; }
   #composer .icon { padding: .45rem .6rem; font-size: 1rem; }
 
@@ -616,7 +631,7 @@
         <div id="composer">
           <button class="secondary icon" id="imgBtn" title="Attach a file — image, video, audio, anything">📎</button>
           <input type="file" id="imgInput" class="hidden">
-          <input type="text" id="msgInput" placeholder="Message — markdown supported" autocomplete="off">
+          <textarea id="msgInput" rows="1" placeholder="Message — markdown supported · Shift+Enter for a new line" autocomplete="off"></textarea>
           <button id="sendBtn">Send</button>
         </div>
         <div id="uploadBar">
@@ -1282,8 +1297,18 @@ function bumpUnread(kind, id, mention) {
 }
 
 $("sendBtn").onclick = sendText;
+// Grow with the text, up to max-height (then it scrolls).
+function fitComposer() {
+  const box = $("msgInput");
+  box.style.height = "auto";
+  box.style.height = box.scrollHeight + 2 + "px";
+}
+$("msgInput").addEventListener("input", fitComposer);
+
 $("msgInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { sendText(); return; }
+  // Enter sends; Shift+Enter is a new line. Never while an IME is composing —
+  // that Enter confirms a character, it isn't "send".
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendText(); return; }
   // Press ↑ in an empty composer to edit your most recent text message —
   // the shell/Slack convention. Only when empty, so it never eats cursor moves.
   if (e.key === "ArrowUp" && $("msgInput").value === "") {
@@ -1314,9 +1339,12 @@ function jumpToMessage(id) {
 }
 
 async function sendText() {
-  const body = $("msgInput").value.trim();
-  if (!body) return;
+  // Drop surrounding blank lines and trailing space, but NOT the first line's
+  // indentation — that's part of a pasted snippet's formatting.
+  const body = $("msgInput").value.replace(/^\s*\n/, "").trimEnd();
+  if (!body.trim()) return;
   $("msgInput").value = "";
+  fitComposer();
   const replyTo = replyingTo ? replyingTo.id : 0;
   cancelReply();
   let msg;
@@ -2119,9 +2147,24 @@ function esc(s) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 // Minimal, safe Markdown: escape first, then apply a small set of inline rules.
+//
+// Code is lifted out FIRST and put back LAST, so nothing inside it is touched:
+// a pasted snippet keeps its exact characters, and `**x**` in backticks stays
+// literal instead of turning bold. Fenced ```blocks``` render as a <pre> that
+// keeps indentation; everything else keeps its spacing via white-space:
+// pre-wrap on the message body. (Pasting multi-line text used to lose its line
+// breaks in the composer and its indentation in the rendered message, and a
+// fenced block came out as stray backticks.)
 function renderMarkdown(src) {
-  let s = esc(src);
-  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  const code = [];
+  // Private-use characters can't appear in escaped text, so a placeholder can
+  // never collide with — or be rewritten by — the rules below.
+  const keep = (htmlChunk) => `\uE000${code.push(htmlChunk) - 1}\uE001`;
+  // Placeholder characters typed by a user must not address code chunks.
+  let s = esc(String(src).replace(/[\uE000\uE001]/g, ""));
+  s = s.replace(/```[^\S\n]*([\w+-]*)[^\S\n]*\n([\s\S]*?)\n?```/g, (m, lang, body) =>
+    keep(`<pre class="codeblock"${lang ? ` data-lang="${lang}"` : ""}><code>${body}</code></pre>`));
+  s = s.replace(/`([^`\n]+)`/g, (m, body) => keep(`<code>${body}</code>`));
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
   // Links [text](http/https url) only.
@@ -2139,7 +2182,14 @@ function renderMarkdown(src) {
   s = s.replace(/\n/g, "<br>");
   // A <br> hugging a blockquote tag is spurious — drop it.
   s = s.replace(/<br>(<\/?blockquote>)/g, "$1").replace(/(<\/?blockquote>)<br>/g, "$1");
-  return "<p>" + s + "</p>";
+  // A <br> right before or after a code block is the newline that separated it
+  // from the text — the block is already on its own line.
+  s = s.replace(/<br>(\uE000\d+\uE001)/g, (m, ph) => code[+ph.slice(1, -1)].startsWith("<pre") ? ph : m)
+       .replace(/(\uE000\d+\uE001)<br>/g, (m, ph) => code[+ph.slice(1, -1)].startsWith("<pre") ? ph : m);
+  s = s.replace(/\uE000(\d+)\uE001/g, (m, i) => code[+i]);
+  // A <div>, not a <p>: a <pre> may not sit inside a <p>, so the browser would
+  // split the paragraph around a code block and leave an empty one behind.
+  return '<div class="md">' + s + "</div>";
 }
 </script>
 </body>
