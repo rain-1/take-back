@@ -24,6 +24,14 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.20.2
+
+**Fixed — wrong screen-audio hint in the desktop app** (web)
+- Sharing without sound told you to tick Chrome's "Share tab audio" box. In the
+  desktop app (on the `desktop-poc` branch) that box doesn't exist: sound comes
+  from choosing an app in its own picker. The call client now recognises the
+  desktop app and says that instead. Browsers are unchanged.
+
 ## 1.20.1
 
 **Fixed — a busy or blocked camera made calls close instantly** (@river, web)

@@ -726,8 +726,13 @@ window.TBCall = (function () {
     S.ui.present.textContent = "🖥 Stop presenting";
     log(screenAudio
       ? "Sharing your screen with its audio — your camera is still on."
-      : "Sharing your screen — your camera is still on. (This browser didn't offer screen audio; " +
-        "in Chrome, tick “Share tab audio” / “Share system audio” in the picker.)");
+      : window.tbDesktop
+        // The desktop app has its own picker, where sound comes from choosing
+        // an app — Chrome's checkboxes don't exist there.
+        ? "Sharing your screen without sound — your camera is still on. To include an app's " +
+          "sound, stop and share again, choosing the app under “Audio”."
+        : "Sharing your screen — your camera is still on. (This browser didn't offer screen audio; " +
+          "in Chrome, tick “Share tab audio” / “Share system audio” in the picker.)");
   }
 
   // addScreenTracks puts every track of the capture (video, and the system audio
