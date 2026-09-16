@@ -61,15 +61,32 @@ object Events {
     fun addListener(l: EventsListener) = listeners.add(l)
     fun removeListener(l: EventsListener) = listeners.remove(l)
 
+    // Exactly one socket may be live. Every connect() bumps `generation`, and a
+    // socket's callbacks check it and go inert once they're stale.
+    //
+    // Without that, start() — which runs every time the login screen launches,
+    // including reopening the app — opened ANOTHER socket over the old one, the
+    // old one kept delivering, and its own reconnect loop kept it alive forever.
+    // The server fans each event out to every socket a user has, so each one
+    // was dispatched once per leaked connection: "I'm seeing everything twice".
+    @Volatile private var generation = 0
+    @Volatile private var reconnectPending = false
+
+    @Synchronized
     fun start(context: Context) {
         appContext = context.applicationContext
         createChannel()
+        // Already connected (or about to reconnect): reopening the app must not
+        // add a second connection.
+        if (running && (socket != null || reconnectPending)) return
         running = true
         connect()
     }
 
+    @Synchronized
     fun stop() {
         running = false
+        generation++ // strands any in-flight callbacks and scheduled reconnect
         socket?.close(1000, "bye")
         socket = null
     }
@@ -80,22 +97,35 @@ object Events {
         return base.replaceFirst(Regex("^https?"), scheme).trimEnd('/') + "/api/events"
     }
 
+    @Synchronized
     private fun connect() {
         if (!running) return
+        reconnectPending = false
+        val gen = ++generation
+        // Shut whatever was there before opening its replacement.
+        socket?.close(1000, "replaced")
         val req = Request.Builder().url(wsUrl()).build()
         socket = ApiClient.http.newWebSocket(req, object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) = dispatch(JSONObject(text))
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = reconnectLater()
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = reconnectLater()
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (gen == generation) dispatch(JSONObject(text)) // stale socket: drop
+            }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = reconnectLater(gen)
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = reconnectLater(gen)
         })
     }
 
-    private fun reconnectLater() {
-        if (!running) return
-        // Simple fixed backoff; the app relaunches events on next foreground too.
+    /** Reconnect after [gen]'s socket dropped — unless it has since been replaced. */
+    @Synchronized
+    private fun reconnectLater(gen: Int) {
+        // A socket we already replaced or stopped closing is expected, not a
+        // reason to open yet another one; and one scheduled retry is enough.
+        if (!running || gen != generation || reconnectPending) return
+        socket = null
+        reconnectPending = true
         Thread {
             Thread.sleep(2000)
-            connect()
+            // Only if nothing else (stop, or a fresh start) happened meanwhile.
+            synchronized(this) { if (gen == generation) connect() }
         }.start()
     }
 

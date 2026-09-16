@@ -1931,20 +1931,40 @@ let lastEventAt = 0;
 let eventsWatchdog = null;
 const EVENTS_STALE_MS = 45000; // > 2 missed heartbeats
 
+// There must only ever be ONE live events socket. The server fans every event
+// out to all of a user's sockets, so a page holding two renders each incoming
+// message twice — which is what a long-open tab was found doing. Rather than
+// chase every path that could fork a second connection, the client can no
+// longer keep one: connectEvents closes whatever it had, and a socket that has
+// been replaced goes inert — it neither dispatches events nor reconnects.
+let eventsReconnectTimer = null;
+
 function connectEvents() {
+  clearTimeout(eventsReconnectTimer);
+  eventsReconnectTimer = null;
+  clearInterval(eventsWatchdog);
+  const previous = events;
   const url = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/api/events";
-  events = new WebSocket(url);
-  events.onopen = () => {
+  const sock = new WebSocket(url);
+  events = sock;
+  if (previous) { try { previous.close(); } catch (_) {} }
+  const current = () => events === sock;
+
+  sock.onopen = () => {
+    if (!current()) return;
     lastEventAt = Date.now();
     clearInterval(eventsWatchdog);
     eventsWatchdog = setInterval(() => {
+      if (!current()) return;
       if (Date.now() - lastEventAt > EVENTS_STALE_MS) {
-        clearInterval(eventsWatchdog);
-        try { events.close(); } catch (_) {} // onclose schedules the reconnect
+        // Don't rely on onclose here: for a connection a proxy silently dropped,
+        // the close handshake can hang for minutes. Replace it now.
+        connectEvents();
       }
     }, 10000);
   };
-  events.onmessage = (ev) => {
+  sock.onmessage = (ev) => {
+    if (!current()) return; // a replaced socket must never deliver
     lastEventAt = Date.now();
     const e = JSON.parse(ev.data);
     if (e.type === "ping") return; // heartbeat only; nothing to render
@@ -2018,9 +2038,13 @@ function connectEvents() {
       if (openGroup && e.userId === openGroup.id) loadMembers(openGroup.id);
     }
   };
-  events.onclose = () => {
+  sock.onclose = () => {
+    // Closing a socket we already replaced is expected, not an outage.
+    if (!current()) return;
     clearInterval(eventsWatchdog);
-    setTimeout(() => { if (me) connectEvents(); }, 2000);
+    // One pending reconnect at most.
+    clearTimeout(eventsReconnectTimer);
+    eventsReconnectTimer = setTimeout(() => { if (me) connectEvents(); }, 2000);
   };
 }
 

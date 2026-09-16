@@ -24,6 +24,30 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.19.2
+
+**Fixed — incoming messages shown two (or more) times** (@river, @Etheri; web + Android)
+- A client could end up holding several live connections to the events stream.
+  The server fans each event out to every connection a user has, so every
+  incoming message was rendered once per connection. Your own messages looked
+  fine, because those render from the send response.
+- **Android** — reproduced by Etheri. `Events.start()` runs whenever the login
+  screen launches, including every time the app is reopened. It opened a new
+  socket over the old one without closing it, and the orphaned socket's own
+  reconnect loop kept it alive indefinitely, so reopening the app *added* a
+  duplicate. The client now holds exactly one socket: `start()` is a no-op while
+  connected, every connect replaces and closes the previous socket, and
+  callbacks from a replaced socket neither dispatch nor reconnect.
+- **Web** — River's long-open tab was holding two, and a reload cleared it. The
+  exact fork wasn't pinned down from the code, so the client no longer relies on
+  there being none: `connectEvents()` closes whatever socket it had, a replaced
+  socket goes inert, at most one reconnect is pending, and a stale connection is
+  replaced immediately rather than waiting on a close handshake that can hang
+  for minutes when a proxy silently dropped it. In a browser, forcing two extra
+  connections rendered each message **3×** on the old client and **1×** on the
+  new one, which still received messages afterwards and recovered once from a
+  server restart.
+
 ## 1.19.1
 
 **Changed — registration is closed by default**
