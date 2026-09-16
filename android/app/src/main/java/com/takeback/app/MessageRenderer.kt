@@ -58,6 +58,8 @@ class MessageRenderer(
     /** Canonical nick for a name someone @-mentioned, or null if they aren't here. */
     private val knownNick: (String) -> String? = { null },
     private val onMentionTap: (nick: String) -> Unit = {},
+    /** Whether I may delete other people's messages here (a server admin). */
+    private val canModerate: () -> Boolean = { false },
 ) {
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
@@ -140,7 +142,8 @@ class MessageRenderer(
                         ({ onEdit(m) }) else null,
                     // Delete covers your own messages of any kind — an attachment
                     // is the thing you most often want to take back.
-                    onDelete = if (m.mine && m.deletedAt == 0L) ({ onDelete(m) }) else null)
+                    // Admins may also remove anyone's message in their server.
+                    onDelete = if ((m.mine || canModerate()) && m.deletedAt == 0L) ({ onDelete(m) }) else null)
                 true
             }
         }
@@ -200,11 +203,9 @@ class MessageRenderer(
     /**
      * The view for a message's attachment, or null when it has none.
      *
-     * An image shows its server-made thumbnail. Everything else — video, audio,
-     * documents — becomes a tappable chip naming the file, which hands the URL to
-     * whatever app the device uses for that type. Streaming a video inside the
-     * chat list would mean shipping a player and managing its lifecycle across
-     * recycled rows; handing off is both simpler and what people expect.
+     * An image shows its server-made thumbnail. Everything else becomes a
+     * tappable chip naming the file: video and audio open an in-app player
+     * ([MediaDialog]), other documents go to whatever app handles that type.
      */
     private fun attachmentView(m: RMsg): View? {
         // Fall back to the image fields for messages that predate `attachment`.
@@ -253,7 +254,11 @@ class MessageRenderer(
                     val lp = LinearLayout.LayoutParams(-2, -2); lp.leftMargin = dp(8); layoutParams = lp
                 })
             }
-            setOnClickListener { onOpenAttachment(att.url) }
+            // Video and audio play right here; other files go to an app that opens them.
+            setOnClickListener {
+                if (att.kind == "video" || att.kind == "audio") MediaDialog.show(ctx, att.url, att.name, att.kind)
+                else onOpenAttachment(att.url)
+            }
             val lp = LinearLayout.LayoutParams(dp(260), -2); lp.topMargin = dp(6); layoutParams = lp
         }
     }

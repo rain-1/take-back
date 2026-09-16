@@ -24,6 +24,7 @@ import com.takeback.app.net.EventsListener
 import com.takeback.app.net.Friend
 import com.takeback.app.net.Group
 import com.takeback.app.net.GroupInvite
+import com.takeback.app.net.Server
 import kotlinx.coroutines.launch
 
 /**
@@ -36,6 +37,13 @@ class HomeActivity : AppCompatActivity(), EventsListener {
     private var friends: List<Friend> = emptyList()
     private var groups: List<Group> = emptyList()
     private var invites: List<GroupInvite> = emptyList()
+    private var servers: List<Server> = emptyList()
+
+    private var onImagePicked: ((android.net.Uri) -> Unit)? = null
+    private val pickImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { onImagePicked?.invoke(it) }
+    }
+    private val picker = ServerDialogs.ImagePicker { cb -> onImagePicked = cb; pickImage.launch("image/*") }
 
     private val notifPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -51,6 +59,11 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         binding.addBtn.setOnClickListener { addFriend() }
         binding.newGroupBtn.setOnClickListener { createGroup() }
         binding.logout.setOnClickListener { logout() }
+        binding.newServerBtn.setOnClickListener {
+            ServerDialogs.create(this, picker) { sv -> refresh(); ServerDialogs.openServer(this, sv) }
+        }
+        binding.joinServerBtn.setOnClickListener { ServerDialogs.join(this) { sv -> refresh(); ServerDialogs.openServer(this, sv) } }
+        setupCollapsible()
 
         Mentions.init(this)
         Events.addListener(this)
@@ -84,8 +97,11 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 friends = ApiClient.friends()
                 groups = ApiClient.groups()
                 invites = runCatching { ApiClient.groupInvites() }.getOrDefault(emptyList())
+                servers = runCatching { ApiClient.servers() }.getOrDefault(servers)
+                servers.forEach { Events.serverNames[it.id] = it.name }
                 render()
                 renderGroups()
+                renderServers()
             } catch (_: Exception) { /* transient */ }
         }
     }
@@ -139,6 +155,60 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             })
             binding.groups.addView(row)
         }
+    }
+
+    // ---- servers ----
+
+    private fun renderServers() {
+        binding.servers.removeAllViews()
+        if (servers.isEmpty()) {
+            binding.servers.addView(TextView(this).apply {
+                text = "No servers yet — create one, or join with an invite."
+                setTextColor(Color.parseColor("#5A6273"))
+                setPadding(16, 12, 16, 12)
+            })
+            return
+        }
+        for (sv in servers) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(16, 16, 16, 16)
+                isClickable = true
+                setOnClickListener { ServerDialogs.openServer(this@HomeActivity, sv) }
+            }
+            row.addView(ServerDialogs.iconView(this, sv, 36))
+            row.addView(TextView(this).apply {
+                text = sv.name
+                setTextColor(Color.parseColor("#E8EAF0"))
+                textSize = 16f
+                if (sv.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 24 }
+            })
+            if (sv.unread > 0) row.addView(pip(sv.unread, Mentions.serverMentioned(sv.id)))
+            binding.servers.addView(row)
+        }
+    }
+
+    // ---- collapsible sections ----
+
+    private fun setupCollapsible() {
+        val prefs = getSharedPreferences("tb_home", MODE_PRIVATE)
+        fun wire(key: String, title: TextView, label: String, vararg bodies: View) {
+            fun apply(collapsed: Boolean) {
+                title.text = (if (collapsed) "▸ " else "▾ ") + label
+                bodies.forEach { it.visibility = if (collapsed) View.GONE else View.VISIBLE }
+            }
+            apply(prefs.getBoolean(key, false))
+            title.setOnClickListener {
+                val collapsed = !prefs.getBoolean(key, false)
+                prefs.edit().putBoolean(key, collapsed).apply()
+                apply(collapsed)
+            }
+        }
+        wire("collapsed.servers", binding.serversTitle, "SERVERS", binding.servers)
+        wire("collapsed.groups", binding.groupsTitle, "GROUPS", binding.groups)
+        wire("collapsed.friends", binding.friendsTitle, "FRIENDS", binding.friends)
     }
 
     private fun openGroup(g: Group) {
@@ -354,4 +424,12 @@ class HomeActivity : AppCompatActivity(), EventsListener {
 
     override fun onGroupInvite(groupId: Long, groupName: String, invitedBy: String) =
         runOnUiThread { refresh() }
+
+    override fun onChannelMessage(message: com.takeback.app.net.ChannelMessage) = runOnUiThread {
+        if (message.senderId == ApiClient.myId) return@runOnUiThread
+        servers = servers.map { if (it.id == message.serverId) it.copy(unread = it.unread + 1) else it }
+        renderServers()
+    }
+
+    override fun onServerUpdate(serverId: Long, deleted: Boolean) = runOnUiThread { refresh() }
 }

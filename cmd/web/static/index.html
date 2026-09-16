@@ -2404,13 +2404,29 @@ function sendView() {
   try { events.send(JSON.stringify({ type: "view", serverId })); lastViewSent = serverId; } catch {}
 }
 
-document.addEventListener("visibilitychange", () => {
+function onVisibility() {
   clearTimeout(hiddenTimer);
   if (document.visibilityState === "visible") {
     pageAway = false; sendView();
   } else {
     hiddenTimer = setTimeout(() => { pageAway = true; sendView(); }, HIDDEN_GRACE_MS);
   }
+}
+document.addEventListener("visibilitychange", onVisibility);
+// A page that loads already hidden (a background tab) never fires the event
+// until it's shown, so start its grace period now.
+if (document.visibilityState !== "visible") onVisibility();
+
+// An invite link to this site, clicked in a message, opens the join dialog here
+// rather than the site again in a new tab (which would also drop a call).
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest("a[href]");
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  let url;
+  try { url = new URL(a.href, location.href); } catch { return; }
+  if (url.origin !== location.origin || !url.searchParams.get("invite")) return;
+  e.preventDefault();
+  joinServerDialog(url.href);
 });
 
 async function loadActivity() {

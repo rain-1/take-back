@@ -21,5 +21,16 @@ class TakeBackApp : Application() {
     override fun onCreate() {
         super.onCreate()
         ApiClient.init(this)
+        // Events needs to know whether the app is in the foreground, to decide how
+        // soon leaving a server's screens counts as no longer viewing it.
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(a: android.app.Activity) { com.takeback.app.net.Events.startedActivities++ }
+            override fun onActivityStopped(a: android.app.Activity) { com.takeback.app.net.Events.startedActivities-- }
+            override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) {}
+            override fun onActivityResumed(a: android.app.Activity) {}
+            override fun onActivityPaused(a: android.app.Activity) {}
+            override fun onActivitySaveInstanceState(a: android.app.Activity, b: android.os.Bundle) {}
+            override fun onActivityDestroyed(a: android.app.Activity) {}
+        })
     }
 }

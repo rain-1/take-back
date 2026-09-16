@@ -19,6 +19,7 @@ import org.webrtc.PeerConnection.IceServer
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
+import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
@@ -150,6 +151,39 @@ class RtcEngine(
     private val statsHandler = Handler(Looper.getMainLooper())
     private var micEnabledFlag = true
 
+    /** The microphone's recording format, learned from the first captured buffer. */
+    @Volatile private var recordChannels = if (stereo) 2 else 1
+    @Volatile private var recordRate = 48_000
+
+    /** Sound from other apps being mixed into what we send, while screen sharing. */
+    @Volatile private var appAudio: AppAudioCapture? = null
+
+    /**
+     * Start mixing other apps' sound into our audio, using the screen share's
+     * projection. Returns false when it can't (Android < 10, no microphone to
+     * carry it, or capture refused).
+     */
+    fun startAppAudio(projection: android.media.projection.MediaProjection): Boolean {
+        if (localAudio == null || appAudio != null) return appAudio != null
+        val capture = AppAudioCapture.start(appContext, projection, recordRate, recordChannels) ?: return false
+        appAudio = capture
+        localAudio?.setEnabled(true) // mute is applied to the samples instead (see the record callback)
+        return true
+    }
+
+    fun stopAppAudio() {
+        val capture = appAudio ?: return
+        appAudio = null
+        capture.stop()
+        localAudio?.setEnabled(micEnabledFlag)
+    }
+
+    val sharingAppAudio: Boolean get() = appAudio != null
+
+    private fun silence(buffer: java.nio.ByteBuffer) {
+        for (i in buffer.position() until buffer.limit()) buffer.put(i, 0)
+    }
+
     /** Mic gain applied to the captured buffer (1.0 = untouched). */
     @Volatile
     var micGain: Float = 1.0f
@@ -182,7 +216,14 @@ class RtcEngine(
             // peer who transmits stereo is heard that way.
             .setUseStereoInput(stereo)
             .setUseStereoOutput(true)
-            .setAudioRecordDataCallback { _, _, _, buffer -> applyMicGain(buffer) }
+            .setAudioRecordDataCallback { _, channelCount, sampleRate, buffer ->
+                recordChannels = channelCount
+                recordRate = sampleRate
+                // While sharing app sound the mic "mute" is silence here rather
+                // than a disabled track, so the shared sound keeps flowing.
+                if (appAudio != null && !micEnabledFlag) silence(buffer) else applyMicGain(buffer)
+                appAudio?.mixInto(buffer, channelCount)
+            }
             .setSamplesReadyCallback { samples -> onMicSamples(samples) }
             .createAudioDeviceModule()
 
@@ -258,13 +299,22 @@ class RtcEngine(
         }, 200)
     }
 
-    /** Acquire mic + front camera and publish local tracks. Call once. */
-    fun startLocalMedia() {
-        localAudio = factory.createAudioTrack(
-            "audio0", factory.createAudioSource(MediaConstraints())
-        )
+    /**
+     * Acquire the microphone and/or front camera and publish local tracks. Call
+     * once. Either can be left out — no permission, or a voice channel — and the
+     * call still sends and receives everything else.
+     *
+     * Returns whether a camera was actually opened (a device may have none).
+     */
+    fun startLocalMedia(mic: Boolean = true, camera: Boolean = true): Boolean {
+        if (mic) {
+            localAudio = factory.createAudioTrack(
+                "audio0", factory.createAudioSource(MediaConstraints())
+            )
+        }
+        if (!camera) return false
 
-        val capturer = createCameraCapturer() ?: return
+        val capturer = createCameraCapturer() ?: return false
         cameraCapturer = capturer
         currentCapturer = capturer
 
@@ -276,6 +326,7 @@ class RtcEngine(
         val track = factory.createVideoTrack("video0", videoSource)
         localVideo = track
         events.onLocalVideo(track)
+        return true
     }
 
     private fun createCameraCapturer(): VideoCapturer? {
@@ -290,6 +341,13 @@ class RtcEngine(
     /** As newcomer: create a connection and offer toward an existing peer. */
     fun offerTo(peerId: String, nick: String) {
         val box = createPeer(peerId, nick)
+        // Nothing of our own to send still has to leave room in OUR offer to
+        // receive it, or a phone without a mic or camera would never get anyone's
+        // audio or video (the web client adds recvonly transceivers the same way).
+        // Only the offerer needs this: an answerer's m-lines come from the offer.
+        val recvOnly = RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY)
+        if (localAudio == null) box.pc.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO, recvOnly)
+        if (localVideo == null) box.pc.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, recvOnly)
         box.pc.createOffer(object : SdpAdapter() {
             override fun onCreateSuccess(created: SessionDescription) {
                 val sdp = tuned(created)
@@ -461,6 +519,7 @@ class RtcEngine(
 
     /** Stop sharing and drop the extra track from every peer. */
     fun stopScreenShare() {
+        stopAppAudio()
         if (screenTrack == null) return
         for ((peerId, box) in peers) {
             box.screenSender?.let { sender ->
@@ -529,7 +588,8 @@ class RtcEngine(
     /** Mute/unmute the microphone. Muting also drops our speaking ring. */
     fun setMicEnabled(on: Boolean) {
         micEnabledFlag = on
-        localAudio?.setEnabled(on)
+        // Sharing app sound keeps the track on; the callback silences the mic.
+        localAudio?.setEnabled(on || appAudio != null)
         if (!on) {
             detectors[LOCAL_ID]?.reset()
             micLevel = 0.0
@@ -554,6 +614,7 @@ class RtcEngine(
     }
 
     fun close() {
+        stopAppAudio()
         statsHandler.removeCallbacksAndMessages(null)
         detectors.clear()
         try {

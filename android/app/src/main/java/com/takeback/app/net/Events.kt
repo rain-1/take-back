@@ -4,6 +4,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import okhttp3.Request
@@ -32,8 +34,18 @@ interface EventsListener {
     /** A conversation gained or lost its "you were mentioned" flag. */
     fun onMentionsChanged() {}
 
-    /** Someone withdrew a message. [scope] is "dm" or "group". */
-    fun onMessageDeleted(scope: String, messageId: Long, groupId: Long) {}
+    /**
+     * Someone withdrew a message. [scope] is "dm", "group" or "channel";
+     * [containerId] is the group's or the channel's id (0 for a DM).
+     */
+    fun onMessageDeleted(scope: String, messageId: Long, containerId: Long) {}
+
+    fun onChannelMessage(message: ChannelMessage) {}
+    fun onChannelMessageEdited(message: ChannelMessage) {}
+    /** A server's details, channels or membership changed, or it was [deleted]. */
+    fun onServerUpdate(serverId: Long, deleted: Boolean) {}
+    /** Who's active in a server, and who's in its voice channels, changed. */
+    fun onServerActivity(activity: ServerActivity) {}
     /** Someone invited me to a group — it needs an accept/decline. */
     fun onGroupInvite(groupId: Long, groupName: String, invitedBy: String) {}
 }
@@ -60,6 +72,15 @@ object Events {
 
     /** Id of the group whose chat is open, so we suppress its notifications. */
     @Volatile var openGroupId: Long? = null
+
+    /** Id of the text channel that's open, so we suppress its notifications. */
+    @Volatile var openChannelId: Long? = null
+
+    /** Server names by id, for notification titles. Filled by the screens that load servers. */
+    val serverNames = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    /** How many of the app's activities are started; 0 means the app is in the background. */
+    @Volatile var startedActivities = 0
 
     fun addListener(l: EventsListener) = listeners.add(l)
     fun removeListener(l: EventsListener) = listeners.remove(l)
@@ -110,6 +131,10 @@ object Events {
         socket?.close(1000, "replaced")
         val req = Request.Builder().url(wsUrl()).build()
         socket = ApiClient.http.newWebSocket(req, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                // A fresh socket views nothing until told; repeat what we're looking at.
+                if (gen == generation) synchronized(this@Events) { viewSent = 0L; sendView(currentView()) }
+            }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 if (gen == generation) dispatch(JSONObject(text)) // stale socket: drop
             }
@@ -195,9 +220,34 @@ object Events {
             }
             "message_deleted" -> {
                 val m = msg.getJSONObject("message")
-                listeners.forEach {
-                    it.onMessageDeleted(m.optString("scope"), m.optLong("id"), m.optLong("groupId"))
+                val scope = m.optString("scope")
+                val container = if (scope == "channel") m.optLong("channelId") else m.optLong("groupId")
+                listeners.forEach { it.onMessageDeleted(scope, m.optLong("id"), container) }
+            }
+            "channel_message" -> {
+                val m = ApiClient.parseChannelMessage(msg.getJSONObject("message"))
+                listeners.forEach { it.onChannelMessage(m) }
+                if (openChannelId != m.channelId && m.senderId != ApiClient.myId) {
+                    val mentioned = Mentions.mentions(m.body, ApiClient.myNick)
+                    if (mentioned && Mentions.markChannel(m.serverId, m.channelId)) {
+                        listeners.forEach { it.onMentionsChanged() }
+                    }
+                    notifyChannelMessage(m, mentioned)
                 }
+            }
+            "channel_message_edited" -> {
+                val m = ApiClient.parseChannelMessage(msg.getJSONObject("message"))
+                listeners.forEach { it.onChannelMessageEdited(m) }
+            }
+            "server_update" -> {
+                val m = msg.optJSONObject("message") ?: return
+                val id = m.optLong("serverId")
+                val deleted = m.optBoolean("deleted")
+                listeners.forEach { it.onServerUpdate(id, deleted) }
+            }
+            "server_active" -> {
+                val a = ApiClient.parseActivity(msg.optJSONObject("message") ?: return)
+                listeners.forEach { it.onServerActivity(a) }
             }
             "reaction" -> {
                 val m = msg.getJSONObject("message")
@@ -229,6 +279,48 @@ object Events {
         replyBody = o.optString("replyBody"),
     )
 
+    // ---- which server I'm looking at ----
+    //
+    // A server counts me as active while I'm viewing it (see the server's
+    // presence/activity.go). Every screen that shows a server registers itself
+    // while started; the most recent one wins. Moving between two of them
+    // (server -> channel) never reports "nothing" in between, because the new
+    // screen starts before the old one stops. When the last one stops: back
+    // inside the app means I've left the server straight away, while the app
+    // going to the background gets a minute's grace, like a hidden browser tab.
+
+    private val viewers = LinkedHashMap<Any, Long>()
+    private var viewSent = 0L
+    private val main = Handler(Looper.getMainLooper())
+    private val clearView = Runnable { synchronized(this) { sendView(currentView()) } }
+    private const val BACKGROUND_GRACE_MS = 60_000L
+
+    @Synchronized
+    fun viewStart(owner: Any, serverId: Long) {
+        viewers.remove(owner)
+        viewers[owner] = serverId
+        main.removeCallbacks(clearView)
+        sendView(serverId)
+    }
+
+    /** Call after super.onStop(), so [startedActivities] already counts this screen out. */
+    @Synchronized
+    fun viewStop(owner: Any) {
+        viewers.remove(owner)
+        val next = currentView()
+        if (next != 0L) { sendView(next); return }
+        main.removeCallbacks(clearView)
+        main.postDelayed(clearView, if (startedActivities > 0) 300L else BACKGROUND_GRACE_MS)
+    }
+
+    private fun currentView(): Long = viewers.values.lastOrNull() ?: 0L
+
+    private fun sendView(serverId: Long) {
+        if (serverId == viewSent) return
+        val s = socket ?: return
+        if (s.send(JSONObject().put("type", "view").put("serverId", serverId).toString())) viewSent = serverId
+    }
+
     // ---- notifications ----
 
     private fun createChannel() {
@@ -254,6 +346,16 @@ object Events {
         post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(),
             if (mentioned) "You were mentioned in a group" else "New group message", preview)
     }
+
+    private fun notifyChannelMessage(m: ChannelMessage, mentioned: Boolean) {
+        val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
+        val where = serverNames[m.serverId] ?: "a server"
+        post(NOTIF_MESSAGE_BASE + 200000 + m.channelId.toInt(),
+            if (mentioned) "You were mentioned in $where" else "New message in $where", preview)
+    }
+
+    fun clearChannelMessageNotification(channelId: Long) =
+        cancel(NOTIF_MESSAGE_BASE + 200000 + channelId.toInt())
 
     /** Notification text for a message that is nothing but an attachment. */
     private fun attachmentPreview(a: Attachment?): String = when (a?.kind) {

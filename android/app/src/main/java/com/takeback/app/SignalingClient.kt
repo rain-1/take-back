@@ -46,8 +46,11 @@ class SignalingClient(
     private val room: String,
     private val nick: String,
     private val listener: SignalingListener,
+    base: OkHttpClient = OkHttpClient(),
 ) {
-    private val http = OkHttpClient.Builder()
+    // Built from the app's client when given one, so the handshake carries the
+    // session cookie: a server's voice channel only admits its members.
+    private val http = base.newBuilder()
         .pingInterval(20, TimeUnit.SECONDS)
         .build()
 

@@ -103,4 +103,8 @@ object CallSettings {
         AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> "USB audio"
         else -> d.productName?.toString()?.ifBlank { "Audio device" } ?: "Audio device"
     }
+
+    /** Last answer to "Also share sound from apps" when screen sharing. */
+    fun shareAudio(ctx: Context): Boolean = prefs(ctx).getBoolean("shareAudio", true)
+    fun setShareAudio(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("shareAudio", on).apply()
 }

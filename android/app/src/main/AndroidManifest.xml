@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Bring a call already in progress back to the front when you rejoin it. -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -32,6 +34,8 @@
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".ChatActivity" android:exported="false" />
         <activity android:name=".GroupChatActivity" android:exported="false" />
+        <activity android:name=".ServerActivity" android:exported="false" />
+        <activity android:name=".ChannelChatActivity" android:exported="false" />
 
         <activity
             android:name=".MainActivity"

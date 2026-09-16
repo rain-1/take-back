@@ -47,6 +47,11 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         /** Optional call-code extra; when present, the screen auto-joins. */
         const val EXTRA_ROOM = "room"
 
+        /** Set when the call is a server's voice channel: microphone only. */
+        const val EXTRA_VOICE_SERVER = "voiceServer"
+        const val EXTRA_VOICE_CHANNEL = "voiceChannel"
+        const val EXTRA_VOICE_NAME = "voiceName"
+
         /** Ring colour for "this person is speaking". */
         private val SPEAK_GREEN: Int = Color.parseColor("#34D399")
     }
@@ -62,6 +67,15 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private var micOn = true
     private var camOn = true
     private var inCall = false // true between beginCall() and leaveCall(); gates PiP
+    /** Whether this call has a microphone track (permission granted). */
+    private var micAvailable = false
+    /** The voice channel this call is, or null for an ordinary call. */
+    private var voice: Calls.Voice? = null
+    /** Launched to join a specific call, so leaving it closes this screen. */
+    private var launchedForRoom = false
+
+    /** The room of the call in progress, or null. Read by [Calls]. */
+    val inCallRoom: String? get() = if (inCall) roomCode else null
 
     private val tiles = HashMap<String, Tile>()
     // peerId -> (video, audio, screenId). screenId names the stream carrying
@@ -75,7 +89,19 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
-        if (result.values.all { it }) beginCall() else toast("Camera & mic permission required")
+        // Join with whatever we were allowed, like the web client: a denied
+        // camera shouldn't keep you out of a call, and neither should a denied
+        // microphone. You can still listen, watch and share your screen.
+        val mic = result[Manifest.permission.RECORD_AUDIO] == true
+        val cam = voice == null && result[Manifest.permission.CAMERA] == true
+        val missing = listOfNotNull(
+            "microphone".takeIf { !mic },
+            "camera".takeIf { !cam && voice == null },
+        )
+        if (missing.isNotEmpty()) {
+            toast("Joined without your ${missing.joinToString(" and ")}: permission was denied. Allow it in Settings and rejoin to use it.")
+        }
+        beginCall(mic, cam)
     }
 
     private val mediaProjection = registerForActivityResult(
@@ -109,8 +135,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             toast("Call code copied")
         }
         binding.flipBtn.setOnClickListener { engine?.switchCamera() }
-        binding.shareBtn.setOnClickListener { if (sharing) stopScreenShare() else requestScreenShare() }
-        binding.leaveBtn.setOnClickListener { leaveCall() }
+        binding.shareBtn.setOnClickListener { if (sharing) stopScreenShare() else askShareAudio() }
+        binding.leaveBtn.setOnClickListener { endCall() }
         binding.settingsBtn.setOnClickListener { toggleSettings() }
         setupSettingsPanel()
 
@@ -133,8 +159,17 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
         // Launched from a chat with a call code: use the logged-in nick and join
         // straight away, skipping the nickname/lobby steps.
+        Calls.attach(this)
         val room = intent.getStringExtra(EXTRA_ROOM)
+        if (intent.hasExtra(EXTRA_VOICE_CHANNEL)) {
+            voice = Calls.Voice(
+                intent.getLongExtra(EXTRA_VOICE_SERVER, 0),
+                intent.getLongExtra(EXTRA_VOICE_CHANNEL, 0),
+                intent.getStringExtra(EXTRA_VOICE_NAME) ?: "voice",
+            )
+        }
         if (room != null) {
+            launchedForRoom = true
             binding.nickStep.visibility = View.GONE
             lifecycleScope.launch {
                 nick = runCatching { com.takeback.app.net.ApiClient.me().nick }.getOrDefault("guest")
@@ -147,26 +182,64 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
     private fun requestCall(code: String) {
         roomCode = code
-        permissions.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+        // A voice channel never opens the camera, so don't ask for it.
+        permissions.launch(
+            if (voice != null) arrayOf(Manifest.permission.RECORD_AUDIO)
+            else arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        )
     }
 
-    private fun beginCall() {
+    private fun beginCall(mic: Boolean, camera: Boolean) {
         inCall = true
         binding.lobbyStep.visibility = View.GONE
         binding.callStep.visibility = View.VISIBLE
-        binding.callCode.text = roomCode
+        val v = voice
+        binding.callCode.text = if (v != null) "🔊 ${v.name}" else roomCode
+        // A voice channel is identified by its name; its room code is a secret
+        // that only admits members anyway, so there's nothing to copy.
+        binding.copyBtn.visibility = if (v != null) View.GONE else View.VISIBLE
+        Calls.voice = v
 
         val engine = RtcEngine(applicationContext, eglBase, this, this).also { this.engine = it }
         // The settings panel is wired up in onCreate, before this engine exists,
         // so the saved gain has to be applied here or it would never take effect.
         engine.micGain = CallSettings.micGain(this)
-        engine.startLocalMedia()
+        val cameraOpened = engine.startLocalMedia(mic = mic, camera = camera)
 
-        val signalUrl = BuildConfig.BASE_URL.replaceFirst(Regex("^http"), "ws").trimEnd('/') + "/ws"
-        signaling = SignalingClient(signalUrl, roomCode, nick, this).also { it.connect() }
+        micOn = mic
+        micAvailable = mic
+        camOn = cameraOpened
+        binding.micBtn.isEnabled = mic
+        binding.micBtn.text = if (mic) "🎤" else "🔇"
+        binding.camBtn.visibility = if (cameraOpened) View.VISIBLE else View.GONE
+        binding.flipBtn.visibility = if (cameraOpened) View.VISIBLE else View.GONE
+        if (!cameraOpened) showLocalAvatarTile()
+
+        // The session cookie rides along (ApiClient.http), which a voice channel
+        // requires; and use the server the app is pointed at, not the default.
+        val signalUrl = com.takeback.app.net.ApiClient.base.replaceFirst(Regex("^http"), "ws").trimEnd('/') + "/ws"
+        signaling = SignalingClient(signalUrl, roomCode, nick, this, com.takeback.app.net.ApiClient.http)
+            .also { it.connect() }
+    }
+
+    /**
+     * Without a camera there's no local video track to hang a tile on, so show
+     * our avatar tile anyway: you should always see yourself in the call.
+     */
+    private fun showLocalAvatarTile() {
+        attachRenderer(LOCAL_ID, nick, null)
+        tiles[LOCAL_ID]?.let { it.videoOn = false; it.muted = !micOn }
+        refreshTile(LOCAL_ID)
+    }
+
+    /** Leave the call and, if this screen was opened for it, close the screen. */
+    fun endCall() {
+        leaveCall()
+        if (launchedForRoom) finish()
     }
 
     private fun leaveCall() {
+        if (Calls.voice == voice) Calls.voice = null
         inCall = false
         signaling?.close(); signaling = null
         engine?.close(); engine = null
@@ -341,6 +414,29 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
     // ---- Screen sharing ----
 
+    /** Whether to share app sound along with the screen, asked before the system prompt. */
+    private var shareAudioWanted = false
+
+    /**
+     * Ask whether to share sound too, like the web client's "Share audio" box.
+     * Skipped where it can't work: Android 9 and older, or no microphone in this
+     * call (the sound travels on the microphone's track).
+     */
+    private fun askShareAudio() {
+        if (!AppAudioCapture.supported || !micAvailable) { shareAudioWanted = false; requestScreenShare(); return }
+        var checked = CallSettings.shareAudio(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Share your screen")
+            .setMultiChoiceItems(arrayOf("Also share sound from apps"), booleanArrayOf(checked)) { _, _, on -> checked = on }
+            .setPositiveButton("Continue") { _, _ ->
+                CallSettings.setShareAudio(this, checked)
+                shareAudioWanted = checked
+                requestScreenShare()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun requestScreenShare() {
         // A mediaProjection-typed foreground service must be live first (API 29+).
         androidx.core.content.ContextCompat.startForegroundService(
@@ -360,6 +456,13 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         broadcastState()
         engine?.startScreenShare(capturer) // adds a 2nd track; camera keeps running
         binding.shareBtn.text = getString(R.string.stop_sharing)
+        if (shareAudioWanted) {
+            // The projection exists once capture has started.
+            val projection = capturer.mediaProjection
+            val ok = projection != null && engine?.startAppAudio(projection) == true
+            toast(if (ok) "Sharing your screen and its sound. Apps that block capture stay silent."
+                  else "Sharing your screen without sound: this phone couldn't capture it.")
+        }
     }
 
     private fun stopScreenShare() {
@@ -526,8 +629,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         for ((key, t) in tiles) t.renderer.setScalingType(scalingFor(key))
     }
 
-    private fun attachRenderer(key: String, nick: String, track: VideoTrack) {
-        tiles[key]?.let { track.addSink(it.renderer); return }
+    /** A tile for [key], showing [track] — or just the avatar when there's no video. */
+    private fun attachRenderer(key: String, nick: String, track: VideoTrack?) {
+        tiles[key]?.let { track?.addSink(it.renderer); return }
 
         val renderer = SurfaceViewRenderer(this).apply {
             init(eglBase.eglBaseContext, null)
@@ -588,7 +692,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val tile = Tile(root, renderer, avatar, micBadge, label, reconnect)
         tiles[key] = tile
         avatar.background = avatarBg(nick, speaking = false)
-        track.addSink(renderer)
+        track?.addSink(renderer)
 
         // State may have arrived before this peer's track did.
         peerState[key]?.let { (video, audio, _) -> applyState(key, video, audio) }
@@ -741,6 +845,13 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
     override fun onDestroy() {
         super.onDestroy()
+        Calls.detach(this)
+        if (inCall) {
+            inCall = false
+            if (Calls.voice == voice) Calls.voice = null
+            signaling?.close(); signaling = null
+            stopService(Intent(this, ScreenCaptureService::class.java))
+        }
         engine?.close()
         eglBase.release()
     }

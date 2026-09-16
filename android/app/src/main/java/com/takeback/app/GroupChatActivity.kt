@@ -173,8 +173,9 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private fun sendText() {
-        val body = binding.input.text.toString().trim()
-        if (body.isEmpty()) return
+        // Keep the first line's indentation (code, lists), like the web composer.
+        val body = binding.input.text.toString().replace(Regex("^\\s*\\n"), "").trimEnd()
+        if (body.isBlank()) return
         binding.input.setText("")
         val replyTo = replyingTo?.id ?: 0
         cancelReply()
@@ -265,7 +266,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private fun joinCall(code: String) {
-        startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_ROOM, code))
+        Calls.join(this, code) // one call at a time: joining this ends any other
     }
 
     private fun toast(msg: String) =
@@ -332,8 +333,8 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     override fun onReaction(scope: String, messageId: Long, reactions: List<com.takeback.app.net.Reaction>) =
         runOnUiThread { if (scope == "group") renderer.updateReactions(messageId, reactions) }
 
-    override fun onMessageDeleted(scope: String, messageId: Long, gid: Long) = runOnUiThread {
-        if (scope == "group" && gid == groupId) renderer.markDeleted(messageId)
+    override fun onMessageDeleted(scope: String, messageId: Long, containerId: Long) = runOnUiThread {
+        if (scope == "group" && containerId == groupId) renderer.markDeleted(messageId)
     }
 
     // ---- live events ----

@@ -124,12 +124,53 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:id="@+id/serversHeader"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/groups"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/serversTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="▾ SERVERS"
+                    android:textColor="#5A6273"
+                    android:textSize="12sp"
+                    android:padding="6dp" />
+
+                <Button
+                    android:id="@+id/joinServerBtn"
+                    style="?android:attr/buttonStyleSmall"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Join" />
+
+                <Button
+                    android:id="@+id/newServerBtn"
+                    style="?android:attr/buttonStyleSmall"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="Create a server"
+                    android:text="＋" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/servers"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/groupsTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="▾ GROUPS"
                 android:textColor="#5A6273"
                 android:textSize="12sp"
+                android:paddingTop="14dp"
                 android:padding="6dp" />
 
             <LinearLayout
@@ -139,9 +180,10 @@
                 android:orientation="vertical" />
 
             <TextView
-                android:layout_width="wrap_content"
+                android:id="@+id/friendsTitle"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/friends"
+                android:text="▾ FRIENDS"
                 android:textColor="#5A6273"
                 android:textSize="12sp"
                 android:padding="6dp" />

@@ -78,6 +78,17 @@ async function register(nick) {
   await wait(1000);
   check('alice gets bob message live', (await text(alice, '#messages .body')).some((t) => t.includes('hey @alice')));
 
+  // An invite link posted in chat opens the join dialog in place, not a new tab
+  await alice.type('#msgInput', 'bring friends: ' + link);
+  await alice.keyboard.press('Enter');
+  await wait(1000);
+  const pagesBefore = (await browser.pages()).length;
+  await bob.evaluate(() => [...document.querySelectorAll('#messages .body a')].find((x) => x.href.includes('invite=')).click());
+  await wait(1200);
+  check('invite link in chat opens the join dialog in place', await vis(bob, 'dialog') && (await browser.pages()).length === pagesBefore
+    && (await text(bob, '.dlg-preview')).join('').includes('already in it'), JSON.stringify(await text(bob, '.dlg-preview')));
+  await bob.click('#dialogClose');
+
   // New channel by admin, appears for bob
   await alice.evaluate(() => [...document.querySelectorAll('.chan-head button')][0].click());
   await alice.type('#dialogBody input:not([type=radio])', 'random');

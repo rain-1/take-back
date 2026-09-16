@@ -1,8 +1,13 @@
 package com.takeback.app
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.text.util.Linkify
+import androidx.appcompat.app.AppCompatActivity
+import io.noties.markwon.AbstractMarkwonPlugin
+import io.noties.markwon.LinkResolverDef
 import io.noties.markwon.Markwon
+import io.noties.markwon.MarkwonConfiguration
 import io.noties.markwon.linkify.LinkifyPlugin
 
 /**
@@ -18,4 +23,25 @@ import io.noties.markwon.linkify.LinkifyPlugin
 fun Context.markwon(): Markwon =
     Markwon.builder(this)
         .usePlugin(LinkifyPlugin.create(Linkify.WEB_URLS or Linkify.EMAIL_ADDRESSES))
+        // A take-back invite link opens the join dialog right here, rather than
+        // the website in a browser.
+        .usePlugin(object : AbstractMarkwonPlugin() {
+            override fun configureConfiguration(builder: MarkwonConfiguration.Builder) {
+                builder.linkResolver { view, link ->
+                    val code = ServerDialogs.inviteCodeOf(link)?.takeIf { link.contains("invite=") }
+                    val activity = view.context.findActivity()
+                    if (code != null && activity != null) ServerDialogs.join(activity, code)
+                    else LinkResolverDef().resolve(view, link)
+                }
+            }
+        })
         .build()
+
+private fun android.content.Context.findActivity(): AppCompatActivity? {
+    var c: android.content.Context? = this
+    while (c is ContextWrapper) {
+        if (c is AppCompatActivity) return c
+        c = c.baseContext
+    }
+    return null
+}

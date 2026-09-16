@@ -116,6 +116,66 @@ data class GroupMessage(
     val deletedAt: Long = 0,
 )
 
+// ---- Servers (communities with channels) ----
+
+/** A server as seen by me: [role] is "admin" or "user". */
+data class Server(
+    val id: Long,
+    val name: String,
+    val iconUrl: String,
+    val ownerId: Long,
+    val role: String,
+    val memberCount: Int,
+    val unread: Int = 0,
+) {
+    val isAdmin: Boolean get() = role == "admin"
+}
+
+data class ServerMember(val user: User, val role: String)
+
+/** A text or voice channel. [callCode] is the voice channel's call room. */
+data class Channel(
+    val id: Long,
+    val serverId: Long,
+    val name: String,
+    val kind: String, // text | voice
+    val callCode: String = "",
+    val unread: Int = 0,
+)
+
+data class ChannelMessage(
+    val id: Long,
+    val channelId: Long,
+    val serverId: Long,
+    val senderId: Long,
+    val body: String,
+    val attachment: Attachment? = null,
+    val imageUrl: String? = null,
+    val thumbUrl: String? = null,
+    val created: Long,
+    val reactions: List<Reaction> = emptyList(),
+    val replyTo: Long = 0,
+    val replySender: Long = 0,
+    val replyBody: String = "",
+    val editedAt: Long = 0,
+    val deletedAt: Long = 0,
+)
+
+/** What an invite code leads to, before joining. */
+data class InvitePreview(val server: Server, val alreadyMember: Boolean)
+
+/**
+ * Who is active in a server: viewing it or in one of its voice channels, and
+ * who sits in each voice channel. [seq] orders snapshots (see the server's
+ * presence.Activity).
+ */
+data class ServerActivity(
+    val serverId: Long,
+    val seq: Long,
+    val active: Set<Long>,
+    val voice: Map<Long, List<Long>>,
+)
+
 /**
  * ApiClient is the app-wide HTTP client for the take-back REST API. It persists
  * the session cookie so logins survive process restarts, and exposes suspend
@@ -382,11 +442,108 @@ object ApiClient {
         post("/api/read", jsonBody(JSONObject().put("kind", kind).put("id", id).put("lastId", lastId)))
     }
 
-    /** Add or remove your emoji on a message. scope is "dm" or "group". */
+    /** Add or remove your emoji on a message. scope is "dm", "group" or "channel". */
     suspend fun react(scope: String, messageId: Long, emoji: String, add: Boolean) =
         post("/api/reactions", jsonBody(JSONObject()
             .put("scope", scope).put("messageId", messageId)
             .put("emoji", emoji).put("add", add))).let {}
+
+    // ---- servers ----
+
+    suspend fun servers(): List<Server> {
+        val arr = JSONArray(get("/api/servers"))
+        return (0 until arr.length()).map { parseServer(arr.getJSONObject(it)) }
+    }
+
+    suspend fun createServer(name: String): Server =
+        parseServer(JSONObject(post("/api/servers", jsonBody(JSONObject().put("name", name)))))
+
+    suspend fun renameServer(serverId: Long, name: String) =
+        post("/api/servers/update", jsonBody(JSONObject().put("server", serverId).put("name", name))).let {}
+
+    suspend fun setServerIcon(serverId: Long, filename: String, bytes: ByteArray) {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("server", serverId.toString())
+            .addFormDataPart("image", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
+            .build()
+        post("/api/servers/icon", body)
+    }
+
+    suspend fun deleteServer(serverId: Long) =
+        post("/api/servers/delete", jsonBody(JSONObject().put("server", serverId))).let {}
+
+    suspend fun leaveServer(serverId: Long) =
+        post("/api/servers/leave", jsonBody(JSONObject().put("server", serverId))).let {}
+
+    suspend fun serverMembers(serverId: Long): List<ServerMember> {
+        val arr = JSONArray(get(query("/api/servers/members", "server", serverId)))
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            ServerMember(parseUserObj(o.getJSONObject("user")), o.optString("role"))
+        }
+    }
+
+    /** A new invite code for a server; the link is [base]/?invite=CODE. */
+    suspend fun createInvite(serverId: Long): String =
+        JSONObject(post("/api/servers/invites", jsonBody(JSONObject().put("server", serverId)))).getString("code")
+
+    fun inviteLink(code: String): String = "$base/?invite=$code"
+
+    suspend fun previewInvite(code: String): InvitePreview {
+        val url = base.toHttpUrl("/api/invites").newBuilder().addQueryParameter("code", code).build()
+        val o = JSONObject(get(url))
+        return InvitePreview(parseServer(o.getJSONObject("server")), o.optBoolean("member"))
+    }
+
+    /** Join by invite. Returns the server and whether I was newly added. */
+    suspend fun joinInvite(code: String): Pair<Server, Boolean> {
+        val o = JSONObject(post("/api/invites/join", jsonBody(JSONObject().put("code", code))))
+        return parseServer(o.getJSONObject("server")) to o.optBoolean("joined")
+    }
+
+    suspend fun channels(serverId: Long): List<Channel> {
+        val arr = JSONArray(get(query("/api/servers/channels", "server", serverId)))
+        return (0 until arr.length()).map { parseChannel(arr.getJSONObject(it)) }
+    }
+
+    suspend fun createChannel(serverId: Long, name: String, kind: String): Channel =
+        parseChannel(JSONObject(post("/api/servers/channels", jsonBody(
+            JSONObject().put("server", serverId).put("name", name).put("kind", kind)))))
+
+    suspend fun renameChannel(channelId: Long, name: String) =
+        post("/api/channels/update", jsonBody(JSONObject().put("channel", channelId).put("name", name))).let {}
+
+    suspend fun deleteChannel(channelId: Long) =
+        post("/api/channels/delete", jsonBody(JSONObject().put("channel", channelId))).let {}
+
+    suspend fun channelConversation(channelId: Long): List<ChannelMessage> {
+        val arr = JSONArray(get(query("/api/channels/messages", "channel", channelId)))
+        return (0 until arr.length()).map { parseChannelMessage(arr.getJSONObject(it)) }
+    }
+
+    suspend fun sendChannelText(channelId: Long, body: String, replyTo: Long = 0): ChannelMessage =
+        parseChannelMessage(JSONObject(post("/api/channels/messages", jsonBody(
+            JSONObject().put("channel", channelId).put("body", body).put("replyTo", replyTo)))))
+
+    suspend fun sendChannelAttachment(channelId: Long, filename: String, bytes: ByteArray, caption: String): ChannelMessage {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("channel", channelId.toString())
+            .addFormDataPart("body", caption)
+            .addFormDataPart("name", filename)
+            .addFormDataPart("file", filename, bytes.toRequestBody("application/octet-stream".toMediaType()))
+            .build()
+        return parseChannelMessage(JSONObject(post("/api/channels/messages/media", body)))
+    }
+
+    suspend fun editChannelMessage(id: Long, body: String): ChannelMessage =
+        parseChannelMessage(JSONObject(post("/api/messages/edit", jsonBody(
+            JSONObject().put("id", id).put("scope", "channel").put("body", body)))))
+
+    suspend fun serverActivity(serverId: Long): ServerActivity =
+        parseActivity(JSONObject(get(query("/api/servers/active", "server", serverId))))
+
+    private fun query(path: String, key: String, id: Long): HttpUrl =
+        base.toHttpUrl(path).newBuilder().addQueryParameter(key, id.toString()).build()
 
     // ---- low-level ----
 
@@ -478,6 +635,63 @@ object ApiClient {
                 mine = r.optBoolean("mine"),
             )
         }
+    }
+
+    private fun parseUserObj(o: JSONObject) = User(
+        o.getLong("id"), o.getString("nick"),
+        o.optString("avatarUrl").let { a -> if (a.isEmpty()) "" else mediaUrl(a) })
+
+    fun parseServer(o: JSONObject) = Server(
+        id = o.getLong("id"),
+        name = o.optString("name"),
+        iconUrl = o.optString("iconUrl").let { if (it.isEmpty()) "" else mediaUrl(it) },
+        ownerId = o.optLong("ownerId"),
+        role = o.optString("role"),
+        memberCount = o.optInt("memberCount"),
+        unread = o.optInt("unread"),
+    )
+
+    private fun parseChannel(o: JSONObject) = Channel(
+        id = o.getLong("id"),
+        serverId = o.optLong("serverId"),
+        name = o.optString("name"),
+        kind = o.optString("kind"),
+        callCode = o.optString("callCode"),
+        unread = o.optInt("unread"),
+    )
+
+    fun parseChannelMessage(o: JSONObject) = ChannelMessage(
+        id = o.getLong("id"),
+        channelId = o.optLong("channelId"),
+        serverId = o.optLong("serverId"),
+        senderId = o.getLong("senderId"),
+        body = o.optString("body"),
+        attachment = attachmentOf(o),
+        imageUrl = o.optString("imageUrl").ifEmpty { null }?.let { mediaUrl(it) },
+        thumbUrl = o.optString("thumbUrl").ifEmpty { null }?.let { mediaUrl(it) },
+        created = o.getLong("created"),
+        reactions = parseReactions(o.optJSONArray("reactions")),
+        replyTo = o.optLong("replyTo"),
+        replySender = o.optLong("replySender"),
+        replyBody = o.optString("replyBody"),
+        editedAt = o.optLong("editedAt"),
+        deletedAt = o.optLong("deletedAt"),
+    )
+
+    fun parseActivity(o: JSONObject): ServerActivity {
+        val active = o.optJSONArray("active")
+        val voice = o.optJSONObject("voice")
+        val seats = HashMap<Long, List<Long>>()
+        voice?.keys()?.forEach { k ->
+            val arr = voice.getJSONArray(k)
+            seats[k.toLong()] = (0 until arr.length()).map { arr.getLong(it) }
+        }
+        return ServerActivity(
+            serverId = o.optLong("serverId"),
+            seq = o.optLong("seq"),
+            active = (0 until (active?.length() ?: 0)).map { active!!.getLong(it) }.toSet(),
+            voice = seats,
+        )
     }
 
     private fun parseGroup(o: JSONObject) = Group(

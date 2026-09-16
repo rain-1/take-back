@@ -159,8 +159,9 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private fun sendText() {
-        val body = binding.input.text.toString().trim()
-        if (body.isEmpty()) return
+        // Keep the first line's indentation (code, lists), like the web composer.
+        val body = binding.input.text.toString().replace(Regex("^\\s*\\n"), "").trimEnd()
+        if (body.isBlank()) return
         binding.input.setText("")
         val replyTo = replyingTo?.id ?: 0
         cancelReply()
@@ -226,7 +227,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private fun joinCall(code: String) {
-        startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_ROOM, code))
+        Calls.join(this, code) // one call at a time: joining this ends any other
     }
 
     // ---- replies ----
@@ -245,7 +246,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
     private fun react(messageId: Long, emoji: String, add: Boolean) {
         lifecycleScope.launch { runCatching { ApiClient.react("dm", messageId, emoji, add) } }
     }
-    override fun onMessageDeleted(scope: String, messageId: Long, gid: Long) = runOnUiThread {
+    override fun onMessageDeleted(scope: String, messageId: Long, containerId: Long) = runOnUiThread {
         if (scope == "dm") renderer.markDeleted(messageId)
     }
 

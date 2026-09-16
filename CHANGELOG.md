@@ -24,6 +24,41 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.23.0
+
+**New — servers on the phone** (Android)
+- The home screen has **Servers**, **Groups** and **Friends**, each collapsible.
+  **＋** creates a server (name and icon), **Join** takes an invite link or code
+  and shows the server before you join.
+- A server shows its **text channels**, its **voice channels** with who's in
+  each, and who's **Active** (🔊 when in voice) or **Away**. The **Invite**
+  button shares a link; **⚙** has rename, icon, new channels and delete for
+  admins, leave for everyone else. Admins long-press a channel to rename or
+  delete it.
+- Text channels work like group chats — replies, reactions, edits, deletes,
+  attachments, mentions (with the red pip), notifications — and admins can
+  delete anyone's message.
+- **Voice channels**: tap to join, microphone only. Tap again to bring the
+  call back. Looking at a server or one of its channels makes you active there.
+- Invite links tapped in any chat open the join dialog in the app.
+
+**Also on the phone, catching up with web and desktop**
+- **Join a call without a camera or microphone** when one isn't allowed, instead
+  of not joining at all. You can still listen, watch and share your screen.
+- **Screen sharing can include sound from other apps** (Android 10+; apps that
+  block capture stay silent). It's mixed into your microphone's audio.
+- **Videos and audio clips play inside the app**, with "Open in…" for another
+  player.
+- One call at a time: joining a call ends the one you were in, and rejoining
+  the call you're in brings it back.
+- Sending keeps the first line's indentation, like the web.
+
+**Web**
+- An invite link clicked in a message opens the join dialog in the same tab,
+  instead of opening the site again in a new one (which also dropped a call).
+- A tab that loads in the background now starts its one-minute grace before
+  counting as away, instead of staying active until it's shown and hidden.
+
 ## 1.22.0
 
 **New — voice channels and who's active** (@Etheri; web and desktop, phone later)
