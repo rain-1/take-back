@@ -39,6 +39,8 @@ func (a *API) serverRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/channels/delete", a.auth(a.handleChannelDelete))       // POST (admin)
 	mux.HandleFunc("/api/channels/messages", a.auth(a.handleChannelMessages))   // GET list, POST send
 	mux.HandleFunc("/api/channels/messages/media", a.auth(a.handleChannelMedia))
+	mux.HandleFunc("/api/servers/active", a.auth(a.handleServerActivity)) // GET who's viewing / in voice
+	a.wireActivity()
 }
 
 // ---- access helpers --------------------------------------------------------------
@@ -231,6 +233,7 @@ func (a *API) handleServerDelete(w http.ResponseWriter, r *http.Request, user *s
 	for _, id := range members {
 		a.Presence.NotifyUser(id, presence.Event{Type: "server_update", Message: raw})
 	}
+	a.Presence.DropFromServer(body.Server, 0)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -244,6 +247,7 @@ func (a *API) handleServerLeave(w http.ResponseWriter, r *http.Request, user *st
 	if !serverAccess(w, a.Store.LeaveServer(body.Server, user.ID)) {
 		return
 	}
+	a.Presence.DropFromServer(body.Server, user.ID)
 	a.serverChanged(body.Server, user.ID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -429,6 +433,9 @@ func (a *API) handleChannelDelete(w http.ResponseWriter, r *http.Request, user *
 	files, err := a.Store.DeleteChannel(ch.ID)
 	if !serverAccess(w, err) {
 		return
+	}
+	if ch.Kind == store.ChannelVoice {
+		a.Presence.DropChannel(ch.ServerID, ch.ID)
 	}
 	a.Media.Remove(files...)
 	a.serverChanged(ch.ServerID, 0)

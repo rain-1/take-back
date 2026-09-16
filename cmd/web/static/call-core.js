@@ -10,7 +10,8 @@
  * through per-session element references — no global element ids — so it can sit
  * inside a page that has ids of its own.
  *
- *   TBCall.mount(el, { nick, room, onLeave, onStatus })
+ *   TBCall.mount(el, { nick, room, onLeave, onStatus, video })
+ *     video: false joins microphone-only with no camera button (voice channels)
  *   TBCall.leave()
  *   TBCall.active()   // is a call running?
  *   TBCall.layout()   // re-fit the grid (call after resizing the container)
@@ -72,6 +73,8 @@ window.TBCall = (function () {
       // Whether to show the call code + Copy. A call launched from a chat is
       // identified by the conversation, not by a code you read out loud.
       showCode: opts.showCode !== false,
+      // Voice channels are microphone-only: no camera is opened or offered.
+      voiceOnly: opts.video === false,
 
       ws: null, myId: null,
       cameraStream: null,   // the original camera+mic, kept so we can revert
@@ -204,7 +207,10 @@ window.TBCall = (function () {
     // with nothing — you can still see and hear everyone, and screen-share —
     // and say which device was unavailable and why.
     const want = gumConstraints(true), prefer = gumConstraints(false);
-    const attempts = [
+    const attempts = S.voiceOnly ? [
+      { constraints: { audio: want.audio, video: false }, missing: "" },
+      { constraints: { audio: prefer.audio, video: false }, missing: "" },
+    ] : [
       // First REQUIRE the saved devices (deviceId: {exact}): Firefox silently
       // ignores `ideal` device hints and grabs its own default mic.
       { constraints: want, missing: "" },
@@ -215,7 +221,7 @@ window.TBCall = (function () {
       { constraints: { audio: false, video: prefer.video }, missing: "microphone" },
     ];
     let firstError = null;
-    let missing = "camera and microphone";
+    let missing = S.voiceOnly ? "microphone" : "camera and microphone";
     for (const a of attempts) {
       try {
         S.cameraStream = await navigator.mediaDevices.getUserMedia(a.constraints);
@@ -278,6 +284,7 @@ window.TBCall = (function () {
     u.cam.disabled = !hasCam;
     u.mic.textContent = !hasMic ? "🎤 No mic" : S.micOn ? "🎤 Mic on" : "🔇 Mic off";
     u.cam.textContent = !hasCam ? "📷 No camera" : S.camOn ? "📷 Camera on" : "📷 Camera off";
+    u.cam.classList.toggle("tbc-hidden", S.voiceOnly);
   }
 
   function leave() {

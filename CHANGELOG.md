@@ -24,6 +24,22 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.22.0
+
+**New — voice channels and who's active** (@Etheri; web and desktop, phone later)
+- **Click a voice channel to join it.** It's a call like any other (screen
+  sharing included) but microphone-only, and everyone in the channel is listed
+  under it, like Discord. Click it again to bring the call back up; **Leave**
+  hangs up.
+- Only **members** of the server can join its voice channels, under their own
+  names. Leaving the server, or an admin deleting the channel, ends your call
+  in it.
+- The right-hand list shows who's **Active**: people looking at the server, or
+  in one of its voice channels (marked 🔊). Everyone else is under **Away**.
+  Switching to another server, closing it, or leaving the window hidden for a
+  minute makes you away there; being in its voice channel keeps you active.
+- Ordinary call codes and group calls are unchanged.
+
 ## 1.21.0
 
 **New — servers** (@Etheri; web and desktop, phone later)

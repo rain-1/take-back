@@ -44,8 +44,10 @@ type Event struct {
 
 // conn is one open events socket for a user (a user may have several).
 type conn struct {
-	ws   *websocket.Conn
-	send chan Event
+	ws      *websocket.Conn
+	send    chan Event
+	userID  int64
+	viewing int64 // server this socket is looking at, 0 for none; guarded by Hub.mu
 }
 
 // Hub owns presence state and the set of live event sockets.
@@ -53,10 +55,16 @@ type Hub struct {
 	mu      sync.Mutex
 	conns   map[int64]map[*conn]struct{} // userID -> connections
 	friends FriendLookup
+
+	// Server activity (see activity.go).
+	voice      map[string]voiceSeat // signaling connection id -> seat
+	seq        int64
+	mayView    func(userID, serverID int64) bool
+	onActivity func(serverID int64)
 }
 
 func NewHub(friends FriendLookup) *Hub {
-	return &Hub{conns: map[int64]map[*conn]struct{}{}, friends: friends}
+	return &Hub{conns: map[int64]map[*conn]struct{}{}, friends: friends, voice: map[string]voiceSeat{}}
 }
 
 // Online reports whether the user currently has at least one live socket.
@@ -167,7 +175,10 @@ var upgrader = websocket.Upgrader{CheckOrigin: sameOriginOrNoOrigin}
 // clients (the `tb` CLI, the Android app), which aren't subject to the ambient
 // cookie problem because nothing else is driving them.
 func sameOriginOrNoOrigin(r *http.Request) bool {
-	origin := r.Header.Get("Origin")
+	return originAllowed(r.Header.Get("Origin"), r.Host)
+}
+
+func originAllowed(origin, host string) bool {
 	if origin == "" {
 		return true // not a browser
 	}
@@ -178,7 +189,7 @@ func sameOriginOrNoOrigin(r *http.Request) bool {
 	// Compare hosts, not full URLs: the page is served from the same host as the
 	// API (cmd/web proxies /api), and the scheme differs between local dev
 	// (http) and production (https).
-	return strings.EqualFold(u.Host, r.Host)
+	return strings.EqualFold(u.Host, host)
 }
 
 // Serve upgrades an already-authenticated request to the events WebSocket for
@@ -190,7 +201,7 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, userID int64) {
 		return
 	}
 	ws.SetReadLimit(eventsReadLimit)
-	c := &conn{ws: ws, send: make(chan Event, 32)}
+	c := &conn{ws: ws, send: make(chan Event, 32), userID: userID}
 
 	if h.add(userID, c) {
 		// Newly online: tell friends.
@@ -233,20 +244,33 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, userID int64) {
 		}
 	}()
 
-	// Read loop exists only to detect disconnect; pongs extend the deadline.
+	// The read loop detects disconnect (pongs extend the deadline) and takes the
+	// one thing a client says on this socket: which server it's viewing.
 	ws.SetReadDeadline(time.Now().Add(pongWait))
 	ws.SetPongHandler(func(string) error {
 		return ws.SetReadDeadline(time.Now().Add(pongWait))
 	})
 	for {
-		if _, _, err := ws.ReadMessage(); err != nil {
+		_, data, err := ws.ReadMessage()
+		if err != nil {
 			break
 		}
+		h.handleClientMessage(c, data)
 	}
 
+	h.mu.Lock()
+	viewing := c.viewing
+	h.mu.Unlock()
+	// Unregister before closing the send channel: sendTo holds the hub lock
+	// while it writes to every registered socket, and a send on a closed
+	// channel panics.
+	lastConn := h.remove(userID, c)
 	close(c.send)
 	ws.Close()
-	if h.remove(userID, c) {
+	if viewing != 0 {
+		h.activityChanged(viewing)
+	}
+	if lastConn {
 		h.notifyFriends(userID, Event{Type: "presence", UserID: userID, Online: false})
 	}
 }

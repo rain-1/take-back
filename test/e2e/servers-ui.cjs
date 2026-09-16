@@ -11,7 +11,7 @@ async function register(nick) {
   return { name: c[0], value: c.slice(1).join('=') };
 }
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
   const errors = [];
   async function user(nick) {
     const cookie = await register(nick);
@@ -108,6 +108,41 @@ async function register(nick) {
   await wait(800);
   check('friends stays collapsed', await bob.evaluate(() => document.querySelector('[data-section=friends]').classList.contains('collapsed')));
   await bob.screenshot({ path: (process.env.SHOTS || '.') + '/servers-bob.png' });
+
+  // Activity and voice
+  await wait(800);
+  const memberCol = (p) => p.evaluate(() => [...document.querySelectorAll('#memberList .chan-head, #memberList .member')].map((e) => e.textContent.trim()));
+  check('both viewing: both active', (await memberCol(alice)).includes('Active — 2'), JSON.stringify(await memberCol(alice)));
+  const voiceRow = (p, name) => p.evaluate((name) => { const r = [...document.querySelectorAll('#channelList .chan.voice')].find((e) => e.querySelector('.cname').textContent === name); r.click(); }, name);
+  await voiceRow(bob, 'General');
+  await wait(2500);
+  check('bob in voice: call panel open', await vis(bob, 'callPane'));
+  check('voice call has no camera button', await bob.evaluate(() => [...document.querySelectorAll('.tbc button')].filter((b) => /Camera/.test(b.textContent)).every((b) => b.classList.contains('tbc-hidden'))));
+  const occupants = (p) => p.evaluate(() => [...document.querySelectorAll('.voice-occupant')].map((e) => e.textContent.trim()));
+  check('alice sees bob under the voice channel', (await occupants(alice)).includes('BObob'), JSON.stringify(await occupants(alice)));
+  check('alice sees bob marked in voice', (await memberCol(alice)).some((t) => /bob🔊/.test(t)), JSON.stringify(await memberCol(alice)));
+  await voiceRow(alice, 'General');
+  await wait(4000);
+  check('both listed in the voice channel', (await occupants(bob)).length === 2, JSON.stringify(await occupants(bob)));
+  check('bob\'s channel row shows connected', await bob.evaluate(() => !!document.querySelector('#channelList .chan.voice.connected')));
+  check('voice call connects the two', (await bob.$$('.tbc-tile')).length === 2, String((await bob.$$('.tbc-tile')).length));
+  await bob.screenshot({ path: (process.env.SHOTS || '.') + '/servers-voice.png' });
+  // bob hangs up, then closes the server: he's away
+  await bob.evaluate(() => [...document.querySelectorAll('.tbc button')].find((b) => b.textContent === 'Leave').click());
+  await wait(1000);
+  check('bob left: call panel closed', !(await vis(bob, 'callPane')));
+  check('alice sees only herself in voice', JSON.stringify(await occupants(alice)) === '["ALalice"]', JSON.stringify(await occupants(alice)));
+  await bob.evaluate(() => closeServerView());
+  await wait(800);
+  check('bob not viewing and not in voice: away', (await memberCol(alice)).includes('Away — 1') && (await memberCol(alice)).includes('Active — 1'), JSON.stringify(await memberCol(alice)));
+  await bob.evaluate(() => openServerView(serverState.values().next().value));
+  await wait(1200);
+  check('bob back: active again', (await memberCol(alice)).includes('Active — 2'), JSON.stringify(await memberCol(alice)));
+  // A voice channel deleted with alice inside ends her call
+  await alice.evaluate(() => { window.confirm = () => true; deleteChannel(serverChannels.find((c) => c.kind === 'voice')); });
+  await wait(1500);
+  check('deleting the voice channel ends the call in it', !(await vis(alice, 'callPane')));
+  check('nobody left in voice', (await occupants(bob)).length === 0);
 
   // Rename server live
   await alice.click('#serverMenuBtn');

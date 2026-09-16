@@ -45,8 +45,9 @@ type Peer struct {
 
 // client is a single connected browser.
 type client struct {
-	id   string
-	nick string
+	id    string
+	nick  string
+	voice bool // admitted to a voice channel; its seat is released on leave
 	room *room
 	conn *websocket.Conn
 	send chan Signal
@@ -109,6 +110,7 @@ func (c *client) trySend(s Signal) {
 type hub struct {
 	mu    sync.Mutex
 	rooms map[string]*room
+	api   *api.API // gates voice-channel rooms; nil in tests
 }
 
 func newHub() *hub { return &hub{rooms: map[string]*room{}} }
@@ -204,6 +206,20 @@ func (h *hub) serveWS(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "room too long", http.StatusBadRequest)
 		return
 	}
+	// A voice channel's room is for its server's members only, under their own
+	// names. Any other room is joined by knowing its code.
+	var ticket *api.VoiceTicket
+	if h.api != nil {
+		t, status, msg := h.api.SignalGate(req, roomID)
+		if status != 0 {
+			http.Error(w, msg, status)
+			return
+		}
+		ticket = t
+	}
+	if ticket != nil {
+		nick = ticket.Nick
+	}
 	if nick == "" {
 		nick = "anon"
 	} else if len(nick) > maxNickLen {
@@ -226,6 +242,10 @@ func (h *hub) serveWS(w http.ResponseWriter, req *http.Request) {
 		send: make(chan Signal, 32),
 	}
 	r := h.join(roomID, c)
+	if ticket != nil {
+		c.voice = true
+		h.api.VoiceJoined(c.id, ticket, func() { conn.Close() })
+	}
 	log.Printf("%s (%s) joined room %s", c.id, c.nick, roomID)
 
 	// Tell the newcomer who it is and who's already here. The newcomer is the
@@ -254,6 +274,9 @@ const (
 func (c *client) readPump(h *hub) {
 	defer func() {
 		h.leave(c)
+		if c.voice {
+			h.api.VoiceLeft(c.id)
+		}
 		c.conn.Close()
 		close(c.send)
 		log.Printf("%s (%s) left room", c.id, c.nick)
@@ -341,6 +364,7 @@ func main() {
 
 	// WebRTC signaling hub (unchanged).
 	h := newHub()
+	h.api = restAPI
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", h.serveWS) // WebRTC signaling
