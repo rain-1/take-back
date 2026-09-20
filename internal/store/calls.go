@@ -35,6 +35,8 @@ type Call struct {
 	Answered int64  `json:"answered,omitempty"`
 	Ended    int64  `json:"ended,omitempty"`
 	Outcome  string `json:"outcome"`
+	// DeclinedBy is who turned it down, when the outcome is "declined".
+	DeclinedBy int64 `json:"declinedBy,omitempty"`
 }
 
 // Live reports whether the call can still be joined.
@@ -48,8 +50,8 @@ func (c *Call) Seconds() int64 {
 	return c.Ended - c.Answered
 }
 
-func (s *Store) initCalls() error {
-	_, err := s.db.Exec(`
+func init() {
+	schemaExtras = append(schemaExtras, `
 CREATE TABLE IF NOT EXISTS calls (
   code        TEXT PRIMARY KEY,
   scope       TEXT    NOT NULL,
@@ -59,10 +61,10 @@ CREATE TABLE IF NOT EXISTS calls (
   created_at  INTEGER NOT NULL,
   answered_at INTEGER NOT NULL DEFAULT 0,
   ended_at    INTEGER NOT NULL DEFAULT 0,
-  outcome     TEXT    NOT NULL DEFAULT ''
+  outcome     TEXT    NOT NULL DEFAULT '',
+  declined_by INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_calls_created ON calls (created_at);`)
-	return err
 }
 
 // CreateCall records a newly announced call. A code that somehow repeats
@@ -75,7 +77,7 @@ func (s *Store) CreateCall(code, scope string, callerID, peerID, groupID int64) 
 		 ON CONFLICT(code) DO UPDATE SET
 		   scope = excluded.scope, caller_id = excluded.caller_id, peer_id = excluded.peer_id,
 		   group_id = excluded.group_id, created_at = excluded.created_at,
-		   answered_at = 0, ended_at = 0, outcome = ''`,
+		   answered_at = 0, ended_at = 0, outcome = '', declined_by = 0`,
 		code, scope, callerID, peerID, groupID, now)
 	if err != nil {
 		return nil, err
@@ -86,9 +88,9 @@ func (s *Store) CreateCall(code, scope string, callerID, peerID, groupID int64) 
 func (s *Store) CallByCode(code string) (*Call, error) {
 	var c Call
 	err := s.db.QueryRow(
-		`SELECT code, scope, caller_id, peer_id, group_id, created_at, answered_at, ended_at, outcome
+		`SELECT code, scope, caller_id, peer_id, group_id, created_at, answered_at, ended_at, outcome, declined_by
 		 FROM calls WHERE code = ?`, code).
-		Scan(&c.Code, &c.Scope, &c.CallerID, &c.PeerID, &c.GroupID, &c.Created, &c.Answered, &c.Ended, &c.Outcome)
+		Scan(&c.Code, &c.Scope, &c.CallerID, &c.PeerID, &c.GroupID, &c.Created, &c.Answered, &c.Ended, &c.Outcome, &c.DeclinedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoSuchCall
 	}
@@ -132,7 +134,7 @@ func (s *Store) CallsByCodes(codes []string) ([]Call, error) {
 		args[i] = c
 	}
 	rows, err := s.db.Query(
-		`SELECT code, scope, caller_id, peer_id, group_id, created_at, answered_at, ended_at, outcome
+		`SELECT code, scope, caller_id, peer_id, group_id, created_at, answered_at, ended_at, outcome, declined_by
 		 FROM calls WHERE code IN (?`+strings.Repeat(", ?", len(codes)-1)+`)`, args...)
 	if err != nil {
 		return nil, err
@@ -142,7 +144,7 @@ func (s *Store) CallsByCodes(codes []string) ([]Call, error) {
 	for rows.Next() {
 		var c Call
 		if err := rows.Scan(&c.Code, &c.Scope, &c.CallerID, &c.PeerID, &c.GroupID,
-			&c.Created, &c.Answered, &c.Ended, &c.Outcome); err != nil {
+			&c.Created, &c.Answered, &c.Ended, &c.Outcome, &c.DeclinedBy); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -154,7 +156,7 @@ func (s *Store) CallsByCodes(codes []string) ([]Call, error) {
 // to, so a client that has just connected can show them.
 func (s *Store) LiveCallsFor(userID int64) ([]Call, error) {
 	rows, err := s.db.Query(
-		`SELECT code, scope, caller_id, peer_id, group_id, created_at, answered_at, ended_at, outcome
+		`SELECT code, scope, caller_id, peer_id, group_id, created_at, answered_at, ended_at, outcome, declined_by
 		 FROM calls
 		 WHERE outcome = '' AND (
 		   caller_id = ? OR peer_id = ? OR
@@ -168,10 +170,16 @@ func (s *Store) LiveCallsFor(userID int64) ([]Call, error) {
 	for rows.Next() {
 		var c Call
 		if err := rows.Scan(&c.Code, &c.Scope, &c.CallerID, &c.PeerID, &c.GroupID,
-			&c.Created, &c.Answered, &c.Ended, &c.Outcome); err != nil {
+			&c.Created, &c.Answered, &c.Ended, &c.Outcome, &c.DeclinedBy); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// SetCallDecliner remembers who turned a call down, so the chat can name them.
+func (s *Store) SetCallDecliner(code string, userID int64) error {
+	_, err := s.db.Exec(`UPDATE calls SET declined_by = ? WHERE code = ?`, userID, code)
+	return err
 }

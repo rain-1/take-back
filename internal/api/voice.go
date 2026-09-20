@@ -14,10 +14,15 @@ import (
 // channel belongs to a community, so joining one requires being signed in as a
 // member of its server.
 
-// VoiceTicket admits one signaling socket to a voice channel.
+// VoiceTicket admits one signaling socket to a room and says what that room is.
+// ServerID and ChannelID are set for a voice channel; Call is set when the room
+// was announced in a conversation (see calls.go). UserID is 0 for someone who
+// joined an ordinary call by link without signing in.
 type VoiceTicket struct {
 	UserID, ServerID, ChannelID int64
 	Nick                        string
+	Code                        string
+	Call                        *store.Call
 }
 
 // SignalGate decides whether a signaling socket may join room. A room that isn't
@@ -27,7 +32,7 @@ type VoiceTicket struct {
 func (a *API) SignalGate(r *http.Request, room string) (*VoiceTicket, int, string) {
 	ch, err := a.Store.VoiceChannelByCode(room)
 	if errors.Is(err, store.ErrNoSuchChannel) {
-		return nil, 0, ""
+		return a.gateCall(r, room)
 	}
 	if err != nil {
 		return nil, http.StatusInternalServerError, "couldn't look up the room"
@@ -48,16 +53,48 @@ func (a *API) SignalGate(r *http.Request, room string) (*VoiceTicket, int, strin
 	if _, err := a.Store.MemberRole(ch.ServerID, user.ID); err != nil {
 		return nil, http.StatusForbidden, "you're not a member of this server"
 	}
-	return &VoiceTicket{UserID: user.ID, ServerID: ch.ServerID, ChannelID: ch.ID, Nick: user.Nick}, 0, ""
+	return &VoiceTicket{UserID: user.ID, ServerID: ch.ServerID, ChannelID: ch.ID, Nick: user.Nick, Code: room}, 0, ""
+}
+
+// gateCall handles every other room. A code nobody announced stays open to
+// anyone who has it, as it always was. A call that has ended is closed: its
+// link shouldn't drop you into an empty room days later.
+func (a *API) gateCall(r *http.Request, room string) (*VoiceTicket, int, string) {
+	call, err := a.Store.CallByCode(room)
+	if err != nil && !errors.Is(err, store.ErrNoSuchCall) {
+		return nil, http.StatusInternalServerError, "couldn't look up the room"
+	}
+	if call != nil && !call.Live() {
+		return nil, http.StatusGone, "that call has ended"
+	}
+	ticket := &VoiceTicket{Code: room, Call: call}
+	// Name whoever is signed in, so "who's in this call" can say who. An
+	// unsigned guest with the code still gets in, as before.
+	if presence.AllowedOrigin(r.Header.Get("Origin"), r.Host) {
+		if cookie, err := r.Cookie(sessionCookie); err == nil {
+			if user, err := a.Store.UserBySession(cookie.Value); err == nil {
+				ticket.UserID, ticket.Nick = user.ID, user.Nick
+			}
+		}
+	}
+	return ticket, 0, ""
 }
 
 // VoiceJoined and VoiceLeft are called by the signaling server as a ticketed
 // socket (key: its connection id) enters and leaves its room.
 func (a *API) VoiceJoined(key string, t *VoiceTicket, kick func()) {
-	a.Presence.VoiceJoin(key, t.UserID, t.ServerID, t.ChannelID, kick)
+	a.Presence.VoiceJoin(key, t.UserID, t.ServerID, t.ChannelID, t.Code, kick)
+	if t.Call != nil {
+		a.callJoined(t)
+	}
 }
 
-func (a *API) VoiceLeft(key string) { a.Presence.VoiceLeave(key) }
+func (a *API) VoiceLeft(key string) {
+	userID, code, ok := a.Presence.VoiceLeave(key)
+	if ok && code != "" {
+		a.callLeft(userID, code)
+	}
+}
 
 // wireActivity connects the presence hub's activity tracking to server
 // membership, and broadcasts each change to the server's members.

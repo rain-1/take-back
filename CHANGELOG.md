@@ -24,6 +24,24 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.26.0
+
+**New — calls know whether anyone is there** (@river; web and desktop, phone next)
+- A **📞 call** message is no longer the same whether someone is waiting in it
+  or it's from last week. It says **"river is waiting"**, **"In this call with
+  …"**, **📞 Missed call**, **Declined by …**, or **Call ended · 4m**.
+- **Someone calling you shows a banner** at the top with **Join** and
+  **Decline**, plus a desktop notification. No sound, as asked.
+- **Declining tells them** — their message says who declined — and it drops
+  them out of the call rather than leaving them waiting.
+- A call is **missed** only if the caller leaves before anyone joins: there's no
+  timer, so a call you sit in stays open as long as you like.
+- **When the last person leaves, the call is over and its link stops working.**
+  An old invitation says the call ended instead of dropping you into an empty
+  room. A twenty-second grace means a dropped connection doesn't end a call.
+- Ordinary call codes that nobody announced in a conversation still work exactly
+  as before.
+
 ## 1.25.2
 
 **Fixed — people shown in a voice channel they had left** (@river, @Etheri)

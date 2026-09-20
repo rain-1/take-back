@@ -11,9 +11,11 @@ import (
 // events socket ({"type":"view","serverId":N}); voice seats are reported by the
 // signaling server as sockets join and leave a voice channel's room.
 
-// voiceSeat is one signaling connection sitting in a voice channel.
+// voiceSeat is one signaling connection sitting in a call — a voice channel, or
+// an ordinary call announced in a conversation (serverID and channelID are 0).
 type voiceSeat struct {
 	userID, serverID, channelID int64
+	code                        string // the signaling room
 	kick                        func() // closes the signaling socket
 }
 
@@ -87,17 +89,18 @@ func (h *Hub) setViewing(c *conn, serverID int64) {
 	}
 }
 
-// VoiceJoin records a signaling connection (key) entering a voice channel.
-// kick is how the hub removes it again, e.g. when the channel is deleted.
-func (h *Hub) VoiceJoin(key string, userID, serverID, channelID int64, kick func()) {
+// VoiceJoin records a signaling connection (key) entering a call. kick is how
+// the hub removes it again, e.g. when the channel is deleted.
+func (h *Hub) VoiceJoin(key string, userID, serverID, channelID int64, code string, kick func()) {
 	h.mu.Lock()
-	h.voice[key] = voiceSeat{userID: userID, serverID: serverID, channelID: channelID, kick: kick}
+	h.voice[key] = voiceSeat{userID: userID, serverID: serverID, channelID: channelID, code: code, kick: kick}
 	h.mu.Unlock()
 	h.activityChanged(serverID)
 }
 
-// VoiceLeave records a signaling connection leaving its voice channel.
-func (h *Hub) VoiceLeave(key string) {
+// VoiceLeave records a signaling connection leaving. It returns who left and
+// which room, so an ordinary call can be wound up when the last person goes.
+func (h *Hub) VoiceLeave(key string) (userID int64, code string, ok bool) {
 	h.mu.Lock()
 	seat, ok := h.voice[key]
 	delete(h.voice, key)
@@ -105,6 +108,26 @@ func (h *Hub) VoiceLeave(key string) {
 	if ok {
 		h.activityChanged(seat.serverID)
 	}
+	return seat.userID, seat.code, ok
+}
+
+// Participants reports who is in a room right now: the ids of everyone signed
+// in, and how many connections there are in total (a guest joining by link
+// counts in the total but has no id).
+func (h *Hub) Participants(code string) (ids []int64, total int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	seen := map[int64]bool{}
+	for _, seat := range h.voice {
+		if seat.code != code {
+			continue
+		}
+		total++
+		if seat.userID != 0 {
+			seen[seat.userID] = true
+		}
+	}
+	return sortedIDs(seen), total
 }
 
 // Activity returns who is active in a server and who sits in each voice channel.
@@ -169,6 +192,17 @@ func (h *Hub) DropFromServer(serverID, userID int64) {
 		kick()
 	}
 	h.activityChanged(serverID)
+}
+
+// DropCall disconnects whoever is still in a call that is over, so nobody sits
+// in a room that has been declined or wound up.
+func (h *Hub) DropCall(code string) {
+	h.mu.Lock()
+	kicks := h.takeSeats(func(s voiceSeat) bool { return s.code == code })
+	h.mu.Unlock()
+	for _, kick := range kicks {
+		kick()
+	}
 }
 
 // DropChannel disconnects everyone from a voice channel that was deleted.

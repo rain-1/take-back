@@ -248,6 +248,22 @@
     transition: opacity .15s ease;
   }
   .msg img.thumb:hover { opacity: .9; }
+  .callcard { margin-top: .35rem; }
+  .callline { display: flex; align-items: center; gap: .4rem; }
+  .callline.over { color: var(--muted); }
+  .callactions { display: flex; gap: .4rem; margin-top: .4rem; }
+  .live {
+    width: .5rem; height: .5rem; border-radius: 999px; background: var(--online, #3ba55d);
+    display: inline-block; box-shadow: 0 0 0 3px color-mix(in srgb, var(--online, #3ba55d) 25%, transparent);
+  }
+  #incoming {
+    position: fixed; top: .8rem; left: 50%; transform: translateX(-50%); z-index: 80;
+    display: flex; align-items: center; gap: 1rem; padding: .6rem .8rem;
+    background: var(--panel); border: 1px solid var(--border-soft); border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45); max-width: min(92vw, 520px);
+  }
+  #incoming .inc-text { display: flex; align-items: center; gap: .45rem; font-size: .9rem; }
+  #incoming .inc-actions { display: flex; gap: .4rem; margin-left: auto; }
   .shot { margin: 0; display: inline-block; position: relative; }
   .shot-out {
     display: block; font-size: .7rem; color: var(--dim); text-decoration: none;
@@ -771,6 +787,9 @@
     </section>
     <!-- One reusable dialog for the server screens (create, join, invite,
          settings, new channel). Filled in by openDialog(). -->
+    <!-- Someone is calling: no sound, just this and a notification. -->
+    <div id="incoming" class="hidden"></div>
+
     <!-- A picture opened in place. -->
     <div id="lightbox" class="hidden">
       <div id="lightboxBar">
@@ -1738,9 +1757,10 @@ function messageEl(m) {
   const call = m.body && m.body.match(/^📞 call:([A-Z0-9]{4,8})$/);
   if (call) {
     div.classList.add("callmsg");
-    html += `<div class="body">📞 Video call</div>`;
+    div.dataset.call = call[1];
     div.innerHTML = html;
-    div.append(mkBtn("Join call " + call[1], "", () => joinCall(call[1])));
+    div.append(callCard(call[1], m.senderId));
+    wantCallState(call[1]);
   } else {
     if (m.deletedAt) {
       html += `<div class="body deleted">🗑 message deleted</div>`;
@@ -2070,6 +2090,167 @@ function focusComposer() {
   if (box && !$("chatPane").classList.contains("hidden")) box.focus({ preventScroll: true });
 }
 
+// ---------- Calls in the conversation ----------
+// A call message is live: it says whether anyone is actually waiting in it, and
+// what became of it. The server tracks that (see internal/api/calls.go); here
+// we draw it and keep it in step.
+
+// nickOfUser names someone from whatever we already know — unlike senderName,
+// it doesn't depend on which conversation is open, because a call can arrive
+// from one you're not looking at.
+function nickOfUser(id) {
+  if (!id) return "";
+  if (me && id === me.id) return me.nick;
+  const f = friendState.get(id);
+  if (f) return f.user.nick;
+  const g = groupMembers.get(id);
+  if (g) return g.nick;
+  const sm = serverMembers.get(id);
+  if (sm) return sm.nick;
+  return "";
+}
+
+const callState = new Map();     // code -> the server's view of that call
+const unknownCalls = new Set();  // codes we still need to ask about
+
+// wantCallState collects the calls on screen and asks about them once.
+function wantCallState(code) {
+  if (callState.has(code)) return;
+  unknownCalls.add(code);
+  clearTimeout(wantCallState.timer);
+  wantCallState.timer = setTimeout(fetchCallStates, 50);
+}
+
+async function fetchCallStates() {
+  const codes = [...unknownCalls];
+  unknownCalls.clear();
+  if (!codes.length) return;
+  let list = [];
+  try { list = await api(`/api/calls?codes=${codes.map(encodeURIComponent).join(",")}`); } catch { return; }
+  for (const c of list) { callState.set(c.code, c); redrawCall(c.code); }
+}
+
+// callCard is what a "📞 call:CODE" message shows.
+function callCard(code, callerId) {
+  const box = document.createElement("div");
+  box.className = "callcard";
+  paintCall(box, code, callerId);
+  return box;
+}
+
+function redrawCall(code) {
+  document.querySelectorAll(`.msg[data-call="${CSS.escape(code)}"] .callcard`).forEach((box) => {
+    paintCall(box, code, Number(box.dataset.caller || 0));
+  });
+  syncIncoming();
+}
+
+function paintCall(box, code, callerId) {
+  const c = callState.get(code);
+  box.dataset.caller = String(callerId || (c && c.callerId) || 0);
+  box.replaceChildren();
+  const line = document.createElement("div");
+  line.className = "callline";
+  const mine = c ? c.callerId === me.id : callerId === me.id;
+  const inThis = TBCall.active() && TBCall.room() === code.toUpperCase();
+
+  if (!c || !c.outcome) {
+    const here = (c && c.participants) || [];
+    const names = here.filter((id) => id !== me.id).map((id) => nickOfUser(id) || "someone");
+    const listed = names.map((n) => `<b>${esc(n)}</b>`).join(", ");
+    if (!c || (c.here || 0) === 0) {
+      line.textContent = mine ? "📞 Calling… nobody has joined yet" : "📞 Call — nobody is in it right now";
+    } else if (names.length === 0) {
+      line.innerHTML = `<span class="live"></span>📞 You're in this call`;
+    } else if (inThis) {
+      // I'm in it too, so nobody is waiting on anybody.
+      line.innerHTML = `<span class="live"></span>📞 In this call with ${listed}`;
+    } else if (names.length === 1) {
+      line.innerHTML = `<span class="live"></span>📞 ${listed} is waiting`;
+    } else {
+      line.innerHTML = `<span class="live"></span>📞 ${listed} are in this call`;
+    }
+    box.append(line);
+    const actions = document.createElement("div");
+    actions.className = "callactions";
+    actions.append(mkBtn(inThis ? "Back to call" : "Join", "", () => joinCall(code)));
+    // Turning it down tells them, rather than leaving them waiting.
+    if (!mine && !inThis) actions.append(mkBtn("Decline", "secondary", () => declineCall(code)));
+    box.append(actions);
+    return;
+  }
+
+  const who = c.callerId === me.id ? "you" : (nickOfUser(c.callerId) || c.callerNick || "someone");
+  if (c.outcome === "missed") {
+    line.className += " over";
+    line.textContent = mine ? "📞 No answer" : `📞 Missed call from ${who}`;
+  } else if (c.outcome === "declined") {
+    line.className += " over";
+    const by = c.declinedBy === me.id ? "you" : (nickOfUser(c.declinedBy) || "they");
+    line.textContent = `📞 Declined by ${by}`;
+  } else {
+    line.className += " over";
+    line.textContent = `📞 Call ended${c.answered && c.ended ? " · " + fmtDuration(c.ended - c.answered) : ""}`;
+  }
+  box.append(line);
+}
+
+function fmtDuration(seconds) {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
+  const m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
+  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+async function declineCall(code) {
+  try { await jsonPost("/api/calls/decline", { code }); }
+  catch (e) { toast(e.message); }
+}
+
+// onCallState keeps the cards, the banner and any call in progress in step.
+function onCallState(c, incoming) {
+  if (!c || !c.code) return;
+  callState.set(c.code, c);
+  redrawCall(c.code);
+  if (!c.outcome && incoming && c.callerId !== me.id) {
+    notify(`Incoming call from ${nickOfUser(c.callerId) || c.callerNick || "someone"}`,
+      c.scope === "group" ? "in a group" : "", () => joinCall(c.code));
+  }
+  // A call that's over shouldn't leave us sitting in its room.
+  if (c.outcome && TBCall.active() && TBCall.room() === c.code.toUpperCase()) {
+    TBCall.leave();
+    toast(c.outcome === "declined" ? "They declined the call." : "The call ended.");
+  }
+}
+
+// ---------- The incoming-call banner ----------
+// No ringing, as asked for: it just appears, and a notification goes with it.
+
+function syncIncoming() {
+  const live = [...callState.values()].filter((c) =>
+    !c.outcome && c.callerId !== me.id &&
+    !(TBCall.active() && TBCall.room() === c.code.toUpperCase()));
+  const bar = $("incoming");
+  const c = live.sort((a, b) => b.created - a.created)[0];
+  if (!c) { bar.classList.add("hidden"); bar.replaceChildren(); return; }
+  if (bar.dataset.code === c.code && !bar.classList.contains("hidden")) return;
+  bar.dataset.code = c.code;
+  bar.replaceChildren();
+  const who = nickOfUser(c.callerId) || c.callerNick || "Someone";
+  const text = document.createElement("div");
+  text.className = "inc-text";
+  text.innerHTML = `<span class="live"></span><b>${esc(who)}</b> is calling` +
+    (c.scope === "group" ? " in a group" : "");
+  const actions = document.createElement("div");
+  actions.className = "inc-actions";
+  actions.append(
+    mkBtn("Join", "", () => { joinCall(c.code); syncIncoming(); }),
+    mkBtn("Decline", "secondary", () => declineCall(c.code)),
+    mkBtn("✕", "ghost", () => { bar.classList.add("hidden"); }));
+  bar.append(text, actions);
+  bar.classList.remove("hidden");
+}
+
 // ---------- Pictures ----------
 // A picture opens here rather than in a browser tab: a tab loses the chat, and
 // in the desktop app it used to leave the app entirely.
@@ -2143,6 +2324,7 @@ function joinCall(code, opts = {}) {
   }
   $("callPane").classList.remove("hidden");
   $("callBtn").textContent = "📹 In call";
+  setTimeout(() => redrawCall(code), 0); // the card says "Back to call" now
   TBCall.mount($("callHost"), {
     nick: me.nick,
     room: code,
@@ -2156,6 +2338,7 @@ function joinCall(code, opts = {}) {
       $("callPane").classList.add("hidden");
       $("callBtn").textContent = "📹 Video call";
       if (opts.onLeave) opts.onLeave();
+      redrawCall(code);
     },
     // e.g. joined without the camera because another app has it. The call
     // panel keeps the message too; the toast makes sure it's noticed.
@@ -2889,6 +3072,11 @@ let eventsReconnectTimer = null;
 
 // resync re-reads what live events would have told us, after a gap in them.
 async function resync() {
+  // Re-read the calls on screen too: one may have ended while we were away.
+  document.querySelectorAll(".msg[data-call]").forEach((el) => {
+    callState.delete(el.dataset.call);
+    wantCallState(el.dataset.call);
+  });
   await Promise.allSettled([loadFriends(), loadGroups(), loadServers()]);
   if (openServer) await Promise.allSettled([loadChannels(), loadServerMembers(), loadActivity()]);
 }
@@ -2939,6 +3127,10 @@ function connectEvents() {
       if (gm) { gm.online = e.online; if (openGroup) renderMembersPanel(); }
       const sm = serverMembers.get(e.userId);
       if (sm && e.userId !== me.id) { sm.online = e.online; if (openServer) renderMemberCol(); }
+    } else if (e.type === "call_incoming") {
+      onCallState(e.message, true);
+    } else if (e.type === "call_state") {
+      onCallState(e.message, false);
     } else if (e.type === "server_active") {
       onServerActivity(e.message);
     } else if (e.type === "hello") {

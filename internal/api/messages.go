@@ -113,6 +113,9 @@ func (a *API) handleMessages(w http.ResponseWriter, r *http.Request, user *store
 		a.storeAndPush(w, store.Message{
 			SenderID: user.ID, RecipientID: body.With, Body: body.Body, ReplyTo: body.ReplyTo,
 		})
+		// "📞 call:CODE" is an invitation, not just text: record it so the chat
+		// can show whether anyone's in it (see calls.go).
+		a.noteCall(body.Body, user, "dm", body.With)
 
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, "GET or POST")

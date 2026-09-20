@@ -60,6 +60,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 
 	a.groupRoutes(mux)
 	a.serverRoutes(mux)
+	a.callRoutes(mux)
 
 	// Serve uploaded attachments (originals + thumbnails). They are guarded only
 	// by their unguessable hash filenames, so we must NOT expose a directory

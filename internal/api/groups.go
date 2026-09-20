@@ -279,6 +279,7 @@ func (a *API) handleGroupMessages(w http.ResponseWriter, r *http.Request, user *
 		a.storeAndFanout(w, store.GroupMessage{
 			GroupID: body.Group, SenderID: user.ID, Body: body.Body, ReplyTo: body.ReplyTo,
 		}, user.ID)
+		a.noteCall(body.Body, user, "group", body.Group)
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, "GET or POST")
 	}
