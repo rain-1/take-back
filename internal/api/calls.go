@@ -27,6 +27,10 @@ import (
 // waiting" means a socket is really open in that room.
 var callRe = regexp.MustCompile(`^📞 call:([A-Z0-9]{4,8})$`)
 
+// neverJoinedGrace is how long a call whose room nobody ever entered stays
+// live. Longer than emptyGrace: it covers a client that is slow to connect.
+var neverJoinedGrace = emptyGrace * 3
+
 // emptyGrace is how long a room may sit empty before the call is wound up.
 // Signaling drops and comes back on a flaky connection; ending a call the
 // instant the room empties would turn a blip into "that call has ended".
@@ -72,6 +76,23 @@ func (a *API) noteCall(body string, caller *store.User, scope string, target int
 		return
 	}
 	a.notifyCall(call, presence.Event{Type: "call_incoming"}, caller.ID)
+
+	// A call nobody ever entered — the caller's client never connected, or they
+	// changed their mind before it did — would otherwise sit there looking live
+	// for ever. This is not a ring timer: a call someone IS sitting in stays open
+	// as long as they like.
+	scheduleEnd(code, neverJoinedGrace, func() {
+		if _, total := a.Presence.Participants(code); total > 0 {
+			return
+		}
+		current, err := a.Store.CallByCode(code)
+		if err != nil || !current.Live() || current.Answered > 0 {
+			return
+		}
+		if ended, _ := a.Store.EndCall(code, store.CallMissed); ended {
+			a.broadcastCall(code)
+		}
+	})
 }
 
 // callAudience is everyone who should hear about a call: both sides of a DM,
@@ -159,7 +180,7 @@ func (a *API) callLeft(userID int64, code string) {
 		return
 	}
 	a.broadcastCall(code)
-	scheduleEnd(code, func() {
+	scheduleEnd(code, emptyGrace, func() {
 		if _, total := a.Presence.Participants(code); total > 0 {
 			return // they came back
 		}
@@ -179,7 +200,7 @@ func (a *API) callLeft(userID int64, code string) {
 	})
 }
 
-func scheduleEnd(code string, fn func()) {
+func scheduleEnd(code string, after time.Duration, fn func()) {
 	pendingEnds.Lock()
 	defer pendingEnds.Unlock()
 	if pendingEnds.timers == nil {
@@ -188,7 +209,7 @@ func scheduleEnd(code string, fn func()) {
 	if t := pendingEnds.timers[code]; t != nil {
 		t.Stop()
 	}
-	pendingEnds.timers[code] = time.AfterFunc(emptyGrace, func() {
+	pendingEnds.timers[code] = time.AfterFunc(after, func() {
 		pendingEnds.Lock()
 		delete(pendingEnds.timers, code)
 		pendingEnds.Unlock()

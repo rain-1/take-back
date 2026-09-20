@@ -24,6 +24,24 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.29.0
+
+**Phone catches up with the new design and with calls** (Android)
+- **Add friend** and **New group** are now **＋** beside their headings, in the
+  same muted style as the rest of the app, opening dialogs — the boxes wedged
+  above the lists are gone (@Etheri).
+- **You sit at the bottom of the screen**: picture, name and the ⚙ into
+  settings. The top row is gone, and **Log out** moved into Settings along with
+  the version.
+- **A call in a chat reads like history**: "webcall started a call that lasted
+  4 minutes.", "You missed a call from river." Only a live call offers **Join**
+  and **Decline**, and an incoming one raises a notification (@river).
+
+**Fixed — a call nobody ever entered stayed live for ever**
+- If the caller's client never connected at all, the call sat there looking
+  joinable. It's now marked missed after a minute of nobody turning up. A call
+  someone IS sitting in still never times out.
+
 ## 1.28.1
 
 **Reverted** — the drag handle under a call is visible again. I'd hidden it

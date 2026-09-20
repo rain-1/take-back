@@ -58,6 +58,10 @@ class ChatActivity : AppCompatActivity(), EventsListener {
             onReply = { startReply(it.id, it.senderNick, it.body) },
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
+            callStateFor = { code -> callStates[code] },
+            myId = { ApiClient.myId },
+            nickOf = { id -> if (id == friendId) friendNick else if (id == me?.id) "you" else null },
+            onDeclineCall = { code -> declineCall(code) },
             onOpenAttachment = { openAttachment(it) },
             onDelete = { deleteMessage(it) },
             onEdit = { editMessage(it) },
@@ -109,6 +113,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
                 // The friend's avatar comes from the friends list.
                 friend = runCatching { ApiClient.friends().firstOrNull { it.user.id == friendId }?.user }.getOrNull()
                 val msgs = ApiClient.conversation(friendId)
+                loadCallStates(msgs.mapNotNull { CALL_RE.find(it.body)?.groupValues?.get(1) })
                 renderer.clear()
                 msgs.forEach { render(it) }
                 renderer.scrollToBottom()
@@ -269,5 +274,27 @@ class ChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onMessageEdited(message: Message) = runOnUiThread {
         if (renderer.has(message.id)) renderer.updateMessage(message.id, message.body, message.editedAt)
+    }
+
+    // ---- calls in this conversation ----
+    // What became of each call code, so a message can say "started a call that
+    // lasted 4 minutes" rather than offering a Join into an empty room.
+    private val callStates = HashMap<String, com.takeback.app.net.CallState>()
+
+    private suspend fun loadCallStates(codes: List<String>) {
+        if (codes.isEmpty()) return
+        runCatching { ApiClient.calls(codes) }.onSuccess { list ->
+            for (c in list) callStates[c.code] = c
+        }
+    }
+
+    private fun declineCall(code: String) = lifecycleScope.launch {
+        runCatching { ApiClient.declineCall(code) }
+            .onFailure { toast(it.message ?: "Couldn't decline") }
+    }
+
+    override fun onCallState(call: com.takeback.app.net.CallState, incoming: Boolean) = runOnUiThread {
+        callStates[call.code] = call
+        renderer.updateCall(call.code)
     }
 }

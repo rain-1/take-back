@@ -46,6 +46,9 @@ interface EventsListener {
     fun onServerUpdate(serverId: Long, deleted: Boolean) {}
     /** Who's active in a server, and who's in its voice channels, changed. */
     fun onServerActivity(activity: ServerActivity) {}
+
+    /** A call in a conversation started, was answered, ended, or was declined. */
+    fun onCallState(call: CallState, incoming: Boolean) {}
     /** Someone invited me to a group — it needs an accept/decline. */
     fun onGroupInvite(groupId: Long, groupName: String, invitedBy: String) {}
 }
@@ -60,6 +63,7 @@ object Events {
     private const val CHANNEL = "takeback_events"
     private const val NOTIF_FRIEND = 1001
     private const val NOTIF_MESSAGE_BASE = 2000
+    private const val NOTIF_CALL = 1500
 
     private lateinit var appContext: Context
     private var socket: WebSocket? = null
@@ -244,6 +248,15 @@ object Events {
                 val id = m.optLong("serverId")
                 val deleted = m.optBoolean("deleted")
                 listeners.forEach { it.onServerUpdate(id, deleted) }
+            }
+            "call_incoming", "call_state" -> {
+                val c = ApiClient.parseCall(msg.optJSONObject("message") ?: return)
+                val incoming = msg.optString("type") == "call_incoming"
+                listeners.forEach { it.onCallState(c, incoming) }
+                if (incoming && c.callerId != ApiClient.myId) {
+                    post(NOTIF_CALL, "Incoming call", "${c.callerNick} is calling")
+                }
+                if (!c.live) cancel(NOTIF_CALL)
             }
             "server_active" -> {
                 val a = ApiClient.parseActivity(msg.optJSONObject("message") ?: return)

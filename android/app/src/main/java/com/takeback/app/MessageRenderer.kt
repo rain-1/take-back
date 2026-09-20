@@ -60,6 +60,12 @@ class MessageRenderer(
     private val onMentionTap: (nick: String) -> Unit = {},
     /** Whether I may delete other people's messages here (a server admin). */
     private val canModerate: () -> Boolean = { false },
+    /** What became of a call code, if the screen knows. */
+    private val callStateFor: (String) -> com.takeback.app.net.CallState? = { null },
+    /** My own id, and names for the people in a call. */
+    private val myId: () -> Long = { 0 },
+    private val nickOf: (Long) -> String? = { null },
+    private val onDeclineCall: (String) -> Unit = {},
 ) {
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
@@ -77,12 +83,13 @@ class MessageRenderer(
     private val reactionRows = HashMap<Long, LinearLayout>()
     private val reactionState = HashMap<Long, List<Reaction>>()
     private val bodyViews = HashMap<Long, TextView>()         // for in-place edit
+    private val callMessages = HashMap<String, MutableList<RMsg>>() // code -> its messages
     private val editedMarks = HashMap<Long, TextView>()       // "· edited" markers
 
     fun clear() {
         container.removeAllViews()
         messageViews.clear(); reactionRows.clear(); reactionState.clear()
-        bodyViews.clear(); editedMarks.clear()
+        bodyViews.clear(); editedMarks.clear(); callMessages.clear()
         lastSender = -1L; lastTime = 0L; currentMain = null
     }
 
@@ -164,8 +171,8 @@ class MessageRenderer(
                 setTypeface(typeface, android.graphics.Typeface.ITALIC)
             })
         } else if (m.callCode != null) {
-            col.addView(TextView(ctx).apply { text = "📞 Video call"; setTextColor(Color.parseColor("#E8EAF0")) })
-            col.addView(Button(ctx).apply { text = "Join call ${m.callCode}"; setOnClickListener { onJoinCall(m.callCode) } })
+            callMessages.getOrPut(m.callCode) { mutableListOf() }.add(m)
+            col.addView(callView(m, m.callCode))
         } else {
             if (m.body.isNotEmpty()) {
                 val tv = TextView(ctx).apply { setTextColor(Color.parseColor("#E8EAF0")); textSize = 15f }
@@ -263,6 +270,73 @@ class MessageRenderer(
             }
             val lp = LinearLayout.LayoutParams(dp(260), -2); lp.topMargin = dp(6); layoutParams = lp
         }
+    }
+
+    /**
+     * A call in the conversation, drawn as what it became: someone waiting (with
+     * Join), or a line of history — "river started a call that lasted 4 minutes."
+     * A call nobody recorded is from before calls were tracked, so it is history
+     * too rather than a button into an empty room.
+     */
+    private fun callView(m: RMsg, code: String): View {
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val c = callStateFor(code)
+        val caller = if (m.mine) "You" else m.senderNick
+        val line = TextView(ctx).apply { textSize = 14f }
+        val history = { text: String ->
+            line.text = "📞 $text"
+            line.setTextColor(Color.parseColor("#8A93A6"))
+        }
+        when {
+            c == null -> history("$caller started a call.")
+            c.outcome == "ended" ->
+                history("$caller started a call" +
+                    (if (c.seconds > 0) " that lasted ${humanDuration(c.seconds)}." else "."))
+            c.outcome == "declined" -> {
+                val by = if (c.declinedBy == myId()) "You" else (nickOf(c.declinedBy) ?: "They")
+                history("$caller started a call. $by declined it.")
+            }
+            c.outcome == "missed" ->
+                history(if (m.mine) "$caller started a call. Nobody joined."
+                        else "You missed a call from $caller.")
+            else -> {
+                val others = c.participants.filter { it != myId() }.mapNotNull { nickOf(it) }
+                line.text = "📞 $caller started a call." +
+                    when {
+                        others.isEmpty() -> ""
+                        others.size == 1 -> " ${others[0]} is waiting."
+                        else -> " ${others.joinToString(", ")} are in it."
+                    }
+                line.setTextColor(Color.parseColor("#E8EAF0"))
+            }
+        }
+        box.addView(line)
+        if (c != null && c.live) {
+            val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+            row.addView(Button(ctx).apply { text = "Join"; setOnClickListener { onJoinCall(code) } })
+            if (c.callerId != myId()) row.addView(Button(ctx).apply {
+                text = "Decline"; setOnClickListener { onDeclineCall(code) }
+            })
+            box.addView(row)
+        }
+        return box
+    }
+
+    /** Repaint the messages announcing [code], after its state changed. */
+    fun updateCall(code: String) {
+        for (m in callMessages[code].orEmpty()) {
+            val col = messageViews[m.id] as? LinearLayout ?: continue
+            col.removeAllViews()
+            col.addView(callView(m, code))
+        }
+    }
+
+    private fun humanDuration(seconds: Long): String = when {
+        seconds < 60 -> "less than a minute"
+        seconds < 120 -> "a minute"
+        seconds < 3600 -> "${(seconds + 30) / 60} minutes"
+        seconds < 7200 -> "an hour"
+        else -> "${seconds / 3600} hours"
     }
 
     /** A byte count the way a file manager would show it. */

@@ -69,6 +69,10 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             onReply = { startReply(it.id, it.senderNick, it.body) },
             onReact = { id, emoji, add -> react(id, emoji, add) },
             onJoinCall = { joinCall(it) },
+            callStateFor = { code -> callStates[code] },
+            myId = { ApiClient.myId },
+            nickOf = { id -> if (id == myId) "you" else nickOf(id) },
+            onDeclineCall = { code -> declineCall(code) },
             onOpenAttachment = { openAttachment(it) },
             onDelete = { deleteMessage(it) },
             knownNick = { n ->
@@ -114,6 +118,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 members = ApiClient.groupMembers(groupId)
                 renderMembers()
                 val msgs = ApiClient.groupConversation(groupId)
+                loadCallStates(msgs.mapNotNull { CALL_RE.find(it.body)?.groupValues?.get(1) })
                 renderer.clear()
                 msgs.forEach { render(it) }
                 renderer.scrollToBottom()
@@ -362,5 +367,27 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     override fun onPresence(userId: Long, online: Boolean) = runOnUiThread {
         members = members.map { if (it.id == userId) it.copy(online = online) else it }
         renderMembers()
+    }
+
+    // ---- calls in this conversation ----
+    // What became of each call code, so a message can say "started a call that
+    // lasted 4 minutes" rather than offering a Join into an empty room.
+    private val callStates = HashMap<String, com.takeback.app.net.CallState>()
+
+    private suspend fun loadCallStates(codes: List<String>) {
+        if (codes.isEmpty()) return
+        runCatching { ApiClient.calls(codes) }.onSuccess { list ->
+            for (c in list) callStates[c.code] = c
+        }
+    }
+
+    private fun declineCall(code: String) = lifecycleScope.launch {
+        runCatching { ApiClient.declineCall(code) }
+            .onFailure { toast(it.message ?: "Couldn't decline") }
+    }
+
+    override fun onCallState(call: com.takeback.app.net.CallState, incoming: Boolean) = runOnUiThread {
+        callStates[call.code] = call
+        renderer.updateCall(call.code)
     }
 }

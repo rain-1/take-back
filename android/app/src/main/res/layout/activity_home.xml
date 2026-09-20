@@ -5,102 +5,11 @@
     android:orientation="vertical"
     android:background="#0B0D11">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:padding="14dp"
-        android:background="#11141B">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textColor="#E8EAF0"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/meNick"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:textColor="#8A93A6" />
-
-        <Button
-            android:id="@+id/logout"
-            style="?android:attr/buttonStyleSmall"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/log_out" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="12dp">
-
-        <EditText
-            android:id="@+id/addNick"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/add_friend"
-            android:textColor="#E8EAF0"
-            android:textColorHint="#5A6273"
-            android:inputType="text"
-            android:importantForAutofill="no" />
-
-        <Button
-            android:id="@+id/addBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/add" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/addError"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textColor="#F87171"
-        android:textSize="12sp"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="6dp">
-
-        <EditText
-            android:id="@+id/newGroupName"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="new group name"
-            android:textColor="#E8EAF0"
-            android:textColorHint="#5A6273"
-            android:inputType="text"
-            android:importantForAutofill="no" />
-
-        <Button
-            android:id="@+id/newGroupBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Create" />
-    </LinearLayout>
-
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:paddingTop="8dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -143,16 +52,12 @@
 
                 <Button
                     android:id="@+id/joinServerBtn"
-                    style="?android:attr/buttonStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    style="@style/HeaderAction"
                     android:text="Join" />
 
                 <Button
                     android:id="@+id/newServerBtn"
-                    style="?android:attr/buttonStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    style="@style/HeaderAction"
                     android:contentDescription="Create a server"
                     android:text="＋" />
             </LinearLayout>
@@ -163,15 +68,29 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
-            <TextView
-                android:id="@+id/groupsTitle"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="▾ GROUPS"
-                android:textColor="#5A6273"
-                android:textSize="12sp"
-                android:paddingTop="14dp"
-                android:padding="6dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="10dp">
+
+                <TextView
+                    android:id="@+id/groupsTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="▾ GROUPS"
+                    android:textColor="#5A6273"
+                    android:textSize="12sp"
+                    android:padding="6dp" />
+
+                <Button
+                    android:id="@+id/newGroupBtn"
+                    style="@style/HeaderAction"
+                    android:contentDescription="New group"
+                    android:text="＋" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/groups"
@@ -179,14 +98,29 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
-            <TextView
-                android:id="@+id/friendsTitle"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="▾ FRIENDS"
-                android:textColor="#5A6273"
-                android:textSize="12sp"
-                android:padding="6dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="10dp">
+
+                <TextView
+                    android:id="@+id/friendsTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="▾ FRIENDS"
+                    android:textColor="#5A6273"
+                    android:textSize="12sp"
+                    android:padding="6dp" />
+
+                <Button
+                    android:id="@+id/addFriendBtn"
+                    style="@style/HeaderAction"
+                    android:contentDescription="Add a friend"
+                    android:text="＋" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/friends"
@@ -195,4 +129,42 @@
                 android:orientation="vertical" />
         </LinearLayout>
     </ScrollView>
+
+    <!-- Who you are, and the way into settings: the bottom of the screen, as on
+         web and desktop. -->
+    <LinearLayout
+        android:id="@+id/mePanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="10dp"
+        android:background="#171B24">
+
+        <LinearLayout
+            android:id="@+id/meAvatar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+
+        <TextView
+            android:id="@+id/meNick"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:textColor="#E8EAF0"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <Button
+            android:id="@+id/settingsBtn"
+            style="@style/HeaderAction"
+            android:contentDescription="Settings"
+            android:textSize="18sp"
+            android:text="⚙" />
+    </LinearLayout>
 </LinearLayout>

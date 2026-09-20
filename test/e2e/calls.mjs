@@ -89,6 +89,15 @@ check('the caller sees it was declined, and by whom', st.outcome === 'declined' 
 check('a declined call cannot be joined', (await join(code3, 'bob', 'bob')) === null);
 check('the caller is dropped from the declined call', await closed(ringing));
 
+console.log('\n— a call nobody ever entered —');
+const code4 = 'NV' + Math.random().toString(36).slice(2, 6).toUpperCase();
+await call('alice', 'POST', '/api/messages', { with: people.bob.id, body: `📞 call:${code4}` });
+st = await stateOf('bob', code4);
+check('starts out live', st.outcome === '', JSON.stringify(st));
+await sleep(Number(process.env.GRACE_MS || 21000) * 3);
+st = await stateOf('bob', code4);
+check('is missed once nobody has turned up at all', st.outcome === 'missed', JSON.stringify(st));
+
 console.log('\n— a code nobody announced still works —');
 const plain = await join('ZZ9TEST', null, 'guest');
 check('an ordinary room is unaffected', plain !== null);

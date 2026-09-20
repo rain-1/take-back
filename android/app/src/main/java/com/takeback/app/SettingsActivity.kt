@@ -36,11 +36,29 @@ class SettingsActivity : AppCompatActivity() {
         binding.saveBtn.setOnClickListener { save() }
         binding.setAvatarBtn.setOnClickListener { pickAvatar.launch("image/*") }
 
+        // Signing out lives here now, with everything else about the account.
+        binding.logoutBtn.setOnClickListener { logout() }
+        binding.settingsVersion.text =
+            "take-back ${BuildConfig.VERSION_NAME} · protocol ${BuildConfig.PROTOCOL}"
+
         lifecycleScope.launch {
             runCatching { ApiClient.me() }.onSuccess { me ->
                 myNick = me.nick; myAvatar = me.avatarUrl; renderAvatar()
+                binding.settingsWho.text = "Signed in as ${me.nick}."
+            }
+            runCatching { ApiClient.serverVersion() }.onSuccess { v ->
+                binding.settingsVersion.text =
+                    "take-back ${BuildConfig.VERSION_NAME} · server ${v.version} · protocol ${v.protocol}"
             }
         }
+    }
+
+    private fun logout() = lifecycleScope.launch {
+        runCatching { ApiClient.logout() }
+        Events.stop()
+        startActivity(Intent(this@SettingsActivity, LoginActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        finish()
     }
 
     private fun renderAvatar() {

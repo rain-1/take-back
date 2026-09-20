@@ -163,6 +163,25 @@ data class ChannelMessage(
     val deletedAt: Long = 0,
 )
 
+/**
+ * What became of a call announced in a conversation. [outcome] is "" while it
+ * is live, then "missed", "declined" or "ended".
+ */
+data class CallState(
+    val code: String,
+    val callerId: Long,
+    val callerNick: String,
+    val outcome: String,
+    val answered: Long,
+    val ended: Long,
+    val declinedBy: Long,
+    val participants: List<Long>,
+    val here: Int,
+) {
+    val live: Boolean get() = outcome.isEmpty()
+    val seconds: Long get() = if (answered > 0 && ended > 0) ended - answered else 0
+}
+
 /** What an invite code leads to, before joining. */
 data class InvitePreview(val server: Server, val alreadyMember: Boolean)
 
@@ -542,6 +561,34 @@ object ApiClient {
     suspend fun editChannelMessage(id: Long, body: String): ChannelMessage =
         parseChannelMessage(JSONObject(post("/api/messages/edit", jsonBody(
             JSONObject().put("id", id).put("scope", "channel").put("body", body)))))
+
+    /** What became of these calls (the codes a conversation mentions). */
+    suspend fun calls(codes: List<String>): List<CallState> {
+        if (codes.isEmpty()) return emptyList()
+        val url = base.toHttpUrl("/api/calls").newBuilder()
+            .addQueryParameter("codes", codes.joinToString(",")).build()
+        val arr = JSONArray(get(url))
+        return (0 until arr.length()).map { parseCall(arr.getJSONObject(it)) }
+    }
+
+    /** Turn a call down, so the caller isn't left waiting. */
+    suspend fun declineCall(code: String) =
+        post("/api/calls/decline", jsonBody(JSONObject().put("code", code))).let {}
+
+    fun parseCall(o: JSONObject): CallState {
+        val arr = o.optJSONArray("participants")
+        return CallState(
+            code = o.optString("code"),
+            callerId = o.optLong("callerId"),
+            callerNick = o.optString("callerNick"),
+            outcome = o.optString("outcome"),
+            answered = o.optLong("answered"),
+            ended = o.optLong("ended"),
+            declinedBy = o.optLong("declinedBy"),
+            participants = (0 until (arr?.length() ?: 0)).map { arr!!.getLong(it) },
+            here = o.optInt("here"),
+        )
+    }
 
     suspend fun serverActivity(serverId: Long): ServerActivity =
         parseActivity(JSONObject(get(query("/api/servers/active", "server", serverId))))

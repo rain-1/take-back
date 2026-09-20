@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.widget.EditText
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -56,9 +57,11 @@ class HomeActivity : AppCompatActivity(), EventsListener {
 
         requestNotifPermission()
 
-        binding.addBtn.setOnClickListener { addFriend() }
+        binding.addFriendBtn.setOnClickListener { addFriend() }
         binding.newGroupBtn.setOnClickListener { createGroup() }
-        binding.logout.setOnClickListener { logout() }
+        binding.settingsBtn.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
         binding.newServerBtn.setOnClickListener {
             ServerDialogs.create(this, picker) { sv -> refresh(); ServerDialogs.openServer(this, sv) }
         }
@@ -93,7 +96,9 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         lifecycleScope.launch {
             try {
                 val me = ApiClient.me()
-                binding.meNick.text = "signed in as ${me.nick}"
+                binding.meNick.text = me.nick
+                binding.meAvatar.removeAllViews()
+                binding.meAvatar.addView(Avatars.view(this@HomeActivity, me.nick, me.avatarUrl, 30))
                 friends = ApiClient.friends()
                 groups = ApiClient.groups()
                 invites = runCatching { ApiClient.groupInvites() }.getOrDefault(emptyList())
@@ -106,23 +111,41 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         }
     }
 
+    /** New group: the same dialog shape as creating a server. */
     private fun createGroup() {
-        val name = binding.newGroupName.text.toString().trim()
-        if (name.isEmpty()) return
-        lifecycleScope.launch {
-            runCatching { ApiClient.createGroup(name) }.onSuccess { g ->
-                binding.newGroupName.setText("")
-                refresh()
-                openGroup(g)
+        val input = EditText(this).apply { hint = "e.g. weekend plans" }
+        AlertDialog.Builder(this)
+            .setTitle("New group")
+            .setView(pad(input))
+            .setPositiveButton("Create") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) return@setPositiveButton
+                lifecycleScope.launch {
+                    runCatching { ApiClient.createGroup(name) }
+                        .onSuccess { g -> refresh(); openGroup(g) }
+                        .onFailure { toast(it.message ?: "Couldn't create the group") }
+                }
             }
-        }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
+
+    /** A dialog's field wants breathing room. */
+    private fun pad(view: View): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        val d = resources.displayMetrics.density
+        setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0)
+        addView(view)
+    }
+
+    private fun toast(msg: String) =
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     private fun renderGroups() {
         binding.groups.removeAllViews()
         if (groups.isEmpty()) {
             binding.groups.addView(TextView(this).apply {
-                text = "No groups yet."
+                text = "No groups yet — start one with ＋."
                 setTextColor(Color.parseColor("#5A6273"))
                 setPadding(16, 12, 16, 12)
             })
@@ -246,7 +269,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         binding.friends.removeAllViews()
         if (accepted.isEmpty()) {
             binding.friends.addView(TextView(this).apply {
-                text = getString(R.string.no_friends)
+                text = "No friends yet — add someone with ＋."
                 setTextColor(Color.parseColor("#5A6273"))
                 setPadding(16, 24, 16, 16)
             })
@@ -352,19 +375,24 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         setBackgroundColor(if (online) Color.parseColor("#34D399") else Color.parseColor("#39404F"))
     }
 
+    /** Add a friend: a dialog now, rather than a box wedged above the list. */
     private fun addFriend() {
-        val nick = binding.addNick.text.toString().trim()
-        if (nick.isEmpty()) return
-        binding.addError.text = ""
-        lifecycleScope.launch {
-            try {
-                ApiClient.sendFriendRequest(nick)
-                binding.addNick.setText("")
-                refresh()
-            } catch (e: Exception) {
-                binding.addError.text = e.message
+        val input = EditText(this).apply { hint = "their nickname" }
+        AlertDialog.Builder(this)
+            .setTitle("Add a friend")
+            .setMessage("They'll get a request to accept before you can message each other.")
+            .setView(pad(input))
+            .setPositiveButton("Send request") { _, _ ->
+                val nick = input.text.toString().trim()
+                if (nick.isEmpty()) return@setPositiveButton
+                lifecycleScope.launch {
+                    runCatching { ApiClient.sendFriendRequest(nick) }
+                        .onSuccess { toast("Request sent to $nick"); refresh() }
+                        .onFailure { toast(it.message ?: "Couldn't send that request") }
+                }
             }
-        }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun respond(f: Friend, accept: Boolean) = lifecycleScope.launch {
@@ -400,12 +428,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         })
     }
 
-    private fun logout() = lifecycleScope.launch {
-        runCatching { ApiClient.logout() }
-        Events.stop()
-        startActivity(Intent(this@HomeActivity, LoginActivity::class.java))
-        finish()
-    }
+
 
     // ---- live events ----
 
