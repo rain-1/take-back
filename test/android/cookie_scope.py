@@ -43,6 +43,9 @@ seen = []      # Cookie headers (or None) that reached the other host
 returned = []  # Cookie headers (or None) the app sent back to its own server
 
 
+ws_cookies = []  # Cookie headers on the live-events websocket handshake
+
+
 class Server(http.server.BaseHTTPRequestHandler):
     """The server the app is pointed at: sets a session, then redirects away."""
 
@@ -53,6 +56,23 @@ class Server(http.server.BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", SESSION + "; Path=/; HttpOnly")
             self.send_header("Location", f"http://127.0.0.1:{OTHER_PORT}/api/version")
             self.end_headers()
+            return
+        if self.path.startswith("/api/events"):
+            # The live connection messages arrive on. Only its handshake matters
+            # here — whether the session was presented — so it is turned down
+            # rather than completed.
+            ws_cookies.append(self.headers.get("Cookie"))
+            self.send_response(400)
+            self.end_headers()
+            return
+        if self.path.startswith("/api/me"):
+            # Enough of a session for the app to go past the login screen and
+            # open its events connection.
+            self.send_response(200)
+            self.send_header("Set-Cookie", SESSION + "; Path=/; HttpOnly")
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"id":1,"nick":"tester"}')
             return
         self.send_response(401)
         self.send_header("Set-Cookie", SESSION + "; Path=/; HttpOnly")
@@ -117,6 +137,9 @@ def build_and_install():
     apk = os.path.join(ANDROID, "app/build/outputs/apk/debug/app-debug.apk")
     print(adb("install", "-r", apk).strip().splitlines()[-1])
     adb("shell", f"pm clear {PKG}")  # a stored server URL would override the build's
+    # Granted up front: the permission dialog otherwise sits on top of the app
+    # and swallows the restart this test does later.
+    adb("shell", f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
 
 
 def main():
@@ -153,8 +176,13 @@ def main():
         sys.exit(f"✗ the session cookie followed the redirect to another host: {leaked[0]}")
     if not any(c and "tb_session" in c for c in returned):
         sys.exit("✗ the session was not sent back to its own server after a restart")
-    print(f"✓ {len(seen)} request(s) reached the other host with no session cookie, "
-          "and the session still returns to its own server after a restart")
+    if not ws_cookies:
+        sys.exit("✗ the events websocket was never opened — the test proved nothing")
+    if not any(c and "tb_session" in c for c in ws_cookies):
+        sys.exit("✗ the events websocket carried no session: messages wouldn't reach the phone")
+    print(f"✓ {len(seen)} request(s) reached the other host with no session cookie; "
+          "the session still returns to its own server after a restart, "
+          "and still rides the live-events websocket")
 
 
 if __name__ == "__main__":
