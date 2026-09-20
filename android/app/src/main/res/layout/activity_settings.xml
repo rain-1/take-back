@@ -120,6 +120,31 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingTop="16dp"
+        android:text="Messages while the app is closed"
+        android:textColor="#E8EAF0"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="2dp"
+        android:text="take-back has no push service behind it: your phone stays connected to your server itself. Android asks for a quiet notification in return."
+        android:textColor="#8A93A6"
+        android:textSize="13sp" />
+
+    <CheckBox
+        android:id="@+id/stayConnected"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Stay connected"
+        android:textColor="#E8EAF0" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="16dp"
         android:text="This account"
         android:textColor="#E8EAF0"
         android:textSize="15sp"

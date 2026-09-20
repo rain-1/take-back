@@ -351,21 +351,43 @@ object Events {
 
     private fun notifyMessage(m: Message, mentioned: Boolean) {
         val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
+        val nick = nickFor(m.senderId)
         post(NOTIF_MESSAGE_BASE + m.senderId.toInt(),
-            if (mentioned) "You were mentioned" else "New message", preview)
+            if (mentioned) "$nick mentioned you" else "Message from $nick", preview,
+            android.content.Intent(appContext, com.takeback.app.ChatActivity::class.java)
+                .putExtra(com.takeback.app.ChatActivity.EXTRA_FRIEND_ID, m.senderId)
+                .putExtra(com.takeback.app.ChatActivity.EXTRA_FRIEND_NICK, nick))
     }
+
+    /** A sender's name, from the friend list we already hold. */
+    private fun nickFor(userId: Long): String =
+        knownNicks[userId] ?: "someone"
+
+    /** Nicks seen in the friend list, so a notification can name the sender. */
+    val knownNicks = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     private fun notifyGroupMessage(m: GroupMessage, mentioned: Boolean) {
         val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
+        val where = groupNames[m.groupId] ?: "a group"
         post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(),
-            if (mentioned) "You were mentioned in a group" else "New group message", preview)
+            if (mentioned) "You were mentioned in $where" else "Message in $where", preview,
+            android.content.Intent(appContext, com.takeback.app.GroupChatActivity::class.java)
+                .putExtra(com.takeback.app.GroupChatActivity.EXTRA_GROUP_ID, m.groupId)
+                .putExtra(com.takeback.app.GroupChatActivity.EXTRA_GROUP_NAME, where))
     }
+
+    /** Group names by id, so a notification can say where a message landed. */
+    val groupNames = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     private fun notifyChannelMessage(m: ChannelMessage, mentioned: Boolean) {
         val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
         val where = serverNames[m.serverId] ?: "a server"
         post(NOTIF_MESSAGE_BASE + 200000 + m.channelId.toInt(),
-            if (mentioned) "You were mentioned in $where" else "New message in $where", preview)
+            if (mentioned) "You were mentioned in $where" else "Message in $where", preview,
+            android.content.Intent(appContext, com.takeback.app.ChannelChatActivity::class.java)
+                .putExtra(com.takeback.app.ChannelChatActivity.EXTRA_CHANNEL_ID, m.channelId)
+                .putExtra(com.takeback.app.ChannelChatActivity.EXTRA_SERVER_ID, m.serverId)
+                .putExtra(com.takeback.app.ChannelChatActivity.EXTRA_SERVER_NAME, where))
     }
 
     fun clearChannelMessageNotification(channelId: Long) =
@@ -396,12 +418,27 @@ object Events {
         }
     }
 
-    private fun post(id: Int, title: String, text: String) {
+    /**
+     * [opens] is where tapping the notification should take you — the
+     * conversation it's about, rather than just the app.
+     */
+    private fun post(id: Int, title: String, text: String, opens: android.content.Intent? = null) {
+        // A back stack of home -> the conversation. Plain flags don't do: with
+        // NEW_TASK|CLEAR_TOP the system cleared the app's task back to its root
+        // (the login screen), which sent you to the home screen instead of the
+        // chat the notification was about.
+        val home = android.content.Intent(appContext, com.takeback.app.HomeActivity::class.java)
+        val stack = androidx.core.app.TaskStackBuilder.create(appContext).addNextIntent(home)
+        if (opens != null) stack.addNextIntent(opens)
+        val tap = stack.getPendingIntent(
+            id,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(appContext, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
+            .setContentIntent(tap)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         // POST_NOTIFICATIONS (API 33+) is requested by the UI; guard against denial.

@@ -29,6 +29,7 @@ sg kvm -c '$ANDROID_HOME/emulator/emulator -avd tbtest -no-window -no-audio \
 PUPPETEER=/path/to/node_modules/puppeteer-core python3 test/android/phone_smoke.py
 ```
 
+`phone_dm_notify.py` checks a DM reaches you with the app killed.
 `phone_background.py` is the one that matters for calls: it joins a voice
 channel, sends the app to the background with the home key, and checks a
 browser keeps receiving its audio for a minute (via `TBCall.stats()`), plus
@@ -39,3 +40,6 @@ shortened one). `phone_smoke.py` signs in, makes a server, sends a message in a 
 a picture, joins a voice channel — with a headless browser joining the same
 channel as the other person — turns the camera on, and checks the browser
 receives the phone's video. `emu.py` holds the adb/uiautomator helpers.
+
+Leave the emulator on the home screen between runs: an expanded notification
+shade swallows taps and every test then fails at its first tap.

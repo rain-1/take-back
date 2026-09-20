@@ -24,6 +24,17 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.32.0
+
+**New — messages reach your phone while the app is closed** (@river)
+- take-back has no push service behind it: your phone holds its own connection
+  to your server. Android suspends a closed app, which is why a DM only ever
+  arrived while take-back was open. It now keeps that connection with a quiet
+  ongoing notification, and picks it up again after a reboot. **Settings →
+  Stay connected** turns it off.
+- Notifications **name the sender** — "Message from river" — and **tapping one
+  opens that conversation** rather than the app's home screen.
+
 ## 1.31.0
 
 **Fixed — a call died when you left the app** (@Etheri, Nothing Phone 1)

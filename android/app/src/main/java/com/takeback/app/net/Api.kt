@@ -250,6 +250,10 @@ object ApiClient {
         rebuild()
     }
 
+    /** Whether a session is stored — i.e. whether there's anything to listen for. */
+    fun hasSession(): Boolean =
+        ::cookieJar.isInitialized && cookieJar.loadForRequest(base.toHttpUrl("/")).isNotEmpty()
+
     /** Absolute URL for a server-relative media path (e.g. "/media/x.jpg"). */
     fun mediaUrl(path: String): String = if (path.startsWith("http")) path else base + path
 

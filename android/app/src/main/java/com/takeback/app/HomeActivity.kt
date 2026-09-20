@@ -69,6 +69,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         setupCollapsible()
 
         Mentions.init(this)
+        ConnectionService.start(this)
         Events.addListener(this)
         // Come back to where you were, like the web client does on reload.
         LastChat.reopen(this)
@@ -107,6 +108,8 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 invites = runCatching { ApiClient.groupInvites() }.getOrDefault(emptyList())
                 servers = runCatching { ApiClient.servers() }.getOrDefault(servers)
                 servers.forEach { Events.serverNames[it.id] = it.name }
+                friends.forEach { Events.knownNicks[it.user.id] = it.user.nick }
+                groups.forEach { Events.groupNames[it.id] = it.name }
                 render()
                 renderGroups()
                 renderServers()

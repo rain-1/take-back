@@ -41,6 +41,11 @@ class SettingsActivity : AppCompatActivity() {
         binding.logoutBtn.setOnClickListener { logout() }
         binding.settingsVersion.text = "This app: ${BuildConfig.VERSION_NAME}"
 
+        binding.stayConnected.isChecked = ConnectionService.enabled(this)
+        binding.stayConnected.setOnCheckedChangeListener { _, on ->
+            ConnectionService.setEnabled(this, on)
+        }
+
         lifecycleScope.launch {
             runCatching { ApiClient.me() }.onSuccess { me ->
                 myNick = me.nick; myAvatar = me.avatarUrl; renderAvatar()
@@ -66,6 +71,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun logout() = lifecycleScope.launch {
         runCatching { ApiClient.logout() }
         LastChat.forget(this@SettingsActivity)
+        ConnectionService.stop(this@SettingsActivity)
         Events.stop()
         startActivity(Intent(this@SettingsActivity, LoginActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
