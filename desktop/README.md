@@ -61,7 +61,14 @@ GO=go npm run test:pipeline     # app audio reaches the other person's screen ti
 GO=go node test/audit.test.js   # web-parity checks against the real window
 GO=go TB_SOURCE_ROOT=/path/to/take-back node test/servers.test.js
                                 # servers, invite links and voice channels (needs a v1.22.0+ checkout)
+node test/security.test.js      # what the page is NOT allowed to do (no Go needed)
 ```
+
+`security.test.js` drives the real window as if the page had been taken over:
+it tries to capture audio nobody picked, to leave take-back (directly and
+through a redirect on take-back's own origin), to load another site in an
+iframe, to open a local file, and to help itself to permissions. Everything the
+app grants a page is listed there, so a change that widens it fails a check.
 
 Server invite links (`<server>/?invite=CODE`) open the join dialog **in the
 app**: clicked in chat, or passed on the command line, including to a copy
@@ -75,4 +82,14 @@ ZIG=/path/to/zig scripts/package-win.sh   # -> dist/take-back-desktop-win32-x64-
 
 It downloads the official Electron Windows build, verifies it against
 Electron's published SHA-256 sums, adds the app and the cross-compiled audio
-helper, and zips it. Unsigned, so Windows SmartScreen will warn on first run.
+helper, zips it, and writes `<zip>.sha256` beside it.
+
+The zip is **unsigned** — Windows SmartScreen warns on first run, and there is
+no update channel: whoever downloads it is trusting the HTTPS connection to the
+download page and nothing else. Anyone who can change what that page serves (a
+compromised server, a stolen certificate) can hand out a trojaned build, and
+nothing on the user's machine would object. Until there is a signing
+certificate, the honest improvement is to make tampering *visible*: publish the
+`.sha256` next to the download link so a build can be checked against it, and
+keep the app's own version visible in-app so people can tell which one they
+are running.

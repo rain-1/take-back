@@ -95,7 +95,13 @@ function winHelperPath() {
     path.join(process.resourcesPath || "", "tb-app-audio.exe"),
     path.join(__dirname, "..", "native", "win", "bin", "tb-app-audio.exe"),
   ];
-  return candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch (_) { return false; } });
+  // Absolute paths only. Without resourcesPath (outside a packaged app) the
+  // first candidate is the bare filename, which Windows would happily resolve
+  // against the current directory — so a tb-app-audio.exe dropped in whatever
+  // folder the app was launched from would be the one that runs.
+  return candidates.find((p) => {
+    try { return path.isAbsolute(p) && fs.statSync(p).isFile(); } catch (_) { return false; }
+  });
 }
 
 function runHelper(args, timeout = 5000) {
@@ -152,7 +158,10 @@ const linux = {
             const p = n.info.props;
             const app = p["application.name"] || p["node.name"] || `node ${n.id}`;
             const media = p["media.name"] ? ` — ${p["media.name"]}` : "";
-            return { id: `pw:${n.id}`, name: app + media, pid: Number(p["application.process.id"]) || undefined };
+            // `name` is for the picker, on the user's own screen. `app` is the
+            // same thing minus media.name, which is a window/tab/track title
+            // and so private text: it's what anything that logs may use.
+            return { id: `pw:${n.id}`, name: app + media, app, pid: Number(p["application.process.id"]) || undefined };
           }));
         } catch (e) { console.error("[app-audio] pw-dump parse:", e.message); resolve([]); }
       });

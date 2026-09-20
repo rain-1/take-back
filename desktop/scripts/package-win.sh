@@ -45,6 +45,10 @@ node -e '
 # audio-sources.js looks for the helper next to the app's resources.
 cp native/win/bin/tb-app-audio.exe "$OUT/resources/tb-app-audio.exe"
 
-rm -f "dist/$NAME.zip"
+rm -f "dist/$NAME.zip" "dist/$NAME.zip.sha256"
 (cd dist && zip -qr "$NAME.zip" "$NAME")
+# The build is unsigned, so this checksum is all anyone downloading it has to
+# check it against. Publish it next to the download link.
+(cd dist && sha256sum "$NAME.zip" > "$NAME.zip.sha256")
 ls -la "dist/$NAME.zip"
+cat "dist/$NAME.zip.sha256"

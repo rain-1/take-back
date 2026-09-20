@@ -43,8 +43,11 @@ if (TEST) {
 // on WSL every Linux window appears on the Windows desktop of whoever is
 // sitting at that PC.
 const SHOW_WINDOW = !TEST || process.env.TB_TEST_SHOW === "1";
-// Lets a test drive the real window with Puppeteer.
-if (process.env.TB_DEBUG_PORT) {
+// Lets a test drive the real window with Puppeteer. Test mode only: the
+// debugging port hands anything that can reach it the whole signed-in session
+// (cookies included), so a shipped build must not open one because a stray
+// environment variable said so.
+if (TEST && process.env.TB_DEBUG_PORT) {
   app.commandLine.appendSwitch("remote-debugging-port", process.env.TB_DEBUG_PORT);
 }
 // A throwaway profile per test run, so tests don't share logins.
@@ -56,8 +59,12 @@ function openExternal(url) {
 }
 
 let win = null;
+// A URL that can't be parsed has no origin, so it is never take-back: every
+// check below fails closed.
+const originOf = (url) => { try { return new URL(url).origin; } catch (_) { return null; } };
 const allowedOrigin = new URL(START_URL).origin;
 let pendingShare = null; // { sourceId, audioId } chosen for the next getDisplayMedia
+let approvedAudio = null; // the one audio id the picker approved, spent by audio:start
 let stopAudio = null;
 
 // ---- window size and position, remembered between launches ------------------
@@ -125,7 +132,7 @@ function createWindow() {
   // open in new windows (target=_blank) and go to the browser above; a page
   // that tries to navigate ITSELF elsewhere is not a click, and must not be
   // able to open things on the user's machine either.
-  win.webContents.on("will-navigate", (event, url) => {
+  const guard = (event, url) => {
     const invite = inviteCodeOf(url);
     if (invite) {
       // Reloading the page to reach the dialog would hang up a call in progress.
@@ -133,9 +140,25 @@ function createWindow() {
       openInvite(invite);
       return;
     }
-    if (new URL(url).origin !== allowedOrigin) {
+    if (!isTakeBack(url)) {
       event.preventDefault();
       if (TEST) console.log(`[test] blocked navigation to ${url}`);
+    }
+  };
+  win.webContents.on("will-navigate", guard);
+  // will-navigate only sees the FIRST hop. A link to take-back that the server
+  // answers with a redirect elsewhere would otherwise land this window on
+  // another site with the preload bridge still attached — a site that could
+  // then ask for this window's screen and microphone, or simply draw a
+  // take-back login page in a window with no address bar.
+  win.webContents.on("will-redirect", guard);
+  // Subframes get neither the bridge nor the right to leave take-back: an
+  // iframe is still a window with no address bar, drawn inside the app.
+  win.webContents.on("will-frame-navigate", (event) => {
+    if (event.isMainFrame) return; // already handled above
+    if (!isTakeBack(event.url)) {
+      event.preventDefault();
+      if (TEST) console.log(`[test] blocked frame navigation to ${event.url}`);
     }
   });
 
@@ -160,6 +183,11 @@ function createWindow() {
   win.on("close", saveBounds);
   win.on("closed", () => { stopAppAudio(); win = null; });
 }
+
+// isTakeBack answers whether a URL is the take-back server this app was
+// started for. Anything unparseable is not (an origin check that throws would
+// otherwise let the navigation through).
+const isTakeBack = (url) => originOf(url) === allowedOrigin;
 
 // ---- server invite links ------------------------------------------------------
 
@@ -195,6 +223,36 @@ async function openInvite(code) {
 // An invite link handed to the app on its command line (e.g. a shortcut, or
 // "Open with" take-back), on first launch or to the copy already running.
 const inviteInArgs = (argv) => argv.map(inviteCodeOf).find(Boolean) || null;
+
+// ---- permissions ---------------------------------------------------------------
+
+// Electron grants a page every permission it asks for unless told otherwise —
+// there is no browser prompt behind it. take-back needs a handful of them; anything
+// else (location, USB, serial, HID, reading the clipboard, opening external
+// protocol handlers) is refused outright, and only take-back itself may ask.
+const ALLOWED_PERMISSIONS = new Set([
+  "media",                     // camera and microphone, and device names
+  "display-capture",           // screen sharing, answered by the picker below
+  "notifications",             // a message arriving while the window is behind others
+  "clipboard-sanitized-write", // "copy invite link"
+  "fullscreen",                // a screen tile blown up to the whole window
+]);
+
+function installPermissionHandlers() {
+  const allow = (permission, origin) => ALLOWED_PERMISSIONS.has(permission) && origin === allowedOrigin;
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    const ok = allow(permission, originOf(details && details.requestingUrl));
+    if (TEST) console.log(`[test] permission ${permission} ${ok ? "granted" : "denied"}`);
+    callback(ok);
+  });
+  // The synchronous half of the same question (permissions.query, and the
+  // check before device labels are handed out). Electron spells the origin
+  // several ways here — "https://host/" with a trailing slash, or not at all
+  // for a check that isn't about a page — so normalise it, and fall back to
+  // the window's own URL rather than reading an empty string as "not us".
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) =>
+    allow(permission, originOf(requestingOrigin) || originOf(wc && wc.getURL())));
+}
 
 // ---- screen source selection -----------------------------------------------
 
@@ -271,10 +329,21 @@ ipcMain.handle("share:pick", async () => {
     audioId = (await audio.audioForShare(choice.sourceId, process.pid)).audioId;
   }
   pendingShare = choice;
+  approvedAudio = audioId;
   return { cancelled: false, audioId };
 });
 
 ipcMain.handle("audio:start", (event, id) => {
+  // Capture only what the person just chose in the picker. The bridge is
+  // reachable by every script on the page, and an audio id is just a string:
+  // without this, one line of script — no picker, nothing on screen — could
+  // start `except:<pid>` (on Windows: the whole computer's sound, including
+  // other people's calls) and read the PCM back through onAudio. The approval
+  // is spent on use, so each capture needs its own trip through the picker.
+  if (typeof id !== "string" || !approvedAudio || id !== approvedAudio) {
+    throw new Error("that audio source was not chosen in the picker");
+  }
+  approvedAudio = null;
   stopAppAudio();
   const target = event.sender;
   let sent = 0;
@@ -311,6 +380,7 @@ app.whenReady().then(() => {
   // quit() above is asynchronous: a second copy still reaches ready, and would
   // open (and on screen, flash) a window of its own before it exits.
   if (!firstInstance) return;
+  installPermissionHandlers();
   installDisplayMediaHandler();
   createWindow();
   const invite = inviteInArgs(process.argv);
@@ -325,15 +395,16 @@ app.whenReady().then(() => {
   }
   if (TEST) {
     // Proves which capture backend a packaged build found (names only).
-    audio.list().then((l) => console.log(`[test] audio sources: ${l.map((a) => a.name).join(", ")}`));
+    audio.list().then((l) => console.log(`[test] audio sources: ${l.map((a) => a.app || a.name).join(", ")}`));
     if (process.env.TB_TEST_LIST_SOURCES === "1") {
-      // Which sound each shareable source would bring. Ids and app names only:
-      // window TITLES can contain private text (tabs, messages), so never log them.
+      // Which sound each shareable source would bring. Ids only: window TITLES
+      // can contain private text (tabs, messages), and so can the label, which
+      // names the app and on Linux what it is playing. Never log either.
       desktopCapturer.getSources({ types: ["window", "screen"], thumbnailSize: { width: 0, height: 0 } })
         .then(async (list) => {
           for (const src of list) {
-            const { audioId, label } = await audio.audioForShare(src.id, process.pid);
-            console.log(`[test] source ${src.id} -> ${audioId || "no audio"} (${label})`);
+            const { audioId } = await audio.audioForShare(src.id, process.pid);
+            console.log(`[test] source ${src.id} -> ${audioId || "no audio"}`);
           }
         });
     }
