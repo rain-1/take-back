@@ -101,6 +101,26 @@ async function upload(who, path, fields) {
     .some((t) => { const v = t.querySelector('video'); return v && v.videoWidth > 0 && !t.classList.contains('novideo'); }));
   check('the other side receives the video', remoteVideo, String(remoteVideo));
 
+  // A restart (a deploy) must not leave people frozen in a voice channel: the
+  // snapshot counter starts again from zero, and treating that as "stale" was
+  // exactly what stuck @river and @Etheri in one.
+  const occupantsOf = (p) => p.evaluate(() => [...document.querySelectorAll('.voice-occupant')].map((e) => e.textContent.trim()));
+  check('both are listed in the voice channel', (await occupantsOf(A)).length === 2, JSON.stringify(await occupantsOf(A)));
+  if (process.env.RESTART_API) {
+    // A page open for a while has seen many snapshots; after a restart the
+    // server's counter is far below that. Stand in for the long session.
+    await A.evaluate(() => { for (const a of serverActivity.values()) a.seq = 9999; });
+    require('child_process').execSync(process.env.RESTART_API, { stdio: 'ignore' });
+    await wait(9000);                       // sockets reconnect, calls re-seat
+    check('still both in voice after a restart', (await occupantsOf(A)).length === 2, JSON.stringify(await occupantsOf(A)));
+    await Bp.evaluate(() => TBCall.leave());
+    await wait(4000);
+    check('someone leaving still updates after a restart', (await occupantsOf(A)).length === 1, JSON.stringify(await occupantsOf(A)));
+  } else {
+    await Bp.evaluate(() => TBCall.leave());
+    await wait(3000);
+  }
+
   // A picture opens in the app.
   await Bp.evaluate(() => openChannelChat(serverChannels.find((c) => c.kind === 'text')));
   await wait(1200);

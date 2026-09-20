@@ -140,7 +140,8 @@ class ServerActivity : AppCompatActivity(), EventsListener {
                 channels = ApiClient.channels(serverId)
                 members = ApiClient.serverMembers(serverId).associateBy { it.user.id }
                 val a = ApiClient.serverActivity(serverId)
-                if (activity == null || a.seq >= activity!!.seq) activity = a
+                val known = activity
+                if (known == null || known.epoch != a.epoch || a.seq >= known.seq) activity = a
                 render()
             } catch (_: Exception) { /* transient; the next event or resume retries */ }
         }
@@ -322,7 +323,9 @@ class ServerActivity : AppCompatActivity(), EventsListener {
     override fun onServerActivity(activity: Activity) = runOnUiThread {
         if (activity.serverId != serverId) return@runOnUiThread
         val prev = this.activity
-        if (prev != null && activity.seq < prev.seq) return@runOnUiThread // overtaken by a newer snapshot
+        // Overtaken by a newer snapshot — but only within one run of the server,
+        // whose counter starts again from zero when it restarts.
+        if (prev != null && prev.epoch == activity.epoch && activity.seq < prev.seq) return@runOnUiThread
         this.activity = activity
         render()
     }

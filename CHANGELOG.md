@@ -24,6 +24,18 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.25.2
+
+**Fixed — people shown in a voice channel they had left** (@river, @Etheri)
+- Each "who's active" update carries a counter so a client can ignore one that
+  arrives out of order. The counter starts again from zero when the server
+  restarts, so after a deploy every update looked older than what your page
+  already had, and was thrown away — leaving people sitting in voice channels
+  they had long since left. Updates now name the run they came from, and one
+  from a new run is always applied.
+- Clients also re-read friends, groups, servers and who's active whenever the
+  live-updates connection comes back, so a gap in it can't leave a stale page.
+
 ## 1.25.1
 
 **Fixed — Leave was off the edge of the screen during a phone call** (Android)

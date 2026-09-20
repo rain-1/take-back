@@ -4,8 +4,11 @@
 package presence
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"net/url"
 	"strings"
 	"sync"
@@ -57,6 +60,7 @@ type Hub struct {
 	friends FriendLookup
 
 	// Server activity (see activity.go).
+	epoch      string               // this run of the server; Seq restarts with it
 	voice      map[string]voiceSeat // signaling connection id -> seat
 	seq        int64
 	mayView    func(userID, serverID int64) bool
@@ -64,7 +68,22 @@ type Hub struct {
 }
 
 func NewHub(friends FriendLookup) *Hub {
-	return &Hub{conns: map[int64]map[*conn]struct{}{}, friends: friends, voice: map[string]voiceSeat{}}
+	return &Hub{
+		conns:   map[int64]map[*conn]struct{}{},
+		friends: friends,
+		voice:   map[string]voiceSeat{},
+		epoch:   newEpoch(),
+	}
+}
+
+// newEpoch names this run of the server, so clients can tell a restart from an
+// out-of-order message.
+func newEpoch() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // Online reports whether the user currently has at least one live socket.

@@ -173,6 +173,8 @@ data class InvitePreview(val server: Server, val alreadyMember: Boolean)
  */
 data class ServerActivity(
     val serverId: Long,
+    /** Which run of the server this came from; [seq] restarts with it. */
+    val epoch: String,
     val seq: Long,
     val active: Set<Long>,
     val voice: Map<Long, List<Long>>,
@@ -691,6 +693,7 @@ object ApiClient {
         }
         return ServerActivity(
             serverId = o.optLong("serverId"),
+            epoch = o.optString("epoch"),
             seq = o.optLong("seq"),
             active = (0 until (active?.length() ?: 0)).map { active!!.getLong(it) }.toSet(),
             voice = seats,

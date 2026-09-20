@@ -2533,7 +2533,10 @@ async function loadActivity() {
 function onServerActivity(a) {
   if (!a || !a.serverId) return;
   const prev = serverActivity.get(a.serverId);
-  if (prev && prev.seq > a.seq) return; // a stale snapshot overtaken by a newer one
+  // Drop a snapshot overtaken by a newer one — but only within one run of the
+  // server. Its counter starts again from zero when it restarts, and treating
+  // those as stale left people showing in voice channels they had left.
+  if (prev && prev.epoch === a.epoch && prev.seq > a.seq) return;
   serverActivity.set(a.serverId, a);
   renderServers(); // the green speaker on that server's row
   if (openServer && openServer.id === a.serverId) { renderChannels(); renderMemberCol(); }
@@ -2884,6 +2887,14 @@ const EVENTS_STALE_MS = 45000; // > 2 missed heartbeats
 // been replaced goes inert — it neither dispatches events nor reconnects.
 let eventsReconnectTimer = null;
 
+// resync re-reads what live events would have told us, after a gap in them.
+async function resync() {
+  await Promise.allSettled([loadFriends(), loadGroups(), loadServers()]);
+  if (openServer) await Promise.allSettled([loadChannels(), loadServerMembers(), loadActivity()]);
+}
+
+let firstConnect = true;
+
 function connectEvents() {
   clearTimeout(eventsReconnectTimer);
   eventsReconnectTimer = null;
@@ -2899,6 +2910,11 @@ function connectEvents() {
     if (!current()) return;
     lastEventAt = Date.now();
     lastViewSent = null; sendView(); // a new socket starts out viewing nothing
+    // Anything that changed while we had no socket was never delivered, so
+    // catch up rather than showing a stale picture — people sitting in a voice
+    // channel they have long since left, for instance.
+    if (!firstConnect) resync();
+    firstConnect = false;
     clearInterval(eventsWatchdog);
     eventsWatchdog = setInterval(() => {
       if (!current()) return;

@@ -19,9 +19,12 @@ type voiceSeat struct {
 
 // Activity is a snapshot of one server's activity. Seq increases with every
 // change across the hub, so a client can drop a snapshot that arrives after a
-// newer one.
+// newer one — but only within one run of the server: Seq starts again from
+// zero when it restarts, which is what Epoch is for. A snapshot from a
+// different epoch is always newer, however small its Seq.
 type Activity struct {
 	ServerID int64             `json:"serverId"`
+	Epoch    string            `json:"epoch"`
 	Seq      int64             `json:"seq"`
 	Active   []int64           `json:"active"`
 	Voice    map[int64][]int64 `json:"voice"` // channel id -> user ids
@@ -127,7 +130,7 @@ func (h *Hub) Activity(serverID int64) Activity {
 		}
 		voice[seat.channelID][seat.userID] = true
 	}
-	out := Activity{ServerID: serverID, Seq: h.seq, Active: sortedIDs(active), Voice: map[int64][]int64{}}
+	out := Activity{ServerID: serverID, Epoch: h.epoch, Seq: h.seq, Active: sortedIDs(active), Voice: map[int64][]int64{}}
 	for ch, users := range voice {
 		out.Voice[ch] = sortedIDs(users)
 	}
