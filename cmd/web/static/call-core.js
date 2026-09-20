@@ -1263,15 +1263,29 @@ window.TBCall = (function () {
 
   function initialsOf(name) { return (name || "?").slice(0, 2).toUpperCase(); }
 
+  // mediaSrc filters a picture URL down to the one shape the server ever mints:
+  // a /media/ path on this origin.
+  //
+  // A peer's avatarUrl arrives in their `state` message over signaling, and a
+  // call room is joined by knowing its code — so anyone in the call, signed in
+  // or not, chooses this string. Any URL at all was accepted, which meant
+  // pointing it at a server you own handed you the IP address and user agent of
+  // everyone in the call, the moment your tile appeared on their screen. A
+  // leading "/media/" is relative and can address no other origin.
+  function mediaSrc(url) {
+    return typeof url === "string" && url.startsWith("/media/") && !/["'\s\\]/.test(url) ? url : "";
+  }
+
   // paintAvatar puts someone's profile picture on their tile, replacing the
   // initials. Their screen-share tile keeps the initials: it isn't them.
   function paintAvatar(id, url) {
     const tile = tileEl(id);
-    if (!tile || !url) return;
+    const src = mediaSrc(url);
+    if (!tile || !src) return;
     const av = tile.querySelector(".tbc-avatar");
     if (!av) return;
     av.textContent = "";
-    av.style.backgroundImage = `url("${url.replace(/"/g, "%22")}")`;
+    av.style.backgroundImage = `url("${src}")`;
   }
   function colorFor(name) {
     let h = 0;

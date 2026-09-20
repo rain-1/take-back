@@ -121,8 +121,16 @@ $("nick").addEventListener("keydown", (e) => { if (e.key === "Enter") $("nickBtn
 
 function randomCode() {
   const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  // Not Math.random(): the code is the only thing guarding the room, and
+  // Math.random()'s state can be recovered from the numbers it has already
+  // handed out — so one code you shared gave away the ones this tab would mint
+  // next. Rejection sampling (248 = 8 * 31) keeps every letter equally likely.
   let s = "";
-  for (let i = 0; i < 6; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  const buf = new Uint8Array(16);
+  while (s.length < 6) {
+    crypto.getRandomValues(buf);
+    for (const b of buf) if (b < 248 && s.length < 6) s += alphabet[b % alphabet.length];
+  }
   return s;
 }
 $("hostBtn").onclick = () => startCall(randomCode());

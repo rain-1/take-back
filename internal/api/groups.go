@@ -10,6 +10,9 @@ import (
 	"github.com/rain1/take-back/internal/store"
 )
 
+// maxGroupName bounds a group's name, matching maxServerName.
+const maxGroupName = 48
+
 // groupRoutes registers the group endpoints. Called from Routes.
 func (a *API) groupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/groups", a.auth(a.handleGroups))               // GET list, POST create
@@ -59,9 +62,12 @@ func (a *API) handleGroups(w http.ResponseWriter, r *http.Request, user *store.U
 		if !decode(w, r, &body) {
 			return
 		}
-		name := strings.TrimSpace(body.Name)
-		if name == "" {
-			writeErr(w, http.StatusBadRequest, "group name required")
+		// Bounded like a server's name: an unbounded one rode a megabyte of
+		// text into the roster of everyone invited, and into their invite
+		// notification.
+		name, ok := cleanName(body.Name, maxGroupName)
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "group name must be 1–48 characters")
 			return
 		}
 		g, err := a.Store.CreateGroup(user.ID, name)
@@ -276,6 +282,9 @@ func (a *API) handleGroupMessages(w http.ResponseWriter, r *http.Request, user *
 			writeErr(w, http.StatusBadRequest, "empty message")
 			return
 		}
+		if !checkBody(w, body.Body) {
+			return
+		}
 		a.storeAndFanout(w, store.GroupMessage{
 			GroupID: body.Group, SenderID: user.ID, Body: body.Body, ReplyTo: body.ReplyTo,
 		}, user.ID)
@@ -292,6 +301,11 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request, user *sto
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	// Multipart uploads don't go through decode(), so they need the same
+	// cross-origin guard.
+	if !sameOrigin(w, r) {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes+multipartOverhead)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad upload")
@@ -299,6 +313,9 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request, user *sto
 	}
 	gid := parseID(r.FormValue("group"))
 	if !a.requireMember(w, gid, user.ID) {
+		return
+	}
+	if !checkBody(w, r.FormValue("body")) {
 		return
 	}
 	up, ok := a.readUpload(w, r)

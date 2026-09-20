@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +12,24 @@ import (
 	"github.com/rain1/take-back/internal/presence"
 	"github.com/rain1/take-back/internal/store"
 )
+
+// maxMessageBytes caps a message body. Nothing bounded one before: decode()'s
+// 1 MB JSON limit was the only ceiling, so a single message could push most of
+// a megabyte of text into the database, out through every recipient's event
+// socket, and through the client's Markdown renderer — repeatable at will, with
+// no rate limit in front of it. 16 KB is far longer than anything anyone types
+// and still cheap to store, fan out and render.
+const maxMessageBytes = 16 << 10
+
+// checkBody rejects an over-long message body (captions included).
+func checkBody(w http.ResponseWriter, body string) bool {
+	if len(body) > maxMessageBytes {
+		writeErr(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("message too long (max %d KB)", maxMessageBytes>>10))
+		return false
+	}
+	return true
+}
 
 // msgView is a Message prepared for the client: raw Markdown body plus ready
 // media URLs (empty for text-only messages).
@@ -104,6 +123,9 @@ func (a *API) handleMessages(w http.ResponseWriter, r *http.Request, user *store
 			writeErr(w, http.StatusBadRequest, "empty message")
 			return
 		}
+		if !checkBody(w, body.Body) {
+			return
+		}
 		// The GET and attachment paths have always required an accepted
 		// friendship; this one didn't, so any account could message — and push a
 		// live notification to — any user id it cared to guess.
@@ -134,6 +156,11 @@ func (a *API) handleMediaMessage(w http.ResponseWriter, r *http.Request, user *s
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	// Multipart uploads don't go through decode(), so they need the same
+	// cross-origin guard.
+	if !sameOrigin(w, r) {
+		return
+	}
 	// Bound the whole body before parsing: ParseMultipartForm spools past its
 	// in-memory budget to disk, so without this an oversized request is written
 	// out in full before anything gets to reject it.
@@ -146,6 +173,9 @@ func (a *API) handleMediaMessage(w http.ResponseWriter, r *http.Request, user *s
 	}
 	with := parseID(r.FormValue("with"))
 	if !a.requireFriend(w, user.ID, with) {
+		return
+	}
+	if !checkBody(w, r.FormValue("body")) {
 		return
 	}
 	up, ok := a.readUpload(w, r)
@@ -218,6 +248,9 @@ func (a *API) handleEditMessage(w http.ResponseWriter, r *http.Request, user *st
 	}
 	if strings.TrimSpace(body.Body) == "" {
 		writeErr(w, http.StatusBadRequest, "empty message")
+		return
+	}
+	if !checkBody(w, body.Body) {
 		return
 	}
 

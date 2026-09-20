@@ -1435,13 +1435,23 @@ function avatarWrap(name, isGroup, online, url) {
   return wrap;
 }
 
+// mediaSrc filters a picture URL down to the one shape the server ever mints: a
+// /media/ path on this origin. Nothing else belongs in a background-image, and
+// keeping the check here means a URL that arrived from somewhere unexpected
+// falls back to the initials circle rather than fetching who knows what.
+// call-core.js has the same guard, where a call peer supplies the value.
+function mediaSrc(url) {
+  return typeof url === "string" && url.startsWith("/media/") && !/["'\s\\]/.test(url) ? url : "";
+}
+
 // avatar renders an uploaded profile picture when available, otherwise a
 // colour-from-nick initials circle.
 function avatar(nick, isGroup, url) {
   const a = document.createElement("span");
   a.className = "avatar" + (isGroup ? " group" : "");
-  if (url) {
-    a.style.backgroundImage = `url("${url}")`;
+  const src = mediaSrc(url);
+  if (src) {
+    a.style.backgroundImage = `url("${src}")`;
     a.style.backgroundSize = "cover";
     a.style.backgroundPosition = "center";
     a.textContent = "";
@@ -2471,7 +2481,23 @@ function syncCallBtn() {
 })();
 function randomCode() {
   const a = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  return Array.from({ length: 6 }, () => a[Math.floor(Math.random() * a.length)]).join("");
+  // Not Math.random(): a call code is the only thing guarding the room — anyone
+  // who knows it can join and hear the call. Math.random() is a seeded PRNG
+  // whose state is recoverable from the numbers it has already produced, so one
+  // code you shared gave away the ones your tab would mint next. getRandomValues
+  // is the CSPRNG and costs nothing here.
+  //
+  // Rejection sampling rather than % 31, which would otherwise make the first
+  // eight letters likelier than the rest.
+  const out = [];
+  const buf = new Uint8Array(16);
+  while (out.length < 6) {
+    crypto.getRandomValues(buf);
+    for (const b of buf) {
+      if (b < 248 && out.length < 6) out.push(a[b % a.length]); // 248 = 8 * 31
+    }
+  }
+  return out.join("");
 }
 
 // ---------- Servers ----------

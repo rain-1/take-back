@@ -9,6 +9,7 @@ node test/e2e/servers-authz.mjs    # who may do what: owner / member / other ser
 node test/e2e/servers-events.mjs   # live events reach members, and only members
 node test/e2e/servers-voice.mjs    # voice channels: who may join, activity, leaving (registers 3 accounts)
 node test/e2e/calls.mjs            # a call in a conversation: waiting, missed, declined, ended, dead links
+node test/e2e/web-security.mjs    # cross-origin writes, message/name size bounds, page headers (registers 2)
 ```
 
 `servers-events.mjs` logs in as accounts `servers-authz.mjs` creates, because
@@ -23,7 +24,11 @@ fresh database since it registers `alice` and `bob`:
 PUPPETEER=/path/to/node_modules/puppeteer-core node test/e2e/servers-ui.cjs
 PUPPETEER=... node test/e2e/call-ui.cjs     # pictures in calls, video in voice, the picture viewer
 PUPPETEER=... node test/e2e/calls-ui.cjs    # the incoming-call banner, declining, an ended call
+PUPPETEER=... node test/e2e/call-avatar-origin.cjs  # a call peer can't pick where your browser fetches their picture
 ```
+
+`call-avatar-origin.cjs` needs no accounts — it joins `call.html` by link — so it
+can run against a database the other checks have already used.
 
 `calls.mjs` and `calls-ui.cjs` wind calls up after a grace period; start the
 server with `TB_CALL_GRACE_MS=2000` and pass `GRACE_MS=3500` so they don't wait

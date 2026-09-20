@@ -110,6 +110,7 @@ func main() {
 			proxy.ServeHTTP(w, r)
 			return
 		}
+		setSecurityHeaders(w)
 		// The HTML pages carry no Cache-Control of their own, so browsers cached
 		// them heuristically and could keep showing a stale UI across deploys
 		// (e.g. a missing button). "no-cache" means "revalidate before reuse", so
@@ -128,6 +129,27 @@ func main() {
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// setSecurityHeaders adds the headers the app's own pages should carry.
+//
+//   - Referrer-Policy, because secrets live in the app's URL: an invite link is
+//     /?invite=CODE, so following any link a message contains handed that code
+//     to a third-party site in the Referer.
+//   - frame-ancestors (and the older X-Frame-Options for anything that doesn't
+//     read CSP), because the UI has one-click destructive actions — leave a
+//     server, remove a friend — and nothing stopped another page framing it
+//     invisibly and steering a click into one.
+//   - nosniff, so a static asset is never re-interpreted as something else.
+//
+// A full content policy is not here: the page's scripts are inline, so any CSP
+// worth having needs those hashed or moved out first.
+func setSecurityHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("X-Content-Type-Options", "nosniff")
 }
 
 // isBackendPath reports whether a request should be proxied to the server

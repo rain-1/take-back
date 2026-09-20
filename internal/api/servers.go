@@ -189,6 +189,11 @@ func (a *API) handleServerIcon(w http.ResponseWriter, r *http.Request, user *sto
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	// Multipart uploads don't go through decode(), so they need the same
+	// cross-origin guard.
+	if !sameOrigin(w, r) {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarBytes)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad upload")
@@ -525,6 +530,9 @@ func (a *API) handleChannelMessages(w http.ResponseWriter, r *http.Request, user
 			writeErr(w, http.StatusBadRequest, "empty message")
 			return
 		}
+		if !checkBody(w, body.Body) {
+			return
+		}
 		ch, ok := a.channelFor(w, body.Channel, user.ID)
 		if !ok {
 			return
@@ -542,6 +550,11 @@ func (a *API) handleChannelMedia(w http.ResponseWriter, r *http.Request, user *s
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	// Multipart uploads don't go through decode(), so they need the same
+	// cross-origin guard.
+	if !sameOrigin(w, r) {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes+multipartOverhead)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad upload")
@@ -549,6 +562,9 @@ func (a *API) handleChannelMedia(w http.ResponseWriter, r *http.Request, user *s
 	}
 	ch, ok := a.channelFor(w, parseID(r.FormValue("channel")), user.ID)
 	if !ok {
+		return
+	}
+	if !checkBody(w, r.FormValue("body")) {
 		return
 	}
 	up, ok := a.readUpload(w, r)

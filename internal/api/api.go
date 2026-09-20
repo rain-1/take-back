@@ -256,6 +256,11 @@ func (a *API) handleSetAvatar(w http.ResponseWriter, r *http.Request, user *stor
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	// Multipart uploads don't go through decode(), so they need the same
+	// cross-origin guard.
+	if !sameOrigin(w, r) {
+		return
+	}
 	// An avatar is one small image; it has no business being anywhere near the
 	// attachment limit, and this path is reachable by any account (no friendship
 	// required), so give it its own much tighter bound.
@@ -419,9 +424,34 @@ func (a *API) handleEvents(w http.ResponseWriter, r *http.Request, user *store.U
 
 // ---- small helpers ----
 
+// sameOrigin rejects a state-changing request that some other origin's page
+// made with the user's ambient session cookie.
+//
+// SameSite=Lax holds the cookie back from a genuinely cross-SITE page, but it
+// treats a sibling subdomain as same-site — takeback.chain-of-thought.org and
+// anything else under that domain are one site to the browser — so the cookie
+// still rides along from there. CORS never gets a say either: a JSON body sent
+// as text/plain is a "simple" request, so it is delivered (and the write
+// happens) whether or not the attacker can read the reply. The Origin header is
+// the one thing that tells the two apart, which is why the events socket
+// already checks it; this is the same rule for the POST API.
+//
+// A missing Origin is allowed: that is a non-browser client (the tb CLI, the
+// Android app), which has no ambient cookie for a web page to borrow.
+func sameOrigin(w http.ResponseWriter, r *http.Request) bool {
+	if presence.AllowedOrigin(r.Header.Get("Origin"), r.Host) {
+		return true
+	}
+	writeErr(w, http.StatusForbidden, "cross-origin request refused")
+	return false
+}
+
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	if r.Method != http.MethodPost {
 		writeErr(w, http.StatusMethodNotAllowed, "POST required")
+		return false
+	}
+	if !sameOrigin(w, r) {
 		return false
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(v); err != nil {
