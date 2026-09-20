@@ -3,6 +3,7 @@ package com.takeback.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -38,8 +39,7 @@ class SettingsActivity : AppCompatActivity() {
 
         // Signing out lives here now, with everything else about the account.
         binding.logoutBtn.setOnClickListener { logout() }
-        binding.settingsVersion.text =
-            "take-back ${BuildConfig.VERSION_NAME} · protocol ${BuildConfig.PROTOCOL}"
+        binding.settingsVersion.text = "This app: ${BuildConfig.VERSION_NAME}"
 
         lifecycleScope.launch {
             runCatching { ApiClient.me() }.onSuccess { me ->
@@ -47,8 +47,18 @@ class SettingsActivity : AppCompatActivity() {
                 binding.settingsWho.text = "Signed in as ${me.nick}."
             }
             runCatching { ApiClient.serverVersion() }.onSuccess { v ->
+                // What you have, what the server has, and whether to do anything
+                // about it.
                 binding.settingsVersion.text =
-                    "take-back ${BuildConfig.VERSION_NAME} · server ${v.version} · protocol ${v.protocol}"
+                    "This app: ${BuildConfig.VERSION_NAME} · Server: ${v.version} · protocol ${v.protocol}"
+                val current = v.version == BuildConfig.VERSION_NAME
+                binding.versionBadge.text = if (current) "up to date" else "update available"
+                binding.versionBadge.setTextColor(
+                    android.graphics.Color.parseColor(if (current) "#34D399" else "#F87171"))
+                binding.updateBtn.visibility = if (current) View.GONE else View.VISIBLE
+                binding.updateBtn.setOnClickListener {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ApiClient.base + "/take-back.apk")))
+                }
             }
         }
     }

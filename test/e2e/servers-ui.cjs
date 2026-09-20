@@ -47,6 +47,12 @@ async function register(nick) {
   check('member column shown', await vis(alice, 'memberCol'));
   check('#general opened', (await text(alice, '#chatNick'))[0] === '# general');
   check('the message box is ready to type in', await alice.evaluate(() => document.activeElement && document.activeElement.id === 'msgInput'));
+  check('settings says whether this tab is current', await alice.evaluate(() => {
+    const badge = document.getElementById('versionBadge');
+    const line = document.getElementById('settingsVersion').textContent;
+    return badge.textContent === 'up to date' && badge.classList.contains('ok') &&
+      /This tab: v\d+\.\d+\.\d+ · Server: v\d+\.\d+\.\d+/.test(line);
+  }), await alice.evaluate(() => document.getElementById('settingsVersion').textContent + ' / ' + document.getElementById('versionBadge').textContent));
   check('settings offers the app downloads', await alice.evaluate(() => {
     const hrefs = [...document.querySelectorAll('#settingsModal a.btnlink')].map((a) => a.getAttribute('href'));
     return hrefs.includes('/take-back.apk') && hrefs.includes('/take-back-desktop.zip');

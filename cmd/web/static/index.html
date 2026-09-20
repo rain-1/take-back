@@ -109,6 +109,12 @@
   }
   #mePanel button.icon { font-size: 1rem; padding: .3rem .45rem; }
   #staleWarn { color: var(--danger); }
+  .badge {
+    font-size: .68rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px;
+    margin-left: .4rem; vertical-align: middle;
+  }
+  .badge.ok { background: color-mix(in srgb, var(--online, #3ba55d) 22%, transparent); color: var(--online, #3ba55d); }
+  .badge.warn { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
 
   /* ---- Sidebar ---- */
   #sidebar {
@@ -714,7 +720,7 @@
       </div>
       <div class="setting-row">
         <div class="setting-label">
-          <div class="setting-title">About</div>
+          <div class="setting-title">Version <span id="versionBadge" class="badge"></span></div>
           <div class="setting-sub" id="settingsVersion">take-back</div>
         </div>
         <button class="secondary" id="reloadBtn">Reload</button>
@@ -861,6 +867,8 @@
 // Wire-protocol version this client speaks. Must match the server's MAJOR /
 // protocol; see internal/version. Bump only alongside a breaking API change.
 const CLIENT_PROTOCOL = 1;
+// Stamped by cmd/web at startup (see assetVersion), so a tab knows its own build.
+const PAGE_VERSION = "tb-version:dev".split(":")[1];
 
 const $ = (id) => document.getElementById(id);
 async function api(path, opts = {}) {
@@ -1165,7 +1173,17 @@ function notify(title, body, onClick) {
 async function checkVersion() {
   try {
     const v = await api("/api/version");
-    $("settingsVersion").textContent = `take-back v${v.version} · protocol ${v.protocol}`;
+    // What this tab is running, what the server has, and whether they agree.
+    const current = v.version === PAGE_VERSION;
+    $("settingsVersion").textContent =
+      `This tab: v${PAGE_VERSION} · Server: v${v.version} · protocol ${v.protocol}`;
+    const badge = $("versionBadge");
+    badge.textContent = current ? "up to date" : "update available";
+    badge.className = "badge " + (current ? "ok" : "warn");
+    if (!current) {
+      $("staleWarn").classList.remove("hidden");
+      $("staleWarn").onclick = () => location.reload(true);
+    }
     if (v.protocol !== CLIENT_PROTOCOL) {
       $("staleWarn").classList.remove("hidden");
       $("staleWarn").onclick = () => location.reload(true);

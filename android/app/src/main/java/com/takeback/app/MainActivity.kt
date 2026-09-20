@@ -238,6 +238,10 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.flipBtn.visibility = if (cameraOpened) View.VISIBLE else View.GONE
         if (!cameraOpened) showLocalAvatarTile()
 
+        // Hold the call open when you leave the app: without a foreground
+        // service Android suspends us and the audio stops.
+        CallService.start(this, if (v != null) "In ${v.name}" else "In a call")
+
         // The session cookie rides along (ApiClient.http), which a voice channel
         // requires; and use the server the app is pointed at, not the default.
         val signalUrl = com.takeback.app.net.ApiClient.base.replaceFirst(Regex("^http"), "ws").trimEnd('/') + "/ws"
@@ -282,6 +286,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private fun leaveCall() {
         if (Calls.voice == voice) Calls.voice = null
         inCall = false
+        CallService.stop(this)
         signaling?.close(); signaling = null
         engine?.close(); engine = null
         stopService(Intent(this, ScreenCaptureService::class.java))
@@ -921,6 +926,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             signaling?.close(); signaling = null
             stopService(Intent(this, ScreenCaptureService::class.java))
         }
+        CallService.stop(this)
         engine?.close()
         eglBase.release()
     }

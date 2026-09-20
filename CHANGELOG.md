@@ -24,6 +24,25 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.31.0
+
+**Fixed — a call died when you left the app** (@Etheri, Nothing Phone 1)
+- The phone only ran a foreground service while **screen sharing**, so the
+  moment you left the app or the screen locked, Android was free to suspend it
+  and your audio stopped. Allowing background activity in system settings
+  cannot fix that: an app has to hold a foreground service, declared as the
+  kind of thing it's doing. A call now runs one — an ongoing **"In a call"**
+  notification you can tap to come back — typed as microphone, plus camera when
+  your video is on, or media playback when you're only listening.
+
+**New — Settings says whether you're up to date** (@river)
+- Web and phone both show **what you're running, what the server has**, and an
+  **up to date** / **update available** badge. On the phone, "update available"
+  offers the download.
+
+**New — `TBCall.stats()`** reports what a call is actually receiving, which is
+how the background test proves audio is still flowing.
+
 ## 1.30.0
 
 **Phone — the rest of the design, and the last two gaps** (Android)

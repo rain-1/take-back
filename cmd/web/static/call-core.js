@@ -1415,5 +1415,27 @@ window.TBCall = (function () {
     if (!document.hidden && audioCtx && audioCtx.state === "suspended") audioCtx.resume();
   });
 
-  return { mount, leave, active, layout: layoutGrid, room: () => (S ? S.room : "") };
+  /**
+   * What we're actually receiving from each peer, in bytes. Useful when a call
+   * "looks" connected but nothing is arriving — and it's how the phone tests
+   * prove a backgrounded phone is still talking.
+   */
+  async function stats() {
+    const out = {};
+    if (!S) return out;
+    for (const [id, entry] of S.peers) {
+      let audio = 0, video = 0;
+      try {
+        (await entry.pc.getStats()).forEach((r) => {
+          if (r.type !== "inbound-rtp") return;
+          if (r.kind === "audio") audio += r.bytesReceived || 0;
+          if (r.kind === "video") video += r.bytesReceived || 0;
+        });
+      } catch (e) { /* the connection went away mid-read */ }
+      out[id] = { audio, video };
+    }
+    return out;
+  }
+
+  return { mount, leave, active, layout: layoutGrid, stats, room: () => (S ? S.room : "") };
 })();

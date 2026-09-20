@@ -29,7 +29,10 @@ sg kvm -c '$ANDROID_HOME/emulator/emulator -avd tbtest -no-window -no-audio \
 PUPPETEER=/path/to/node_modules/puppeteer-core python3 test/android/phone_smoke.py
 ```
 
-`phone_calls.py` watches a call arrive in a chat and turn into history;
+`phone_background.py` is the one that matters for calls: it joins a voice
+channel, sends the app to the background with the home key, and checks a
+browser keeps receiving its audio for a minute (via `TBCall.stats()`), plus
+that the ongoing-call notification is up. `phone_calls.py` watches a call arrive in a chat and turn into history;
 `phone_extras.py` covers the incoming-call banner and coming back to the last
 conversation (run that one against a server with the normal call grace, not a
 shortened one). `phone_smoke.py` signs in, makes a server, sends a message in a channel, opens

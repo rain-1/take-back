@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- A call keeps running when you leave the app, which Android only allows
+         through a foreground service of the type the call actually uses. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- Bring a call already in progress back to the front when you rejoin it. -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
 
@@ -42,6 +47,12 @@
             android:exported="false"
             android:supportsPictureInPicture="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" />
+
+        <!-- Keeps a call alive while the app is in the background. -->
+        <service
+            android:name=".CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|camera|mediaPlayback" />
 
         <!-- Foreground service required by MediaProjection screen capture on API 29+. -->
         <service

@@ -38,7 +38,12 @@ var buildTime = time.Now()
 // behind a cached 404 from before the file existed. Stamping the version into
 // the query string sidesteps the edge cache entirely instead of fighting it, and
 // it's automatic: there is no list to remember to bump.
-var assetVersion = strings.NewReplacer("?v=dev", "?v="+version.Version)
+var assetVersion = strings.NewReplacer(
+	"?v=dev", "?v="+version.Version,
+	// The page also states which build it is, so it can say whether the tab
+	// you're looking at is the current one.
+	"tb-version:dev", "tb-version:"+version.Version,
+)
 
 // renderPages reads every .html file out of the embedded assets and applies
 // assetVersion once, at startup, rather than on each request.

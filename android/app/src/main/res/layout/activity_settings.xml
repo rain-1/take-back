@@ -141,10 +141,34 @@
         android:text="@string/log_out" />
 
     <TextView
-        android:id="@+id/settingsVersion"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingTop="22dp"
-        android:textColor="#5A6273"
-        android:textSize="12sp" />
+        android:text="Version"
+        android:textColor="#E8EAF0"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/settingsVersion"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="2dp"
+        android:textColor="#8A93A6"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/versionBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/updateBtn"
+        style="@style/HeaderAction"
+        android:layout_marginTop="6dp"
+        android:visibility="gone"
+        android:text="Download the update" />
 </LinearLayout>
