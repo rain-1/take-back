@@ -784,31 +784,76 @@ private fun String.toHttpUrl(path: String): HttpUrl =
 /**
  * PersistentCookieJar stores cookies (really just the session cookie) in
  * SharedPreferences so the login survives app restarts.
+ *
+ * A jar is asked for cookies on EVERY request the client makes, including the
+ * second leg of a redirect, so it has to answer with only the cookies that
+ * actually belong to the URL in hand. An earlier version returned all of them
+ * whatever the URL: a server that answered with a redirect elsewhere — or
+ * anyone able to inject one into a plaintext connection — was handed the
+ * session token for the phone's real server. [Cookie.matches] applies the rules
+ * that stop that (host, path, and `Secure` meaning https only), and expiry is
+ * honoured so a 30-day session isn't presented forever.
+ *
+ * Entries are keyed by what identifies a cookie — its name plus the host and
+ * path it was set for — because the same name on two servers is two cookies.
  */
 class PersistentCookieJar(context: Context) : CookieJar {
     private val prefs = context.getSharedPreferences("tb_cookies", Context.MODE_PRIVATE)
     private val cookies = mutableMapOf<String, Cookie>()
 
     init {
-        prefs.all.forEach { (_, v) ->
-            val raw = v as? String ?: return@forEach
-            ApiClient.base.toHttpUrlOrNull()?.let { url ->
-                Cookie.parse(url, raw)?.let { cookies[it.name] = it }
+        synchronized(this) {
+            var migrated = false
+            for ((key, v) in prefs.all) {
+                val raw = v as? String ?: continue
+                // Builds before cookies were scoped keyed by bare cookie name and
+                // stored no host; those all belong to the server the app is
+                // pointed at, which is how they were read back then. Without this
+                // an app update would sign everyone out.
+                val host = if (key.contains(SEP)) key.substringBefore(SEP)
+                           else ApiClient.base.toHttpUrlOrNull()?.host ?: continue
+                val c = Cookie.parse("https://$host/".toHttpUrlOrNull() ?: continue, raw) ?: continue
+                cookies[keyOf(c)] = c
+                if (!key.contains(SEP)) migrated = true
             }
+            if (migrated) persist()
         }
     }
 
     override fun saveFromResponse(url: HttpUrl, list: List<Cookie>) {
-        for (c in list) {
-            cookies[c.name] = c
-            prefs.edit().putString(c.name, c.toString()).apply()
+        // OkHttp has already checked each cookie may be set by this URL.
+        synchronized(this) {
+            for (c in list) cookies[keyOf(c)] = c
+            persist()
         }
     }
 
-    override fun loadForRequest(url: HttpUrl): List<Cookie> = cookies.values.toList()
+    override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(this) {
+        val now = System.currentTimeMillis()
+        val expired = cookies.filterValues { it.expiresAt <= now }.keys
+        if (expired.isNotEmpty()) {
+            expired.forEach { cookies.remove(it) }
+            persist()
+        }
+        cookies.values.filter { it.matches(url) }
+    }
 
-    fun clear() {
+    fun clear() = synchronized(this) {
         cookies.clear()
         prefs.edit().clear().apply()
+    }
+
+    /** Rewrite the whole store, so removals land as well as additions. */
+    private fun persist() {
+        val e = prefs.edit().clear()
+        for ((k, c) in cookies) e.putString(k, c.toString())
+        e.apply()
+    }
+
+    private fun keyOf(c: Cookie) = c.domain + SEP + c.path + SEP + c.name
+
+    private companion object {
+        /** Not valid in a host, a path or a cookie name, so it can't be ambiguous. */
+        const val SEP = "|"
     }
 }

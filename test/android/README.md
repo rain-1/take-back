@@ -41,5 +41,12 @@ a picture, joins a voice channel — with a headless browser joining the same
 channel as the other person — turns the camera on, and checks the browser
 receives the phone's video. `emu.py` holds the adb/uiautomator helpers.
 
+`cookie_scope.py` is the odd one out: it needs no take-back server and no
+browser, because it brings its own stand-in server. It checks the session cookie
+goes to the server it belongs to and nowhere else — not to a host the server
+redirects to — and that it still survives the app being closed. It builds and
+installs the app itself (restoring `build.gradle.kts` afterwards) and clears the
+app's data, so run it when you don't mind being signed out on the emulator.
+
 Leave the emulator on the home screen between runs: an expanded notification
 shade swallows taps and every test then fails at its first tap.

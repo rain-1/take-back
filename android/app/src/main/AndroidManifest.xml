@@ -22,12 +22,16 @@
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- allowBackup is off: the session cookie is a 30-day bearer token, and
+         Android's automatic backup would copy it (with who you last talked to)
+         to the account holder's cloud storage and restore it onto another
+         device. Signing in again after a device transfer is the smaller cost. -->
     <application
         android:name=".TakeBackApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.TakeBack">
 
         <activity

@@ -123,7 +123,14 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     ) { result ->
         val data = result.data
         if (result.resultCode == RESULT_OK && data != null) startScreenCapture(data)
-        else toast("Screen share cancelled")
+        else {
+            // The service is started before the picker (Android requires it to
+            // already be running), so turning the picker down has to take it
+            // away again — otherwise "Sharing your screen" stays in the shade
+            // while nothing is shared, and stops meaning anything.
+            stopService(Intent(this, ScreenCaptureService::class.java))
+            toast("Screen share cancelled")
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -839,6 +846,11 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
      */
     private fun paintAvatar(key: String, url: String) {
         if (url.isEmpty() || key.endsWith("-screen")) return
+        // A peer names their own picture over signaling, so this URL is whatever
+        // they say it is. The image loader would also honour file:// and
+        // content://, which would make a call participant able to point this
+        // phone at its own storage; a picture on a server is all it may be.
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return
         val t = tiles[key] ?: return
         t.photo.load(url) { transformations(coil.transform.CircleCropTransformation()) }
         t.photo.visibility = if (t.videoOn) View.GONE else View.VISIBLE

@@ -103,6 +103,16 @@ class SettingsActivity : AppCompatActivity() {
             binding.error.text = "URL must start with http:// or https://"
             return
         }
+        // Say why a plain-HTTP server won't work, here, rather than letting it
+        // save and then fail with an unexplained network error on the login
+        // screen — the network config only permits cleartext to a local server
+        // (see res/xml/network_security_config.xml).
+        if (url.startsWith("http://") && !isLocal(url)) {
+            binding.error.text =
+                "That server would be reached over plain HTTP, which anyone on " +
+                "the network in between can read and change. Use https://."
+            return
+        }
         if (url == ApiClient.base) {
             finish()
             return
@@ -114,5 +124,11 @@ class SettingsActivity : AppCompatActivity() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         startActivity(intent)
         finish()
+    }
+
+    /** The hosts res/xml/network_security_config.xml still allows in the clear. */
+    private fun isLocal(url: String): Boolean {
+        val host = runCatching { Uri.parse(url).host }.getOrNull() ?: return false
+        return host in listOf("localhost", "127.0.0.1", "10.0.2.2")
     }
 }
