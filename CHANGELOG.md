@@ -24,6 +24,22 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.25.0
+
+**Phone catches up with yesterday's fixes** (Android)
+- **Profile pictures in calls**: your picture on your tile and everyone else's,
+  instead of initials. It travels with the call, like on web.
+- **Video in a voice channel**: the camera button now opens your camera
+  mid-call (asking permission the first time) rather than being hidden.
+- **Pictures open in the app**, over the conversation, with "Open in browser"
+  for a real browser.
+
+**New — a server shows when people are in its voice channels** (@Etheri; web,
+desktop and phone)
+- A green speaker sits on the server in your list while anyone is sitting in
+  one of its voice channels, so you can see something's happening without
+  opening it. Voice channels still never ring anybody.
+
 ## 1.24.0
 
 **Fixed — calls showed initials instead of profile pictures** (@Etheri, web and desktop)

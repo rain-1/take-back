@@ -123,7 +123,21 @@ func (a *API) handleServers(w http.ResponseWriter, r *http.Request, user *store.
 		if list == nil {
 			list = []store.Server{}
 		}
-		writeJSON(w, http.StatusOK, list)
+		// How many people are sitting in each server's voice channels, so the
+		// list can show that something is happening there without opening it.
+		type serverView struct {
+			store.Server
+			VoiceCount int `json:"voiceCount"`
+		}
+		views := make([]serverView, 0, len(list))
+		for _, sv := range list {
+			n := 0
+			for _, users := range a.Presence.Activity(sv.ID).Voice {
+				n += len(users)
+			}
+			views = append(views, serverView{sv, n})
+		}
+		writeJSON(w, http.StatusOK, views)
 	case http.MethodPost:
 		var body struct {
 			Name string `json:"name"`

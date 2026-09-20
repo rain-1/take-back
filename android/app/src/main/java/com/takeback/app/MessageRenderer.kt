@@ -203,9 +203,10 @@ class MessageRenderer(
     /**
      * The view for a message's attachment, or null when it has none.
      *
-     * An image shows its server-made thumbnail. Everything else becomes a
-     * tappable chip naming the file: video and audio open an in-app player
-     * ([MediaDialog]), other documents go to whatever app handles that type.
+     * An image shows its server-made thumbnail and opens full-size in the app
+     * when tapped. Everything else becomes a tappable chip naming the file:
+     * video and audio open an in-app player ([MediaDialog]), other documents go
+     * to whatever app handles that type.
      */
     private fun attachmentView(m: RMsg): View? {
         // Fall back to the image fields for messages that predate `attachment`.
@@ -218,7 +219,8 @@ class MessageRenderer(
                 adjustViewBounds = true
                 maxWidth = dp(240)
                 load(att.thumbUrl)
-                setOnClickListener { onOpenAttachment(att.url) }
+                // Opens over the conversation rather than in a browser.
+                setOnClickListener { MediaDialog.showImage(ctx, att.url, att.name) }
                 val lp = LinearLayout.LayoutParams(-2, -2); lp.topMargin = dp(6); layoutParams = lp
             }
         }

@@ -25,6 +25,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import coil.load
 import com.takeback.app.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -69,6 +70,15 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private var inCall = false // true between beginCall() and leaveCall(); gates PiP
     /** Whether this call has a microphone track (permission granted). */
     private var micAvailable = false
+    /** Whether a camera is open in this call (false in a voice channel). */
+    private var cameraOpen = false
+
+    private val cameraPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startVideo()
+        else toast("Camera permission was denied. Allow it in Settings to use video.")
+    }
     /** The voice channel this call is, or null for an ordinary call. */
     private var voice: Calls.Voice? = null
     /** Launched to join a specific call, so leaving it closes this screen. */
@@ -85,6 +95,10 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private val remoteTracks = HashMap<String, MutableList<Pair<VideoTrack, String>>>()
     /** peerId -> playback volume (1.0 = as sent). Kept so it survives re-render. */
     private val peerVolumes = HashMap<String, Double>()
+    /** peerId -> their profile picture, as announced in their state. */
+    private val peerAvatars = HashMap<String, String>()
+    /** My own profile picture, sent to everyone in the call. */
+    private var myAvatarUrl = ""
 
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -149,6 +163,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             broadcastState()
         }
         binding.camBtn.setOnClickListener {
+            // No camera track yet (a voice channel, or we joined without one):
+            // ask for it and turn it on, rather than toggling nothing.
+            if (!cameraOpen) { startVideo(); return@setOnClickListener }
             camOn = !camOn
             engine?.setCameraEnabled(camOn)
             binding.camBtn.text = if (camOn) "📷" else "🚫"
@@ -172,7 +189,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             launchedForRoom = true
             binding.nickStep.visibility = View.GONE
             lifecycleScope.launch {
-                nick = runCatching { com.takeback.app.net.ApiClient.me().nick }.getOrDefault("guest")
+                val me = runCatching { com.takeback.app.net.ApiClient.me() }.getOrNull()
+                nick = me?.nick ?: "guest"
+                myAvatarUrl = me?.avatarUrl.orEmpty()
                 requestCall(room.uppercase())
             }
         }
@@ -208,10 +227,13 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
         micOn = mic
         micAvailable = mic
+        cameraOpen = cameraOpened
         camOn = cameraOpened
         binding.micBtn.isEnabled = mic
         binding.micBtn.text = if (mic) "🎤" else "🔇"
-        binding.camBtn.visibility = if (cameraOpened) View.VISIBLE else View.GONE
+        // With no camera the button OPENS one instead of being hidden: that's
+        // how video gets turned on inside a voice channel.
+        binding.camBtn.text = if (cameraOpened) "📷" else "📷 Video"
         binding.flipBtn.visibility = if (cameraOpened) View.VISIBLE else View.GONE
         if (!cameraOpened) showLocalAvatarTile()
 
@@ -220,6 +242,24 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val signalUrl = com.takeback.app.net.ApiClient.base.replaceFirst(Regex("^http"), "ws").trimEnd('/') + "/ws"
         signaling = SignalingClient(signalUrl, roomCode, nick, this, com.takeback.app.net.ApiClient.http)
             .also { it.connect() }
+    }
+
+    /** Turn the camera on mid-call, asking for permission first if needed. */
+    private fun startVideo() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            cameraPermission.launch(Manifest.permission.CAMERA)
+            return
+        }
+        if (engine?.startCamera() != true) { toast("No camera on this device"); return }
+        cameraOpen = true
+        camOn = true
+        binding.camBtn.text = "📷"
+        binding.flipBtn.visibility = View.VISIBLE
+        tiles[LOCAL_ID]?.videoOn = true
+        refreshTile(LOCAL_ID)
+        broadcastState()
     }
 
     /**
@@ -488,8 +528,12 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         broadcastState()
     }
 
-    override fun onState(fromId: String, video: Boolean, audio: Boolean, screenId: String) =
+    override fun onState(fromId: String, video: Boolean, audio: Boolean, screenId: String, avatarUrl: String) =
         runOnUiThread {
+            if (avatarUrl.isNotEmpty()) {
+                peerAvatars[fromId] = avatarUrl
+                paintAvatar(fromId, avatarUrl)
+            }
             peerState[fromId] = Triple(video, audio, screenId)
             applyState(fromId, video, audio)
             // The screen id may have only just arrived — re-route their tracks.
@@ -510,7 +554,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private fun broadcastState() {
         // Camera and screen are independent tracks now, so `video` is just the
         // camera; the screen is identified by its stream id.
-        signaling?.sendState(camOn, micOn, if (sharing) SCREEN_STREAM_ID else "")
+        signaling?.sendState(camOn, micOn, if (sharing) SCREEN_STREAM_ID else "", myAvatarUrl)
     }
 
     override fun onOffer(fromId: String, nick: String, sdpJson: JSONObject) =
@@ -608,6 +652,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val root: FrameLayout,
         val renderer: SurfaceViewRenderer,
         val avatar: TextView,
+        val photo: android.widget.ImageView,
         val micBadge: TextView,
         val label: TextView,
         val reconnect: TextView,
@@ -650,6 +695,12 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             val d = (96 * resources.displayMetrics.density).toInt()
             layoutParams = FrameLayout.LayoutParams(d, d, Gravity.CENTER)
         }
+        // Their profile picture, over the initials, whenever we have one.
+        val photo = android.widget.ImageView(this).apply {
+            visibility = View.GONE
+            val d = (96 * resources.displayMetrics.density).toInt()
+            layoutParams = FrameLayout.LayoutParams(d, d, Gravity.CENTER)
+        }
         val micBadge = TextView(this).apply {
             text = "🔇"
             visibility = View.GONE
@@ -676,7 +727,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(renderer, FrameLayout.LayoutParams(-1, -1))
-            addView(avatar); addView(micBadge); addView(label); addView(reconnect)
+            addView(avatar); addView(photo); addView(micBadge); addView(label); addView(reconnect)
         }
 
         val params = android.widget.GridLayout.LayoutParams().apply {
@@ -689,8 +740,11 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         // Tap to fill the call area with this feed; tap again for everyone.
         root.setOnClickListener { toggleSpotlight(key) }
 
-        val tile = Tile(root, renderer, avatar, micBadge, label, reconnect)
+        val tile = Tile(root, renderer, avatar, photo, micBadge, label, reconnect)
         tiles[key] = tile
+        // Our own picture, and anyone whose state already told us theirs.
+        val url = if (key == LOCAL_ID) myAvatarUrl else peerAvatars[key].orEmpty()
+        if (url.isNotEmpty()) paintAvatar(key, url)
         avatar.background = avatarBg(nick, speaking = false)
         track?.addSink(renderer)
 
@@ -753,8 +807,10 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     /** Repaint a tile from its current speaking/video/muted state. */
     private fun refreshTile(key: String) {
         val t = tiles[key] ?: return
+        val hasPhoto = t.photo.drawable != null
         t.renderer.visibility = if (t.videoOn) View.VISIBLE else View.GONE
-        t.avatar.visibility = if (t.videoOn) View.GONE else View.VISIBLE
+        t.photo.visibility = if (!t.videoOn && hasPhoto) View.VISIBLE else View.GONE
+        t.avatar.visibility = if (!t.videoOn && !hasPhoto) View.VISIBLE else View.GONE
         t.micBadge.visibility = if (t.muted) View.VISIBLE else View.GONE
 
         // A muted mic must never look like it's transmitting.
@@ -769,6 +825,18 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             t.root.foreground = null
             t.avatar.background = avatarBg(nickOf(key), ringing)
         }
+    }
+
+    /**
+     * Show someone's profile picture on their tile instead of their initials.
+     * A screen-share tile keeps the initials: it isn't a person.
+     */
+    private fun paintAvatar(key: String, url: String) {
+        if (url.isEmpty() || key.endsWith("-screen")) return
+        val t = tiles[key] ?: return
+        t.photo.load(url) { transformations(coil.transform.CircleCropTransformation()) }
+        t.photo.visibility = if (t.videoOn) View.GONE else View.VISIBLE
+        t.avatar.visibility = View.GONE
     }
 
     private fun nickOf(key: String): String =

@@ -22,12 +22,13 @@ interface SignalingListener {
     fun onWelcome(selfId: String, peers: List<RemotePeer>)
     fun onHello(fromId: String, nick: String)
     /**
-     * A peer announced its mic/camera state (or its initial state on join).
+     * A peer announced its mic/camera state (or its initial state on join),
+     * along with their profile picture URL ("" if they have none).
      * [screenId] names the stream carrying their screen share, or "" if they
      * aren't sharing — a screen track is otherwise indistinguishable from a
      * camera track.
      */
-    fun onState(fromId: String, video: Boolean, audio: Boolean, screenId: String) {}
+    fun onState(fromId: String, video: Boolean, audio: Boolean, screenId: String, avatarUrl: String) {}
     fun onOffer(fromId: String, nick: String, sdpJson: JSONObject)
     fun onAnswer(fromId: String, sdpJson: JSONObject)
     fun onCandidate(fromId: String, candidateJson: JSONObject)
@@ -90,6 +91,7 @@ class SignalingClient(
                     p.optBoolean("video", true),
                     p.optBoolean("audio", true),
                     p.optString("screenId"),
+                    p.optString("avatarUrl"),
                 )
             }
             "offer" -> listener.onOffer(from, nickField, payloadOf(msg))
@@ -112,11 +114,14 @@ class SignalingClient(
     }
 
     /** Broadcast our mic/camera/screen state to everyone in the room (no `to` = all). */
-    fun sendState(video: Boolean, audio: Boolean, screenId: String) =
+    fun sendState(video: Boolean, audio: Boolean, screenId: String, avatarUrl: String) =
         sendRaw("state", null, JSONObject()
             .put("video", video)
             .put("audio", audio)
-            .put("screenId", screenId))
+            .put("screenId", screenId)
+            // Travels with the call so everyone sees everyone's picture, the
+            // same field the web client sends.
+            .put("avatarUrl", avatarUrl))
 
     fun sendOffer(to: String, sdp: JSONObject) = sendRaw("offer", to, sdp)
     fun sendAnswer(to: String, sdp: JSONObject) = sendRaw("answer", to, sdp)

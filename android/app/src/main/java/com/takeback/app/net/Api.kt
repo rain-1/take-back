@@ -127,6 +127,8 @@ data class Server(
     val role: String,
     val memberCount: Int,
     val unread: Int = 0,
+    /** How many people are in this server's voice channels right now. */
+    val voiceCount: Int = 0,
 ) {
     val isAdmin: Boolean get() = role == "admin"
 }
@@ -649,6 +651,7 @@ object ApiClient {
         role = o.optString("role"),
         memberCount = o.optInt("memberCount"),
         unread = o.optInt("unread"),
+        voiceCount = o.optInt("voiceCount"),
     )
 
     private fun parseChannel(o: JSONObject) = Channel(

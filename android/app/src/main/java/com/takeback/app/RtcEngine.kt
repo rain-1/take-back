@@ -329,6 +329,33 @@ class RtcEngine(
         return true
     }
 
+    /**
+     * Open the camera during a call and send it to everyone — how video gets
+     * turned on in a voice channel, or in a call joined without a camera.
+     *
+     * Adding a track means every connection has to be renegotiated, the same as
+     * starting a screen share. Returns false if this device has no camera.
+     */
+    fun startCamera(): Boolean {
+        if (localVideo != null) return true
+        val capturer = createCameraCapturer() ?: return false
+        cameraCapturer = capturer
+        currentCapturer = capturer
+        videoSource = factory.createVideoSource(capturer.isScreencast)
+        surfaceHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
+        capturer.initialize(surfaceHelper, appContext, videoSource.capturerObserver)
+        capturer.startCapture(1280, 720, 30)
+
+        val track = factory.createVideoTrack("video0", videoSource)
+        localVideo = track
+        for ((peerId, box) in peers) {
+            box.pc.addTrack(track, listOf(CAM_STREAM_ID))
+            renegotiate(peerId, box)
+        }
+        events.onLocalVideo(track)
+        return true
+    }
+
     private fun createCameraCapturer(): VideoCapturer? {
         val enumerator = Camera2Enumerator(appContext)
         val front = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }

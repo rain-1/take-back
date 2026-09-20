@@ -82,6 +82,8 @@ async function upload(who, path, fields) {
     return { text: av.textContent.trim(), img: (av.style.backgroundImage || '').includes('/media/') };
   }));
   check('2 tiles in the voice call', (await avatarsOf(Bp)).length === 2, JSON.stringify(await avatarsOf(Bp)));
+  const serverRow = (p) => p.evaluate(() => document.querySelector('#servers .row')?.textContent || '');
+  check("the server row shows people are in voice", (await serverRow(Bp)).includes('🔊'), await serverRow(Bp));
   check('own tile shows my picture', (await avatarsOf(Bp))[0].img, JSON.stringify(await avatarsOf(Bp)));
   check('the other tile shows their picture', (await avatarsOf(Bp)).every((a) => a.img), JSON.stringify(await avatarsOf(Bp)));
 

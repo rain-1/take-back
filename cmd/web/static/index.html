@@ -485,6 +485,7 @@
   button.tiny { padding: .1rem .4rem; font-size: .72rem; border-radius: 6px; }
 
   /* Server icons: rounded squares, so they read as places rather than people. */
+  .voice-live { font-size: .78rem; filter: hue-rotate(80deg) saturate(1.4); }
   .server-icon {
     width: 32px; height: 32px; border-radius: 10px; flex: none; object-fit: cover;
     display: grid; place-items: center; font-size: .78rem; font-weight: 700; color: #fff;
@@ -2249,6 +2250,15 @@ function renderServers() {
     const name = document.createElement("span");
     name.className = "name"; name.textContent = sv.name;
     row.append(serverIconEl(sv), name);
+    // Someone is in one of its voice channels: say so without opening it.
+    const inVoice = voiceCountOf(sv);
+    if (inVoice > 0) {
+      const sp = document.createElement("span");
+      sp.className = "voice-live";
+      sp.textContent = "🔊";
+      sp.title = inVoice === 1 ? "1 person in voice" : `${inVoice} people in voice`;
+      row.append(sp);
+    }
     if (sv.unread > 0) row.append(pip(sv.unread, sv.mentioned));
     row.onclick = () => openServerView(sv);
     box.append(row);
@@ -2525,11 +2535,20 @@ function onServerActivity(a) {
   const prev = serverActivity.get(a.serverId);
   if (prev && prev.seq > a.seq) return; // a stale snapshot overtaken by a newer one
   serverActivity.set(a.serverId, a);
+  renderServers(); // the green speaker on that server's row
   if (openServer && openServer.id === a.serverId) { renderChannels(); renderMemberCol(); }
 }
 
 function activityOf(serverId) {
   return serverActivity.get(serverId) || { active: [], voice: {} };
+}
+
+// voiceCountOf prefers what live events have told us, falling back to the count
+// that came with the server list.
+function voiceCountOf(sv) {
+  const a = serverActivity.get(sv.id);
+  if (!a) return sv.voiceCount || 0;
+  return Object.values(a.voice).reduce((n, ids) => n + ids.length, 0);
 }
 
 async function checkVoiceCall(d) {

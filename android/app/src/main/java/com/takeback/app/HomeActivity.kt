@@ -185,6 +185,13 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 if (sv.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 24 }
             })
+            // Someone is in one of its voice channels: say so without opening it.
+            if (sv.voiceCount > 0) row.addView(TextView(this).apply {
+                text = "🔊"
+                textSize = 13f
+                contentDescription = if (sv.voiceCount == 1) "1 person in voice" else "${sv.voiceCount} people in voice"
+                setPadding(0, 0, 12, 0)
+            })
             if (sv.unread > 0) row.addView(pip(sv.unread, Mentions.serverMentioned(sv.id)))
             binding.servers.addView(row)
         }
@@ -432,4 +439,11 @@ class HomeActivity : AppCompatActivity(), EventsListener {
     }
 
     override fun onServerUpdate(serverId: Long, deleted: Boolean) = runOnUiThread { refresh() }
+
+    /** Someone joined or left a voice channel: update that server's speaker. */
+    override fun onServerActivity(activity: com.takeback.app.net.ServerActivity) = runOnUiThread {
+        val inVoice = activity.voice.values.sumOf { it.size }
+        servers = servers.map { if (it.id == activity.serverId) it.copy(voiceCount = inVoice) else it }
+        renderServers()
+    }
 }

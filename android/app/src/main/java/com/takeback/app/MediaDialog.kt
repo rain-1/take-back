@@ -12,13 +12,36 @@ import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.appcompat.app.AlertDialog
+import coil.load
 
 /**
- * Plays a video or audio attachment inside the app, like the web client's
- * inline players, instead of handing it to another app. "Open in…" is still
- * there for a player you prefer.
+ * Opens an attachment inside the app — a picture over the conversation, or a
+ * video or audio clip in a player — like the web client, instead of handing it
+ * to another app. "Open in…" is still there when you'd rather use one.
  */
 object MediaDialog {
+
+    /** A picture, full-width over the conversation. Tap it to close. */
+    fun showImage(ctx: Context, url: String, name: String) {
+        val image = android.widget.ImageView(ctx).apply {
+            adjustViewBounds = true
+            setBackgroundColor(Color.BLACK)
+            val h = (ctx.resources.displayMetrics.heightPixels * 0.7).toInt()
+            layoutParams = LinearLayout.LayoutParams(-1, h)
+            load(url)
+        }
+        val dialog = AlertDialog.Builder(ctx)
+            .setTitle(name)
+            .setView(LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; addView(image) })
+            .setPositiveButton("Close", null)
+            .setNeutralButton("Open in browser") { _, _ ->
+                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    .onFailure { Toast.makeText(ctx, "No app can open that.", Toast.LENGTH_SHORT).show() }
+            }
+            .create()
+        image.setOnClickListener { dialog.dismiss() }
+        dialog.show()
+    }
     fun show(ctx: Context, url: String, name: String, kind: String) {
         val d = ctx.resources.displayMetrics.density
         val video = VideoView(ctx)
