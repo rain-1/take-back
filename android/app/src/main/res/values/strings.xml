@@ -8,9 +8,9 @@
     <string name="join">Join</string>
     <string name="call_code">Call code:</string>
     <string name="copy">Copy</string>
-    <string name="share_screen">Share screen</string>
-    <string name="stop_sharing">Stop sharing</string>
-    <string name="flip_camera">Flip</string>
+    <string name="share_screen">🖥 Share</string>
+    <string name="stop_sharing">🖥 Stop</string>
+    <string name="flip_camera">🔄</string>
     <string name="leave">Leave</string>
     <string name="connecting">connecting…</string>
     <string name="connected">connected</string>

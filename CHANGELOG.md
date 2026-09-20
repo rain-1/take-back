@@ -24,6 +24,14 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.25.1
+
+**Fixed — Leave was off the edge of the screen during a phone call** (Android)
+- The call's buttons were one row that ran past the edge of a phone, so **Leave**
+  (and Flip) simply weren't there. Leave is now pinned at the end of the row and
+  the rest scroll; Share and Flip have shorter labels. This is the first thing
+  found by driving the app on an emulator rather than only compiling it.
+
 ## 1.25.0
 
 **Phone catches up with yesterday's fixes** (Android)

@@ -233,7 +233,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.micBtn.text = if (mic) "🎤" else "🔇"
         // With no camera the button OPENS one instead of being hidden: that's
         // how video gets turned on inside a voice channel.
-        binding.camBtn.text = if (cameraOpened) "📷" else "📷 Video"
+        // Kept short: this row has to fit a phone, and Leave must stay reachable.
+        binding.camBtn.text = "📷"
         binding.flipBtn.visibility = if (cameraOpened) View.VISIBLE else View.GONE
         if (!cameraOpened) showLocalAvatarTile()
 
@@ -253,9 +254,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             return
         }
         if (engine?.startCamera() != true) { toast("No camera on this device"); return }
+        toast("Camera on")
         cameraOpen = true
         camOn = true
-        binding.camBtn.text = "📷"
         binding.flipBtn.visibility = View.VISIBLE
         tiles[LOCAL_ID]?.videoOn = true
         refreshTile(LOCAL_ID)

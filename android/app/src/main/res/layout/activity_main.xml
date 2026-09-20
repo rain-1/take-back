@@ -140,9 +140,23 @@
                 android:text="@string/connecting"
                 android:textColor="#8A93A6" />
 
+            <!-- Leave sits outside the scrolling row, so ending a call is always
+                 one tap away however many other buttons there are. -->
             <LinearLayout
                 android:id="@+id/callControls"
                 android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+            <HorizontalScrollView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
@@ -178,6 +192,9 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/flip_camera" />
+
+            </LinearLayout>
+            </HorizontalScrollView>
 
                 <Button
                     android:id="@+id/leaveBtn"
