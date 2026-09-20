@@ -30,12 +30,30 @@ fun Context.markwon(): Markwon =
                 builder.linkResolver { view, link ->
                     val code = ServerDialogs.inviteCodeOf(link)?.takeIf { link.contains("invite=") }
                     val activity = view.context.findActivity()
-                    if (code != null && activity != null) ServerDialogs.join(activity, code)
-                    else LinkResolverDef().resolve(view, link)
+                    when {
+                        code != null && activity != null -> ServerDialogs.join(activity, code)
+                        // Resolving a link ends in ACTION_VIEW at whatever app
+                        // claims its scheme, and in Markdown the SENDER picks the
+                        // scheme: [look](something://…). The web client builds
+                        // http/https links and nothing else (see renderMarkdown),
+                        // so hold to the same rule here — plus the mailto: that
+                        // LinkifyPlugin makes out of an address above.
+                        isWebLink(link) -> LinkResolverDef().resolve(view, link)
+                        else -> android.widget.Toast.makeText(
+                            view.context, "That link isn't a web address.",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         })
         .build()
+
+/** A link a message is allowed to send you to, by its scheme. */
+private fun isWebLink(link: String): Boolean =
+    when (link.substringBefore(':', "").lowercase()) {
+        "http", "https", "mailto" -> true
+        else -> false
+    }
 
 private fun android.content.Context.findActivity(): AppCompatActivity? {
     var c: android.content.Context? = this
