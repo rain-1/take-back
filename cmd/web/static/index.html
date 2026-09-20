@@ -248,6 +248,28 @@
     transition: opacity .15s ease;
   }
   .msg img.thumb:hover { opacity: .9; }
+  .shot { margin: 0; display: inline-block; position: relative; }
+  .shot-out {
+    display: block; font-size: .7rem; color: var(--dim); text-decoration: none;
+    opacity: 0; transition: opacity .12s; margin-top: .1rem;
+  }
+  .shot:hover .shot-out, .shot-out:focus { opacity: 1; }
+  .shot-out:hover { color: var(--muted); text-decoration: underline; }
+
+  /* Lightbox: a picture opened in place, rather than in a browser tab. */
+  #lightbox {
+    position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, .86);
+    display: flex; align-items: center; justify-content: center; padding: 2rem;
+  }
+  #lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; object-fit: contain; }
+  #lightboxBar {
+    position: absolute; top: .6rem; right: .8rem; display: flex; gap: .5rem; align-items: center;
+  }
+  #lightboxBar a, #lightboxBar button {
+    font-size: .78rem; color: #E8EAF0; background: rgba(255, 255, 255, .12);
+    border: 0; border-radius: 8px; padding: .35rem .7rem; text-decoration: none; cursor: pointer;
+  }
+  #lightboxBar a:hover, #lightboxBar button:hover { background: rgba(255, 255, 255, .22); }
   /* Non-image attachments. Video and audio play in place; anything else is a
      download chip carrying the sender's original filename. */
   .msg video.att {
@@ -748,6 +770,16 @@
     </section>
     <!-- One reusable dialog for the server screens (create, join, invite,
          settings, new channel). Filled in by openDialog(). -->
+    <!-- A picture opened in place. -->
+    <div id="lightbox" class="hidden">
+      <div id="lightboxBar">
+        <a id="lightboxOpen" target="_blank" rel="noopener">Open in browser</a>
+        <a id="lightboxSave" download>Save</a>
+        <button id="lightboxClose" aria-label="Close">✕</button>
+      </div>
+      <img id="lightboxImg" alt="">
+    </div>
+
     <div id="dialog" class="modal-overlay hidden">
       <div class="modal">
         <div class="modal-head"><h2 id="dialogTitle"></h2>
@@ -995,6 +1027,7 @@ async function openGroupChat(g) {
   scrollMessages();
   markRead("group", g.id, msgs);
   rememberOpenChat();
+  focusComposer();
 }
 
 async function loadMembers(groupId) {
@@ -1411,6 +1444,7 @@ async function openChat(user) {
   scrollMessages();
   markRead("dm", user.id, msgs);
   rememberOpenChat();
+  focusComposer();
 }
 
 // markRead tells the server we've seen this conversation up to its newest
@@ -2004,8 +2038,13 @@ function renderAttachment(m) {
 
   if (kind === "image") {
     const thumb = esc(m.thumbUrl || url);
-    return `<a href="${esc(m.imageUrl || url)}" target="_blank" rel="noopener">` +
-           `<img class="thumb" src="${thumb}" alt="${esc(name)}"></a>`;
+    const full = esc(m.imageUrl || url);
+    // Clicking the picture opens it here (see the lightbox below); the link
+    // under it, which only appears on hover, is the way out to a browser tab.
+    return `<figure class="shot">` +
+           `<img class="thumb" src="${thumb}" data-full="${full}" alt="${esc(name)}">` +
+           `<a class="shot-out" href="${full}" target="_blank" rel="noopener">open in browser</a>` +
+           `</figure>`;
   }
   if (kind === "video") {
     // preload="metadata" so a chat full of clips doesn't pull down every byte.
@@ -2018,6 +2057,50 @@ function renderAttachment(m) {
          `<span>📎</span><span class="fname">${esc(name)}</span>` +
          `<span class="fsize">${esc(fmtSize(m.mediaSize))}</span></a>`;
 }
+
+// focusComposer puts the cursor in the message box when a conversation opens,
+// so you can just type. Not on touch screens: there it would throw the
+// keyboard up over the conversation you came to read.
+function focusComposer() {
+  // Touch-primary devices only (phones, tablets) are skipped. Asking for a fine
+  // pointer instead would also skip anything that reports no pointer at all.
+  if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return;
+  const box = $("msgInput");
+  if (box && !$("chatPane").classList.contains("hidden")) box.focus({ preventScroll: true });
+}
+
+// ---------- Pictures ----------
+// A picture opens here rather than in a browser tab: a tab loses the chat, and
+// in the desktop app it used to leave the app entirely.
+
+function openLightbox(url, name) {
+  $("lightboxImg").src = url;
+  $("lightboxImg").alt = name || "";
+  $("lightboxOpen").href = url;
+  $("lightboxSave").href = url;
+  $("lightboxSave").setAttribute("download", name || "");
+  $("lightbox").classList.remove("hidden");
+}
+
+function closeLightbox() {
+  $("lightbox").classList.add("hidden");
+  $("lightboxImg").removeAttribute("src"); // stop holding the full-size image
+}
+
+$("lightboxClose").onclick = closeLightbox;
+$("lightbox").addEventListener("click", (e) => {
+  // Anywhere but the picture and the buttons closes it.
+  if (e.target.id === "lightbox") closeLightbox();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("lightbox").classList.contains("hidden")) closeLightbox();
+});
+document.addEventListener("click", (e) => {
+  const img = e.target.closest && e.target.closest("img.thumb[data-full]");
+  if (!img) return;
+  e.preventDefault();
+  openLightbox(img.dataset.full, img.alt);
+});
 
 // ---------- Calls ----------
 $("callBtn").onclick = async () => {
@@ -2062,6 +2145,7 @@ function joinCall(code, opts = {}) {
   TBCall.mount($("callHost"), {
     nick: me.nick,
     room: code,
+    avatarUrl: me.avatarUrl || "",
     // In a chat the conversation identifies the call, so the code + Copy button
     // would just be noise. (call.html still shows them — that lobby has nothing
     // else to identify a room by.)
@@ -2344,6 +2428,7 @@ async function openChannelChat(ch) {
   scrollMessages();
   markRead("channel", ch.id, msgs);
   rememberOpenChat();
+  focusComposer();
 }
 
 function onChannelMessage(m) {

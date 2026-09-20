@@ -24,6 +24,32 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.24.0
+
+**Fixed — calls showed initials instead of profile pictures** (@Etheri, web and desktop)
+- Your picture is on your tile and everyone else's, in calls and voice channels.
+  It travels with the call, so it shows for people you aren't friends with and
+  don't share a server with.
+
+**New — video in a voice channel** (@Etheri)
+- Voice channels start microphone-only, but **📷 Start video** now turns your
+  camera on mid-call, as does joining a call without one and changing your mind.
+
+**New — pictures open in the app** (@Etheri)
+- Clicking a picture opens it over the conversation, with Save and a small
+  **open in browser** link under the picture on hover. Escape or a click
+  outside closes it. It used to take over a browser tab, and in the desktop app
+  that meant leaving the app.
+
+**New — the message box is ready to type in**  (@river)
+- Opening a conversation puts the cursor in it. Not on phones and tablets,
+  where it would throw the keyboard over what you came to read.
+
+**Fixed — a call could throw "wrong state: stable" when someone added video**
+- Turning the camera on sent an offer, and adding the track sent a second one;
+  two offers for one connection collide. Signaling messages are also handled
+  strictly one at a time now, so two can't interleave mid-negotiation.
+
 ## 1.23.0
 
 **New — servers on the phone** (Android)

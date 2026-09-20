@@ -10,8 +10,10 @@
  * through per-session element references — no global element ids — so it can sit
  * inside a page that has ids of its own.
  *
- *   TBCall.mount(el, { nick, room, onLeave, onStatus, video })
- *     video: false joins microphone-only with no camera button (voice channels)
+ *   TBCall.mount(el, { nick, room, onLeave, onStatus, video, avatarUrl })
+ *     video: false starts microphone-only (voice channels); the camera can
+ *            still be turned on during the call
+ *     avatarUrl: my profile picture, shown on my tile and sent to the others
  *   TBCall.leave()
  *   TBCall.active()   // is a call running?
  *   TBCall.layout()   // re-fit the grid (call after resizing the container)
@@ -73,8 +75,9 @@ window.TBCall = (function () {
       // Whether to show the call code + Copy. A call launched from a chat is
       // identified by the conversation, not by a code you read out loud.
       showCode: opts.showCode !== false,
-      // Voice channels are microphone-only: no camera is opened or offered.
+      // Voice channels start microphone-only; the camera can be turned on later.
       voiceOnly: opts.video === false,
+      avatarUrl: opts.avatarUrl || "",
 
       ws: null, myId: null,
       cameraStream: null,   // the original camera+mic, kept so we can revert
@@ -85,6 +88,8 @@ window.TBCall = (function () {
       vadTimers: new Map(),
 
       micOn: true, camOn: true,
+      cameraBusy: false, // opening the camera mid-call
+      signalQueue: Promise.resolve(), // signals are handled strictly in order
       spotlight: null, // tile id blown up to fill the call area, or null
       leaving: false,
       reconnectTimer: null, reconnectDelay: 1000,
@@ -283,8 +288,53 @@ window.TBCall = (function () {
     u.mic.disabled = !hasMic;
     u.cam.disabled = !hasCam;
     u.mic.textContent = !hasMic ? "🎤 No mic" : S.micOn ? "🎤 Mic on" : "🔇 Mic off";
-    u.cam.textContent = !hasCam ? "📷 No camera" : S.camOn ? "📷 Camera on" : "📷 Camera off";
-    u.cam.classList.toggle("tbc-hidden", S.voiceOnly);
+    // With no camera track the button OPENS the camera rather than being dead:
+    // that's how video gets turned on in a voice channel.
+    u.cam.disabled = S.cameraBusy;
+    u.cam.textContent = !hasCam ? "📷 Start video" : S.camOn ? "📷 Camera on" : "📷 Camera off";
+  }
+
+  /**
+   * Open the camera during a call and send it to everyone.
+   *
+   * Adding a track means each connection has to be renegotiated — the same
+   * thing screen sharing does — because a call that started without video has
+   * no video sender to swap into.
+   */
+  async function turnCameraOn() {
+    if (S.cameraBusy) return;
+    S.cameraBusy = true;
+    syncDeviceButtons();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: gumConstraints(false).video });
+    } catch (err) {
+      const why = whyUnavailable(err);
+      log("Couldn't start your camera: " + why);
+      S.onWarning("Couldn't start your camera: " + why);
+      S.cameraBusy = false;
+      syncDeviceButtons();
+      return;
+    }
+    if (!S) { stream.getTracks().forEach((t) => t.stop()); return; } // left while waiting
+    const track = stream.getVideoTracks()[0];
+    S.cameraStream.addTrack(track);
+    S.camOn = true;
+    for (const entry of S.peers.values()) {
+      const sender = entry.pc.getSenders().find(
+        (sn) => sn.track && sn.track.kind === "video" && !entry.screenSenders.includes(sn));
+      // addTrack fires negotiationneeded, which sends the offer for us — doing
+      // it here as well would make two offers collide.
+      if (sender) await sender.replaceTrack(track);
+      else entry.pc.addTrack(track, S.cameraStream);
+    }
+    addTile("local", S.nick + " (you)", S.cameraStream, true);
+    setTileVideo("local", true);
+    applyMirror();
+    S.cameraBusy = false;
+    syncDeviceButtons();
+    broadcastState();
+    log("Camera on.");
   }
 
   function leave() {
@@ -397,12 +447,15 @@ window.TBCall = (function () {
       broadcastState();
     };
 
-    u.cam.onclick = () => {
+    u.cam.onclick = async () => {
+      // No camera track yet (a voice channel, or we joined without one): open it
+      // now and hand it to everyone. Otherwise just toggle the one we have.
+      if (S.cameraStream.getVideoTracks().length === 0) { await turnCameraOn(); return; }
       S.camOn = !S.camOn;
       // Camera and screen are separate tracks, so this only affects the camera.
       S.cameraStream.getVideoTracks().forEach((t) => (t.enabled = S.camOn));
-      u.cam.textContent = S.camOn ? "📷 Camera on" : "📷 Camera off";
       setTileVideo("local", S.camOn);
+      syncDeviceButtons();
       broadcastState();
     };
 
@@ -668,10 +721,14 @@ window.TBCall = (function () {
       audio: S.micOn,
       // A peer can't tell a screen track from a camera track, so name the stream.
       screenId: S.screenStream ? S.screenStream.id : "",
+      // Travels with the call so everyone sees everyone's picture, whether or
+      // not they're friends or share a server.
+      avatarUrl: S.avatarUrl,
     }) });
   }
 
   function applyState(id, s) {
+    if (s.avatarUrl) paintAvatar(id, s.avatarUrl);
     setTileVideo(id, !!s.video);
     setTileMuted(id, !s.audio);
     if (!s.screenId) { // they stopped sharing
@@ -792,7 +849,16 @@ window.TBCall = (function () {
       if (!S.leaving) scheduleReconnect();
     };
     ws.onerror = () => { if (S && S.ws === ws) setSignalOK(false); };
-    ws.onmessage = (ev) => { if (S && S.ws === ws) handleSignal(JSON.parse(ev.data)); };
+    // One at a time: handleSignal awaits, so two messages for the same peer
+    // could otherwise interleave and answer an offer twice ("Called in wrong
+    // state: stable").
+    ws.onmessage = (ev) => {
+      if (!S || S.ws !== ws) return;
+      const msg = JSON.parse(ev.data);
+      S.signalQueue = S.signalQueue
+        .then(() => (S && S.ws === ws ? handleSignal(msg) : null))
+        .catch((err) => console.warn("signal", msg.type, err));
+    };
   }
 
   function scheduleReconnect() {
@@ -1144,6 +1210,17 @@ window.TBCall = (function () {
   }
 
   function initialsOf(name) { return (name || "?").slice(0, 2).toUpperCase(); }
+
+  // paintAvatar puts someone's profile picture on their tile, replacing the
+  // initials. Their screen-share tile keeps the initials: it isn't them.
+  function paintAvatar(id, url) {
+    const tile = tileEl(id);
+    if (!tile || !url) return;
+    const av = tile.querySelector(".tbc-avatar");
+    if (!av) return;
+    av.textContent = "";
+    av.style.backgroundImage = `url("${url.replace(/"/g, "%22")}")`;
+  }
   function colorFor(name) {
     let h = 0;
     for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
@@ -1186,10 +1263,15 @@ window.TBCall = (function () {
     v.play().catch(() => { if (id !== "local") S.ui.audioGate.classList.remove("tbc-hidden"); });
     tile.querySelector(".tbc-name").textContent = name;
 
-    // Profile picture shown whenever the camera is off.
+    // Shown whenever the camera is off: their profile picture if we have one,
+    // otherwise initials on a colour from their name.
     const av = tile.querySelector(".tbc-avatar");
     av.textContent = initialsOf(baseNick(name));
     av.style.background = colorFor(baseNick(name));
+    av.style.backgroundSize = "cover";
+    av.style.backgroundPosition = "center";
+    const known = id === "local" ? S.avatarUrl : (S.peerState.get(id) || {}).avatarUrl;
+    if (known) paintAvatar(id, known);
 
     // Ring this tile when its owner speaks.
     attachVAD(id, stream);
