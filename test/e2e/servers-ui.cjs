@@ -30,6 +30,12 @@ async function register(nick) {
   const clickText = (p, sel, re) => p.evaluate((s, re) => { const b = [...document.querySelectorAll(s)].find((e) => new RegExp(re).test(e.textContent)); if (!b) return false; b.click(); return true; }, sel, re);
 
   check('empty servers note', (await text(alice, '#servers')).join('').includes('No servers yet'));
+  // Every sidebar section works the same way: a heading with its own ＋.
+  const sectionActions = await alice.evaluate(() => [...document.querySelectorAll('#sidebar .section[data-section]')]
+    .map((s) => s.dataset.section + ':' + [...s.querySelectorAll('h3 .h3-actions button')].map((b) => b.textContent.trim()).join('')));
+  check('servers, groups and friends all have header actions',
+    JSON.stringify(sectionActions) === JSON.stringify(['servers:Join＋', 'groups:＋', 'friends:＋']), JSON.stringify(sectionActions));
+  check('no stray inline forms in the sidebar', await alice.evaluate(() => document.querySelectorAll('#sidebar input').length === 0));
   await alice.click('#newServerBtn');
   check('create dialog opens', await vis(alice, 'dialog'));
   await alice.type('#dialogBody input:not([type=file])', 'Movie Night');
@@ -140,7 +146,7 @@ async function register(nick) {
   check('voice call connects the two', (await bob.$$('.tbc-tile')).length === 2, String((await bob.$$('.tbc-tile')).length));
   await bob.screenshot({ path: (process.env.SHOTS || '.') + '/servers-voice.png' });
   // bob hangs up, then closes the server: he's away
-  await bob.evaluate(() => [...document.querySelectorAll('.tbc button')].find((b) => b.textContent === 'Leave').click());
+  await bob.evaluate(() => document.querySelector('.tbc button[aria-label="Leave the call"]').click());
   await wait(1000);
   check('bob left: call panel closed', !(await vis(bob, 'callPane')));
   check('alice sees only herself in voice', JSON.stringify(await occupants(alice)) === '["ALalice"]', JSON.stringify(await occupants(alice)));

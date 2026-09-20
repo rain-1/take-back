@@ -89,13 +89,20 @@
   #auth .apk-dl a:hover { text-decoration: underline; }
 
   /* ---- Shell ---- */
-  header {
-    padding: 0 1rem; height: 52px; display: flex; align-items: center; gap: .6rem;
-    border-bottom: 1px solid var(--border-soft); background: var(--panel);
+  #app { display: flex; height: 100vh; }
+
+  /* Who you are, bottom left — the way into settings. */
+  #mePanel {
+    margin-top: auto; flex: none; display: flex; align-items: center; gap: .5rem;
+    padding: .5rem .7rem; background: var(--surface);
+    border-top: 1px solid var(--border-soft);
   }
-  header h1 { font-size: .95rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
-  header .sub { color: var(--dim); font-size: .78rem; }
-  #app { display: flex; height: calc(100vh - 52px); }
+  #mePanel .me-name {
+    flex: 1; min-width: 0; font-size: .85rem; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #mePanel button.icon { font-size: 1rem; padding: .3rem .45rem; }
+  #staleWarn { color: var(--danger); }
 
   /* ---- Sidebar ---- */
   #sidebar {
@@ -109,9 +116,6 @@
     margin: 0 0 .35rem .25rem; font-size: .66rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: .09em; color: var(--dim);
   }
-  .addrow { display: flex; gap: .35rem; }
-  .addrow input { flex: 1; min-width: 0; padding: .35rem .55rem; font-size: .82rem; }
-  .addrow button { padding: .35rem .7rem; font-size: .8rem; }
 
   /* Sidebar rows (friends + groups) */
   .row {
@@ -259,8 +263,8 @@
   #incoming {
     position: fixed; top: .8rem; left: 50%; transform: translateX(-50%); z-index: 80;
     display: flex; align-items: center; gap: 1rem; padding: .6rem .8rem;
-    background: var(--panel); border: 1px solid var(--border-soft); border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, .45); max-width: min(92vw, 520px);
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: 0 10px 30px rgb(0 0 0 / .45); max-width: min(92vw, 520px);
   }
   #incoming .inc-text { display: flex; align-items: center; gap: .45rem; font-size: .9rem; }
   #incoming .inc-actions { display: flex; gap: .4rem; margin-left: auto; }
@@ -274,18 +278,19 @@
 
   /* Lightbox: a picture opened in place, rather than in a browser tab. */
   #lightbox {
-    position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, .86);
+    position: fixed; inset: 0; z-index: 70; background: rgb(0 0 0 / .86);
     display: flex; align-items: center; justify-content: center; padding: 2rem;
   }
-  #lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; object-fit: contain; }
+  #lightbox img { max-width: 100%; max-height: 100%; border-radius: var(--radius); object-fit: contain; }
   #lightboxBar {
     position: absolute; top: .6rem; right: .8rem; display: flex; gap: .5rem; align-items: center;
   }
   #lightboxBar a, #lightboxBar button {
-    font-size: .78rem; color: #E8EAF0; background: rgba(255, 255, 255, .12);
-    border: 0; border-radius: 8px; padding: .35rem .7rem; text-decoration: none; cursor: pointer;
+    font-size: .78rem; color: var(--text); background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: .35rem .7rem; text-decoration: none; cursor: pointer;
   }
-  #lightboxBar a:hover, #lightboxBar button:hover { background: rgba(255, 255, 255, .22); }
+  #lightboxBar a:hover, #lightboxBar button:hover { background: var(--surface-2); }
   /* Non-image attachments. Video and audio play in place; anything else is a
      download chip carrying the sender's original filename. */
   .msg video.att {
@@ -567,6 +572,19 @@
   .kind-pick input { width: auto; }
 
   /* ---- Modal (settings) ---- */
+  /* A full page, for things that keep growing (settings). */
+  .page {
+    position: fixed; inset: 0; z-index: 45; background: var(--bg); overflow-y: auto;
+  }
+  .page-inner { max-width: 720px; margin: 0 auto; padding: 0 1.2rem 3rem; }
+  .page-head {
+    display: flex; align-items: center; gap: .5rem;
+    padding: 1.2rem 0 .8rem; border-bottom: 1px solid var(--border-soft);
+    position: sticky; top: 0; background: var(--bg);
+  }
+  .page-head h2 { margin: 0; font-size: 1.15rem; font-weight: 650; flex: 1; }
+  .page-body { padding-top: .4rem; }
+
   .modal-overlay {
     position: fixed; inset: 0; z-index: 40; padding: 1rem;
     display: flex; align-items: center; justify-content: center;
@@ -609,7 +627,7 @@
 
   /* ---- Small screens ---- */
   @media (max-width: 720px) {
-    #sidebar { width: 100%; position: absolute; inset: 52px 0 0 0; z-index: 5; }
+    #sidebar { width: 100%; position: absolute; inset: 0; z-index: 5; }
     #sidebar.tucked { display: none; }
     .msg { max-width: 85%; }
   }
@@ -639,13 +657,14 @@
 <!-- User preferences live here rather than the header. The avatar upload moved
      in from the header but reuses the same hidden #avatarInput + handler, so the
      upload path is unchanged. -->
-<div id="settingsModal" class="modal-overlay hidden">
-  <div class="modal">
-    <div class="modal-head">
+<div id="settingsModal" class="page hidden">
+  <div class="page-inner">
+    <div class="page-head">
       <h2>Settings</h2>
-      <button class="ghost" id="settingsClose" title="Close" style="font-size:1rem;">✕</button>
+      <button class="ghost" id="settingsClose" title="Close" aria-label="Close settings"
+              style="font-size:1rem;">✕</button>
     </div>
-    <div class="modal-body">
+    <div class="page-body">
       <div class="setting-row">
         <div class="setting-label">
           <div class="setting-title">Profile picture</div>
@@ -666,36 +685,30 @@
           <span class="slider"></span>
         </label>
       </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div class="setting-title">This account</div>
+          <div class="setting-sub" id="settingsWho"></div>
+        </div>
+        <button class="secondary" id="logoutBtn">Log out</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div class="setting-title">About</div>
+          <div class="setting-sub" id="settingsVersion">take-back</div>
+        </div>
+        <button class="secondary" id="reloadBtn">Reload</button>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- ============ APP ============ -->
 <div id="main" class="hidden">
-  <header>
-    <img src="/logo-mark.svg?v=dev" alt="" id="brandMark" width="26" height="26">
-    <h1>take-back</h1>
-    <span class="sub" id="verLabel"></span>
-    <span style="flex:1;"></span>
-    <span class="sub hidden" id="staleWarn" style="color:var(--danger);cursor:pointer;"
-          title="Reload to get the current version">⚠ update available — reload</span>
-    <span class="sub">signed in as <b id="meNick"></b></span>
-    <span id="meAvatar" title="Settings" style="cursor:pointer;"></span>
-    <input type="file" id="avatarInput" accept="image/*" class="hidden">
-    <button class="secondary icon" id="settingsBtn" title="Settings" style="padding:.4rem .55rem;font-size:1rem;">⚙</button>
-    <button class="secondary" id="logoutBtn">Log out</button>
-  </header>
+  <input type="file" id="avatarInput" accept="image/*" class="hidden">
 
   <div id="app">
     <aside id="sidebar">
-      <div class="section">
-        <h3>Add friend</h3>
-        <div class="addrow">
-          <input id="addNick" placeholder="their nickname" autocomplete="off">
-          <button id="addBtn">Add</button>
-        </div>
-        <div class="err" id="addErr" style="color:#f87171;font-size:.75rem;"></div>
-      </div>
       <div class="section" data-section="servers">
         <h3 class="collapser"><span class="chev">▾</span> Servers
           <span class="h3-actions">
@@ -708,24 +721,37 @@
         </div>
       </div>
       <div class="section" data-section="groups">
-        <h3 class="collapser"><span class="chev">▾</span> Groups</h3>
+        <h3 class="collapser"><span class="chev">▾</span> Groups
+          <span class="h3-actions">
+            <button class="ghost tiny" id="newGroupBtn" title="New group">＋</button>
+          </span>
+        </h3>
         <div class="section-body">
-          <div class="addrow">
-            <input id="groupName" placeholder="new group name" autocomplete="off">
-            <button id="newGroupBtn">Create</button>
-          </div>
-          <div id="groups" style="margin-top:.4rem;"></div>
+          <div id="groups"></div>
         </div>
       </div>
       <div class="section hidden" id="requestsSection">
         <h3>Requests</h3>
         <div id="requests"></div>
       </div>
-      <div class="section" data-section="friends" style="flex:1;">
-        <h3 class="collapser"><span class="chev">▾</span> Friends</h3>
+      <div class="section" data-section="friends" style="flex:1;min-height:0;">
+        <h3 class="collapser"><span class="chev">▾</span> Friends
+          <span class="h3-actions">
+            <button class="ghost tiny" id="addFriendBtn" title="Add a friend">＋</button>
+          </span>
+        </h3>
         <div class="section-body">
           <div id="friends"></div>
         </div>
+      </div>
+
+      <!-- Who you are, and the way into settings: the bottom-left corner. -->
+      <div id="mePanel">
+        <span id="meAvatar"></span>
+        <span class="me-name" id="meNick"></span>
+        <button class="ghost tiny hidden" id="staleWarn"
+                title="A new version is out — click to reload">⚠</button>
+        <button class="ghost icon" id="settingsBtn" title="Settings" aria-label="Settings">⚙</button>
       </div>
     </aside>
 
@@ -909,17 +935,16 @@ let notifyPref = localStorage.getItem("tb.notify") !== "off";
 function openSettings() {
   renderMeAvatar();
   $("notifyToggle").checked = notifyPref;
+  $("settingsWho").textContent = me ? `Signed in as ${me.nick}.` : "";
   $("settingsModal").classList.remove("hidden");
 }
 function closeSettings() { $("settingsModal").classList.add("hidden"); }
 $("settingsBtn").onclick = openSettings;
-$("meAvatar").onclick = openSettings; // the header avatar now opens settings too
+$("meAvatar").onclick = openSettings;
+$("meNick").onclick = openSettings;
 $("settingsClose").onclick = closeSettings;
 $("settingsAvatarBtn").onclick = () => $("avatarInput").click();
-// Click the dimmed backdrop (but not the panel) to dismiss.
-$("settingsModal").addEventListener("click", (e) => {
-  if (e.target === $("settingsModal")) closeSettings();
-});
+$("reloadBtn").onclick = () => location.reload(true);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("settingsModal").classList.contains("hidden")) closeSettings();
 });
@@ -959,16 +984,20 @@ async function enterApp() {
 }
 
 // ---------- Groups ----------
-$("newGroupBtn").onclick = async () => {
-  const name = $("groupName").value.trim();
-  if (!name) return;
-  const g = await api("/api/groups", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+$("newGroupBtn").onclick = (e) => {
+  e.stopPropagation(); // the heading toggles the section; the button doesn't
+  openDialog("New group", (body) => {
+    const name = textInput("e.g. weekend plans");
+    const create = busyBtn("Create", "", async () => {
+      if (!name.value.trim()) { name.focus(); return; }
+      const g = await jsonPost("/api/groups", { name: name.value.trim() });
+      closeDialog();
+      await loadGroups();
+      openGroupChat(g);
+    });
+    submitOnEnter(name, create);
+    body.append(field("Group name", name), actions(mkBtn("Cancel", "secondary", closeDialog), create));
   });
-  $("groupName").value = "";
-  await loadGroups();
-  openGroupChat(g);
 };
 
 async function loadGroups() {
@@ -998,7 +1027,7 @@ function renderGroups() {
   const box = $("groups");
   box.innerHTML = "";
   if (groupState.size === 0) {
-    box.innerHTML = `<div class="empty-note">No groups yet.</div>`;
+    box.innerHTML = `<div class="empty-note">No groups yet — start one with ＋.</div>`;
     return;
   }
   for (const g of [...groupState.values()].sort(byRecency((g) => g.name))) {
@@ -1116,28 +1145,34 @@ function notify(title, body, onClick) {
 async function checkVersion() {
   try {
     const v = await api("/api/version");
-    $("verLabel").textContent = "v" + v.version;
+    $("settingsVersion").textContent = `take-back v${v.version} · protocol ${v.protocol}`;
     if (v.protocol !== CLIENT_PROTOCOL) {
       $("staleWarn").classList.remove("hidden");
       $("staleWarn").onclick = () => location.reload(true);
+      toast("A new version of take-back is out — reload to get it.", 9000);
     }
     applyRegistrationPolicy(v.openRegistration);
   } catch { /* offline; ignore */ }
 }
 
 // ---------- Friends ----------
-$("addBtn").onclick = async () => {
-  $("addErr").textContent = "";
-  const nick = $("addNick").value.trim();
-  if (!nick) return;
-  try {
-    await api("/api/friends/request", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nick }),
+$("addFriendBtn").onclick = (e) => {
+  e.stopPropagation();
+  openDialog("Add a friend", (body) => {
+    const nick = textInput("their nickname");
+    const note = document.createElement("div");
+    note.className = "setting-sub";
+    note.textContent = "They'll get a request to accept before you can message each other.";
+    const send = busyBtn("Send request", "", async () => {
+      if (!nick.value.trim()) { nick.focus(); return; }
+      await jsonPost("/api/friends/request", { nick: nick.value.trim() });
+      closeDialog();
+      toast(`Request sent to ${nick.value.trim()}.`);
+      await loadFriends();
     });
-    $("addNick").value = "";
-    await loadFriends();
-  } catch (e) { $("addErr").textContent = e.message; }
+    submitOnEnter(nick, send);
+    body.append(field("Nickname", nick), note, actions(mkBtn("Cancel", "secondary", closeDialog), send));
+  });
 };
 
 async function loadFriends() {
@@ -1226,7 +1261,7 @@ function renderFriends() {
     box.append(row);
   });
   if (accepted.length === 0)
-    box.innerHTML = `<div class="empty-note">No friends yet — add someone above.</div>`;
+    box.innerHTML = `<div class="empty-note">No friends yet — add someone with ＋.</div>`;
 }
 
 // byRecency sorts conversations newest-first, falling back to name for those
@@ -2424,7 +2459,7 @@ function renderServers() {
   const box = $("servers");
   box.replaceChildren();
   if (serverState.size === 0) {
-    box.innerHTML = `<div class="empty-note">No servers yet — create one, or join with an invite.</div>`;
+    box.innerHTML = `<div class="empty-note">No servers yet — make one with ＋, or Join with an invite.</div>`;
     return;
   }
   for (const sv of serverState.values()) {

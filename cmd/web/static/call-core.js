@@ -89,6 +89,7 @@ window.TBCall = (function () {
 
       micOn: true, camOn: true,
       cameraBusy: false, // opening the camera mid-call
+      barTimer: null,    // hides the control tray again
       signalQueue: Promise.resolve(), // signals are handled strictly in order
       spotlight: null, // tile id blown up to fill the call area, or null
       leaving: false,
@@ -118,17 +119,22 @@ window.TBCall = (function () {
     u.signalWarn = el("span", "tbc-pill tbc-warn tbc-hidden", "⚠ signaling");
     u.signalWarn.title = "The call keeps running; new peers can't join until this recovers";
     u.audioGate = el("button", "tbc-hidden", "🔊 Enable audio");
-    u.mic = el("button", "secondary", "🎤 Mic on");
-    u.cam = el("button", "secondary", "📷 Camera on");
-    u.present = el("button", null, "🖥 Present screen");
-    u.zoomOut = el("button", "secondary tbc-hidden", "⤡ Show everyone");
-    u.zoomOut.title = "Back to the grid";
-    u.settings = el("button", "secondary", "⚙");
-    u.settings.title = "Devices & preferences";
-    u.leave = el("button", "secondary", "Leave");
-    if (S.showCode) bar.append(u.codeLabel, u.code, u.copy);
-    bar.append(u.pill, u.signalWarn, el("span", "tbc-spacer"),
-      u.audioGate, u.zoomOut, u.mic, u.cam, u.present, u.settings, u.leave);
+    // Icons, with the words in the tooltip and in the accessibility tree: the
+    // tray has to stay small enough to sit over the call.
+    u.mic = iconButton("🎤", "Mute microphone");
+    u.cam = iconButton("📷", "Turn camera off");
+    u.present = iconButton("🖥", "Present your screen");
+    u.zoomOut = iconButton("⤡", "Show everyone");
+    u.zoomOut.classList.add("tbc-hidden");
+    u.settings = iconButton("⚙", "Devices & preferences");
+    u.leave = iconButton("📞", "Leave the call");
+    u.leave.classList.add("tbc-danger");
+    // The code (call.html only) sits above the call, not in the tray: the tray
+    // is controls, and a long code pushed Leave onto a second row.
+    const codeBar = el("div", "tbc-codebar");
+    if (S.showCode) codeBar.append(u.codeLabel, u.code, u.copy);
+    bar.append(u.pill, u.signalWarn, u.audioGate, u.zoomOut,
+      u.mic, u.cam, u.present, u.settings, u.leave);
 
     // --- settings panel ---
     const panel = el("div", "tbc-settings tbc-hidden");
@@ -181,17 +187,53 @@ window.TBCall = (function () {
     u.log = el("p", "tbc-status");
     u.log.style.margin = "0";
 
-    root.append(bar, u.notice, panel, u.grid, u.log);
+    // The tray comes after the grid: it sits over the bottom of the call, and
+    // tabbing reaches the call before its controls.
+    root.append(codeBar, u.notice, panel, u.grid, bar, u.log);
     u.root = root;
     u.panel = panel;
     S.ui = u;
     S.container.append(root);
 
+    // Reveal the tray on hover (or a tap) and keep it while it's being used.
+    root.addEventListener("pointermove", flashControls);
+    root.addEventListener("pointerdown", flashControls);
+    bar.addEventListener("focusin", flashControls);
+    flashControls();
+
     wireUI();
+  }
+
+  // iconButton: one control in the tray. The label is the tooltip and the
+  // accessible name, so it stays findable without taking up room.
+  function iconButton(glyph, label) {
+    const b = el("button", "tbc-icon", glyph);
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    return b;
+  }
+
+  // setIcon changes what a tray button shows and what it says it does.
+  function setIcon(button, glyph, label) {
+    button.textContent = glyph;
+    button.title = label;
+    button.setAttribute("aria-label", label);
   }
 
   function unmount() {
     if (S && S.ui && S.ui.root.parentNode) S.ui.root.remove();
+  }
+
+  // The tray hides itself when the call is just being watched, and comes back
+  // on hover, on touch, while the settings panel is open, or for a moment after
+  // anything changes.
+  function flashControls() {
+    if (!S || !S.ui) return;
+    S.ui.root.classList.add("tbc-show-bar");
+    clearTimeout(S.barTimer);
+    S.barTimer = setTimeout(() => {
+      if (S && S.ui) S.ui.root.classList.remove("tbc-show-bar");
+    }, 2600);
   }
 
   function log(msg) {
@@ -286,12 +328,15 @@ window.TBCall = (function () {
     const hasMic = S.cameraStream.getAudioTracks().length > 0;
     const hasCam = S.cameraStream.getVideoTracks().length > 0;
     u.mic.disabled = !hasMic;
-    u.cam.disabled = !hasCam;
-    u.mic.textContent = !hasMic ? "🎤 No mic" : S.micOn ? "🎤 Mic on" : "🔇 Mic off";
     // With no camera track the button OPENS the camera rather than being dead:
     // that's how video gets turned on in a voice channel.
     u.cam.disabled = S.cameraBusy;
-    u.cam.textContent = !hasCam ? "📷 Start video" : S.camOn ? "📷 Camera on" : "📷 Camera off";
+    setIcon(u.mic, !hasMic ? "🚫" : S.micOn ? "🎤" : "🔇",
+      !hasMic ? "No microphone in this call" : S.micOn ? "Mute microphone" : "Unmute microphone");
+    setIcon(u.cam, !hasCam ? "📹" : S.camOn ? "📷" : "🚫",
+      !hasCam ? "Start video" : S.camOn ? "Turn camera off" : "Turn camera on");
+    u.mic.classList.toggle("tbc-off", hasMic && !S.micOn);
+    u.cam.classList.toggle("tbc-off", hasCam && !S.camOn);
   }
 
   /**
@@ -442,7 +487,7 @@ window.TBCall = (function () {
       if (S.gainChainActive && S.micDest) {
         S.micDest.stream.getAudioTracks().forEach((t) => (t.enabled = S.micOn));
       }
-      u.mic.textContent = S.micOn ? "🎤 Mic on" : "🔇 Mic off";
+      syncDeviceButtons();
       setTileMuted("local", !S.micOn);
       broadcastState();
     };
@@ -787,7 +832,8 @@ window.TBCall = (function () {
 
     // The browser's own "Stop sharing" bar ends the track directly.
     screenTrack.onended = stopScreenShare;
-    S.ui.present.textContent = "🖥 Stop presenting";
+    setIcon(S.ui.present, "🛑", "Stop presenting");
+    S.ui.present.classList.add("tbc-on");
     log(screenAudio
       ? "Sharing your screen with its audio — your camera is still on."
       : window.tbDesktop
@@ -824,7 +870,8 @@ window.TBCall = (function () {
     clearSpotlightIfGone();
     layoutGrid();
 
-    S.ui.present.textContent = "🖥 Present screen";
+    setIcon(S.ui.present, "🖥", "Present your screen");
+    S.ui.present.classList.remove("tbc-on");
     broadcastState();
     log("Stopped sharing.");
   }

@@ -18,11 +18,49 @@
   --tbc-muted: #8a93a6;
   --tbc-dim: #5a6273;
   --tbc-online: #22c55e;
+  --tbc-danger: #f04747;
   color: var(--tbc-text);
+  position: relative; /* the control tray sits over the bottom of the call */
 }
 
-/* ---- control bar ---- */
-.tbc-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; flex: none; }
+/* ---- control tray ----
+   Under the call and over it: out of the way while you're watching, back the
+   moment you move the pointer, touch it, or tab into it. */
+.tbc-bar {
+  position: absolute; left: 50%; bottom: .5rem; transform: translate(-50%, 0);
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  justify-content: center; max-width: calc(100% - 1rem);
+  padding: .4rem .5rem; border-radius: 999px;
+  background: color-mix(in srgb, #0b0d11 82%, transparent);
+  border: 1px solid var(--tbc-border);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .45);
+  opacity: 0; pointer-events: none; transition: opacity .16s ease, transform .16s ease;
+  z-index: 3;
+}
+.tbc.tbc-show-bar .tbc-bar,
+.tbc:hover .tbc-bar,
+.tbc-bar:focus-within { opacity: 1; pointer-events: auto; }
+/* Touch screens have no hover to reveal it, so the tray stays up there.
+   Keyed on a coarse pointer rather than (hover: none), which also matches
+   anything reporting no pointer at all. */
+@media (pointer: coarse) {
+  .tbc-bar { opacity: 1; pointer-events: auto; }
+}
+/* Neutral by default. Colour means something: blue while you're presenting,
+   red for the one button that ends the call. (Written as .tbc-bar button.tbc-icon
+   so it beats the bar's own button rule.) */
+.tbc-bar button.tbc-icon {
+  width: 2.4rem; height: 2.4rem; padding: 0; border-radius: 999px;
+  font-size: 1.15rem; line-height: 1; display: grid; place-items: center;
+  background: var(--tbc-surface); color: var(--tbc-text);
+  border: 1px solid var(--tbc-border);
+}
+.tbc-bar button.tbc-icon:hover { background: #262d3c; }
+.tbc-bar button.tbc-icon.tbc-off { color: var(--tbc-muted); }
+.tbc-bar button.tbc-icon.tbc-on { background: var(--tbc-accent); border-color: transparent; color: #fff; }
+.tbc-bar button.tbc-danger { background: var(--tbc-danger); color: #fff; }
+.tbc-bar button.tbc-danger:hover { background: #f26565; }
+.tbc-bar .tbc-status, .tbc-bar .tbc-code { font-size: .74rem; }
 .tbc-bar button {
   padding: .4rem .7rem; border-radius: 10px; border: 1px solid transparent;
   font-size: .82rem; cursor: pointer; background: var(--tbc-accent); color: #fff;
@@ -32,6 +70,8 @@
 .tbc-bar button.secondary { background: var(--tbc-surface); color: var(--tbc-text); border-color: var(--tbc-border); }
 .tbc-bar button.secondary:hover { background: #262d3c; }
 .tbc-bar button:focus-visible { outline: 2px solid var(--tbc-accent); outline-offset: 2px; }
+.tbc-codebar { display: flex; align-items: center; gap: .5rem; flex: none; }
+.tbc-codebar:empty { display: none; }
 .tbc-spacer { flex: 1; }
 .tbc-code {
   font-family: ui-monospace, SFMono-Regular, monospace; font-size: 1rem; letter-spacing: .16em;

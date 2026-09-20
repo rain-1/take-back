@@ -88,14 +88,26 @@ async function upload(who, path, fields) {
   check('the other tile shows their picture', (await avatarsOf(Bp)).every((a) => a.img), JSON.stringify(await avatarsOf(Bp)));
 
   // Camera inside a voice channel.
+  // The controls hide themselves while you're just watching, and come back on
+  // hover — @Etheri's drawer.
+  const barOpacity = (p) => p.evaluate(() => getComputedStyle(document.querySelector('.tbc-bar')).opacity);
+  await wait(3200);                                  // the tray's opening flash passes
+  check('the controls get out of the way', (await barOpacity(A)) === '0', await barOpacity(A));
+  const box = await A.evaluate(() => { const r = document.querySelector('.tbc').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await A.mouse.move(box.x, box.y);
+  await wait(400);
+  check('and come back when you reach for them', (await barOpacity(A)) === '1', await barOpacity(A));
+  check('Leave is the red one', await A.evaluate(() => document.querySelector('.tbc button[aria-label="Leave the call"]').classList.contains('tbc-danger')));
+
+  // The controls are icons now; they're found by what they say they do.
   const camBtn = (p) => p.evaluate(() => {
-    const b = [...document.querySelectorAll('.tbc button')].find((x) => /Camera|video/i.test(x.textContent));
-    return b ? { text: b.textContent.trim(), hidden: b.classList.contains('tbc-hidden'), disabled: b.disabled } : null;
+    const b = document.querySelector('.tbc button[aria-label="Start video"], .tbc button[aria-label^="Turn camera"]');
+    return b ? { label: b.getAttribute('aria-label'), hidden: b.classList.contains('tbc-hidden'), disabled: b.disabled } : null;
   });
-  check('voice call offers a video button', (await camBtn(A))?.text === '📷 Start video' && !(await camBtn(A)).hidden, JSON.stringify(await camBtn(A)));
-  await A.evaluate(() => [...document.querySelectorAll('.tbc button')].find((x) => /Start video/.test(x.textContent)).click());
+  check('voice call offers a video button', (await camBtn(A))?.label === 'Start video' && !(await camBtn(A)).hidden, JSON.stringify(await camBtn(A)));
+  await A.evaluate(() => document.querySelector('.tbc button[aria-label="Start video"]').click());
   await wait(6000);
-  check('camera turns on mid-call', (await camBtn(A))?.text === '📷 Camera on', JSON.stringify(await camBtn(A)));
+  check('camera turns on mid-call', (await camBtn(A))?.label === 'Turn camera off', JSON.stringify(await camBtn(A)));
   const remoteVideo = await Bp.evaluate(() => [...document.querySelectorAll('.tbc-tile')]
     .filter((t) => t.dataset.tile !== 'local')
     .some((t) => { const v = t.querySelector('video'); return v && v.videoWidth > 0 && !t.classList.contains('novideo'); }));

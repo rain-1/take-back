@@ -24,6 +24,26 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.27.0
+
+**Changed — the layout, to @Etheri's design** (web and desktop)
+- **The top bar is gone.** The logo, the version and "signed in as…" took a
+  whole row and said nothing you needed twice.
+- **You now sit in the bottom-left corner**: your picture, your name, and the
+  ⚙ that opens settings.
+- **Settings is a full page**, not a small box, because it will keep growing.
+  **Log out** lives there now, along with the version and a Reload button.
+- **The call's controls are a tray under the call**: round icons for
+  microphone, camera, presenting and devices, with a **red button to leave**.
+  It gets out of the way while you're watching and comes back when you move
+  the pointer over the call, touch it, or tab into it. On a touch screen it
+  stays put.
+- Every sidebar section — **Servers**, **Groups**, **Friends** — now works the
+  same way: a heading with its own actions, opening the same dialogs. The
+  inline "their nickname" and "new group name" boxes are gone.
+- The call code on the standalone call page moved out of the tray to above the
+  call, where it doesn't push the buttons around.
+
 ## 1.26.0
 
 **New — calls know whether anyone is there** (@river; web and desktop, phone next)
