@@ -24,6 +24,11 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.28.1
+
+**Reverted** — the drag handle under a call is visible again. I'd hidden it
+until hover after @river circled it; they meant it was fine as it was.
+
 ## 1.28.0
 
 **Changed — an old call reads like history** (@river)
@@ -37,8 +42,7 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 - **Get the apps** links to the current Android APK and Windows desktop build,
   so there's no hunting for a link.
 
-**Changed — the leave button is @Etheri's** red handset icon, and the drag
-handle under a call only appears when you reach for it.
+**Changed — the leave button is @Etheri's** red handset icon.
 
 ## 1.27.0
 

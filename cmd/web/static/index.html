@@ -341,14 +341,13 @@
   #callResize {
     flex: none; height: 9px; cursor: ns-resize; position: relative;
   }
-  /* The grip is invisible until you reach for it: it sits right under the call
-     controls and read as a stray line. */
+  /* The grip stays visible: it's how you trade space between the call and the
+     conversation, and @river asked for it to stay put. */
   #callResize::after {
     content: ""; position: absolute; left: 50%; top: 4px; transform: translateX(-50%);
     width: 46px; height: 3px; border-radius: 999px; background: var(--border);
-    opacity: 0; transition: opacity .15s ease;
   }
-  #callResize:hover::after { background: var(--accent); opacity: 1; }
+  #callResize:hover::after { background: var(--accent); }
   body.resizing-call { user-select: none; cursor: ns-resize; }
   @media (max-width: 760px) { #callPane { height: 38vh; } }
   /* Timestamp: tucked to the right, and only fully visible on hover so it
