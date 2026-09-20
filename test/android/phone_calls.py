@@ -17,6 +17,7 @@ friend = register("webcall")
 api("/api/friends/request", "POST", {"nick": friend["nick"]}, cookie=me["cookie"])
 api("/api/friends/respond", "POST", {"userId": me["id"], "accept": True}, cookie=friend["cookie"])
 
+shell(f"am force-stop {PKG}")   # a screen left over from a previous run
 shell(f"pm clear {PKG}")
 for perm in ["RECORD_AUDIO", "POST_NOTIFICATIONS", "CAMERA"]:
     shell(f"pm grant {PKG} android.permission.{perm}")

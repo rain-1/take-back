@@ -11,10 +11,10 @@ android {
         applicationId = "com.takeback.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 34
+        versionCode = 35
         // Keep in step with internal/version/version.go. MAJOR == PROTOCOL:
         // a client can only talk to a server with the same PROTOCOL.
-        versionName = "1.32.0"
+        versionName = "1.33.0"
         buildConfigField("int", "PROTOCOL", "1")
 
         // Default take-back server (REST API + signaling). Overridable at
@@ -47,7 +47,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // Maintained prebuilt WebRTC for Android (org.webrtc.* API).
-    implementation("io.getstream:stream-webrtc-android:1.1.1")
+    implementation("io.getstream:stream-webrtc-android:1.3.10")
 
     // WebSocket + HTTP client for signaling and the REST API.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

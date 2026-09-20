@@ -18,6 +18,7 @@ api("/api/invites/join", "POST", {"code": inv["code"]}, cookie=peer["cookie"])
 chans, _ = api(f"/api/servers/channels?server={sv['id']}", cookie=me["cookie"])
 voice = [c for c in chans if c["kind"] == "voice"][0]
 
+shell(f"am force-stop {PKG}")   # a screen left over from a previous run
 shell(f"pm clear {PKG}")
 for perm in ["RECORD_AUDIO", "POST_NOTIFICATIONS"]:
     shell(f"pm grant {PKG} android.permission.{perm}")

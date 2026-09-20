@@ -23,6 +23,7 @@ PKG = "com.takeback.app"
 me = register("phoneuser")
 other = register("webuser")
 
+shell(f"am force-stop {PKG}")   # a screen left over from a previous run
 shell(f"pm clear {PKG}")
 # Grant the microphone up front; leave the camera for the in-app request.
 for perm in ["RECORD_AUDIO", "POST_NOTIFICATIONS"]:

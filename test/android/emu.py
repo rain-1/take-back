@@ -56,6 +56,13 @@ def tap_text(text=None, rid=None, contains=None, tries=4, label=None):
     return False
 
 def type_text(s):
+    """Type into the focused field.
+
+    Note it does NOT clear the field: every test force-stops and `pm clear`s the
+    app first, which is what actually guarantees an empty one. (A field still
+    holding an earlier run's text silently turns the next login into gibberish —
+    that's a stale app, not something to paper over here.)
+    """
     shell("input text " + s.replace(" ", "%s"))
     time.sleep(0.6)
 

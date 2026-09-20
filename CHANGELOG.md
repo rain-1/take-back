@@ -24,6 +24,50 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.33.0 — security
+
+Three audits (web/backend, desktop, phone), and what they found.
+
+**Fixed — another site could act as you** (web and desktop; the serious one)
+- Nothing checked where a write came from, and `SameSite=Lax` counts a sibling
+  subdomain as the same site, so a page under `chain-of-thought.org` could send
+  messages, remove friends, join or leave servers, delete messages or replace
+  your avatar using your logged-in session. Writes now have to come from
+  take-back itself. Clients that aren't browsers (the phone, the `tb` CLI) are
+  unaffected.
+
+**Fixed — a call could harvest everyone's IP address**
+- A peer's avatar URL travels over signaling, and a call is joined by knowing
+  its code, so anyone in a call could point it at a server they own and collect
+  the address of everyone whose screen their tile appeared on. Only pictures
+  this server minted are loaded now.
+
+**Fixed — the desktop app could be taken somewhere else**
+- Its navigation guard only checked the first hop, so a redirect could land the
+  window on another site with the app's bridge still attached. Redirects and
+  subframes are now checked the same way, and any page script could previously
+  start capturing system audio without the picker — capture now has to match
+  what you chose.
+
+**Fixed — the phone's session could follow a redirect to another server**
+- The cookie store handed every cookie to whatever host was asked for, so a
+  redirect elsewhere took your 30-day session with it. Cookies now belong to the
+  server they came from. Signing in again isn't needed: existing logins migrate.
+
+**Fixed — known-exploited flaw in the phone's video code**
+- The bundled WebRTC carried libvpx from before the fix for CVE-2023-5217, a
+  VP8 encoder overflow exploited in the wild. Updated (libvpx 1.14), and calls
+  re-tested end to end on a real emulator.
+
+**Also**: the phone no longer speaks plain HTTP to anywhere but a local server,
+keeps the session out of cloud backup, only follows web links from messages,
+hides message text on the lock screen, and stops claiming to share your screen
+after you cancel. Message bodies and group names are now bounded, call codes
+come from a proper random source, the app can't be framed, and invite codes no
+longer leak through the Referer header. The desktop app grants only the
+permissions it needs, opens a debug port only in tests, and won't run a helper
+binary found in the working directory.
+
 ## 1.32.0
 
 **New — messages reach your phone while the app is closed** (@river)
