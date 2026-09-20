@@ -24,6 +24,20 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.30.0
+
+**Phone — the rest of the design, and the last two gaps** (Android)
+- **Call controls are round, muted icons** under the video, with @Etheri's red
+  handset to leave. The old prototype title above a call is gone, and the
+  server screen's Invite / ⚙ / ＋ are muted like everything else.
+- **Someone calling shows a banner** across whatever screen you're on, with
+  **Join** and **Decline** — no ringing, matching web.
+- **The app reopens the conversation you had open**, as web and desktop do.
+  Going back to the list on purpose still leaves you there.
+
+**Changed — the desktop app lives on main** now, rather than the branch it was
+prototyped on. Its Present/Mute helpers follow the web client's icon controls.
+
 ## 1.29.0
 
 **Phone catches up with the new design and with calls** (Android)
