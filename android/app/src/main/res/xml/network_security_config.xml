@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Which servers this app may talk to in the clear.
+
+  The session cookie is a 30-day bearer token and messages are the whole point
+  of the app, so plain HTTP to anywhere is not something to leave switched on:
+  one hostile network between the phone and the server reads and replaces the
+  lot. The app used to allow it everywhere (android:usesCleartextTraffic), which
+  was only ever wanted for a dev server on this machine.
+
+  So: HTTPS everywhere, except the loopback addresses a local take-back is
+  reached on — 10.0.2.2 is the development machine as seen from the emulator.
+  Self-hosting on a LAN address over plain HTTP needs that host added here.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

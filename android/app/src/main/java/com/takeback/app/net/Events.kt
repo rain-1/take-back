@@ -440,6 +440,10 @@ object Events {
             .setAutoCancel(true)
             .setContentIntent(tap)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Says "this one is private" to the lock screen: whoever picks the
+            // phone up sees that a message arrived, not what it said, for anyone
+            // whose system setting is to hide sensitive notifications.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
         // POST_NOTIFICATIONS (API 33+) is requested by the UI; guard against denial.
         runCatching { NotificationManagerCompat.from(appContext).notify(id, n) }
