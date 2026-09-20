@@ -24,6 +24,22 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.28.0
+
+**Changed — an old call reads like history** (@river)
+- A call message now says **"river started a call that lasted 42 minutes."**,
+  **"You missed a call from river."** or **"…they declined it."**, with a green
+  handset and no buttons. Only a call you can actually join has **Join** (and
+  **Decline**) — including call messages from before calls were tracked, which
+  used to offer a Join that led into an empty room.
+
+**New — the apps are in Settings** (@Etheri)
+- **Get the apps** links to the current Android APK and Windows desktop build,
+  so there's no hunting for a link.
+
+**Changed — the leave button is @Etheri's** red handset icon, and the drag
+handle under a call only appears when you reach for it.
+
 ## 1.27.0
 
 **Changed — the layout, to @Etheri's design** (web and desktop)

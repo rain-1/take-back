@@ -97,7 +97,11 @@ async function upload(who, path, fields) {
   await A.mouse.move(box.x, box.y);
   await wait(400);
   check('and come back when you reach for them', (await barOpacity(A)) === '1', await barOpacity(A));
-  check('Leave is the red one', await A.evaluate(() => document.querySelector('.tbc button[aria-label="Leave the call"]').classList.contains('tbc-danger')));
+  check('Leave is the red handset', await A.evaluate(() => {
+    const b = document.querySelector('.tbc button[aria-label="Leave the call"]');
+    const circle = b && b.querySelector('svg circle');
+    return !!circle && circle.getAttribute('fill') === '#d0021b';
+  }));
 
   // The controls are icons now; they're found by what they say they do.
   const camBtn = (p) => p.evaluate(() => {

@@ -52,6 +52,10 @@ window.TBCall = (function () {
   // create, and re-creating one per call would eventually fail.
   let audioCtx = null;
 
+  // @Etheri's leave button: a red circle with a hung-up handset. Inlined rather
+  // than fetched, so it can't be served stale from an edge cache.
+  const LEAVE_ICON = `<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="256" fill="#d0021b" fill-opacity="1"></circle><g><path d="M170.738 311.468c8.07-42.15 99.697-131.543 138.247-138.247 11.314 11.314 33.94 33.942 56.57 33.942l79.195-79.196c0-22.628-35.103-49.413-56.57-56.57C272.583 32.865 32.865 272.583 71.398 388.182c7.156 21.467 33.94 56.57 56.57 56.57l79.195-79.196c0-22.628-25.11-42.772-36.424-54.086z" fill="#fff" fill-opacity="1"></path></g></svg>`;
+
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -127,8 +131,9 @@ window.TBCall = (function () {
     u.zoomOut = iconButton("⤡", "Show everyone");
     u.zoomOut.classList.add("tbc-hidden");
     u.settings = iconButton("⚙", "Devices & preferences");
-    u.leave = iconButton("📞", "Leave the call");
-    u.leave.classList.add("tbc-danger");
+    u.leave = iconButton("", "Leave the call");
+    u.leave.classList.add("tbc-leave");
+    u.leave.innerHTML = LEAVE_ICON;
     // The code (call.html only) sits above the call, not in the tray: the tray
     // is controls, and a long code pushed Leave onto a second row.
     const codeBar = el("div", "tbc-codebar");

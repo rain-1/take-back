@@ -47,6 +47,10 @@ async function register(nick) {
   check('member column shown', await vis(alice, 'memberCol'));
   check('#general opened', (await text(alice, '#chatNick'))[0] === '# general');
   check('the message box is ready to type in', await alice.evaluate(() => document.activeElement && document.activeElement.id === 'msgInput'));
+  check('settings offers the app downloads', await alice.evaluate(() => {
+    const hrefs = [...document.querySelectorAll('#settingsModal a.btnlink')].map((a) => a.getAttribute('href'));
+    return hrefs.includes('/take-back.apk') && hrefs.includes('/take-back-desktop.zip');
+  }));
   check('channels listed', JSON.stringify(await text(alice, '#channelList .cname')) === '["general","General"]', JSON.stringify(await text(alice, '#channelList .cname')));
   check('alice is admin in member list', (await text(alice, '#memberList .member')).some((t) => /alice \(you\)admin/.test(t)), JSON.stringify(await text(alice, '#memberList .member')));
   check('call button hidden in channel', !(await vis(alice, 'callBtn')));

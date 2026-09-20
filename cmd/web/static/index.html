@@ -53,7 +53,13 @@
     transition: background .15s ease, border-color .15s ease, opacity .15s ease;
   }
   button:hover { background: #6f9bff; }
-  button.secondary { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  button.secondary, a.btnlink { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  /* A link that acts like a button (the app downloads). */
+  a.btnlink {
+    font-size: .875rem; font-weight: 550; padding: .5rem .85rem; border-radius: var(--radius);
+    border: 1px solid var(--border); text-decoration: none; display: inline-block; white-space: nowrap;
+  }
+  a.btnlink:hover { background: #262d3c; }
   button.secondary:hover { background: #262d3c; }
   button.ghost { background: transparent; color: var(--dim); padding: .25rem .45rem; border: 0; }
   button.ghost:hover { color: var(--text); background: var(--surface-2); }
@@ -253,8 +259,10 @@
   }
   .msg img.thumb:hover { opacity: .9; }
   .callcard { margin-top: .35rem; }
-  .callline { display: flex; align-items: center; gap: .4rem; }
+  .callline { display: flex; align-items: center; gap: .45rem; }
   .callline.over { color: var(--muted); }
+  .callline b { color: var(--text); font-weight: 650; }
+  .callglyph { color: var(--online, #3ba55d); font-size: .95rem; }
   .callactions { display: flex; gap: .4rem; margin-top: .4rem; }
   .live {
     width: .5rem; height: .5rem; border-radius: 999px; background: var(--online, #3ba55d);
@@ -333,11 +341,14 @@
   #callResize {
     flex: none; height: 9px; cursor: ns-resize; position: relative;
   }
+  /* The grip is invisible until you reach for it: it sits right under the call
+     controls and read as a stray line. */
   #callResize::after {
     content: ""; position: absolute; left: 50%; top: 4px; transform: translateX(-50%);
     width: 46px; height: 3px; border-radius: 999px; background: var(--border);
+    opacity: 0; transition: opacity .15s ease;
   }
-  #callResize:hover::after { background: var(--accent); }
+  #callResize:hover::after { background: var(--accent); opacity: 1; }
   body.resizing-call { user-select: none; cursor: ns-resize; }
   @media (max-width: 760px) { #callPane { height: 38vh; } }
   /* Timestamp: tucked to the right, and only fully visible on hover so it
@@ -691,6 +702,16 @@
           <div class="setting-sub" id="settingsWho"></div>
         </div>
         <button class="secondary" id="logoutBtn">Log out</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          <div class="setting-title">Get the apps</div>
+          <div class="setting-sub">The latest phone and desktop builds — always this server's current version.</div>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+          <a class="btnlink" href="/take-back.apk" download>📱 Android</a>
+          <a class="btnlink" href="/take-back-desktop.zip" download>🖥 Windows</a>
+        </div>
       </div>
       <div class="setting-row">
         <div class="setting-label">
@@ -2186,55 +2207,68 @@ function paintCall(box, code, callerId) {
   box.replaceChildren();
   const line = document.createElement("div");
   line.className = "callline";
-  const mine = c ? c.callerId === me.id : callerId === me.id;
-  const inThis = TBCall.active() && TBCall.room() === code.toUpperCase();
+  const who = (id) => (id === me.id ? "You" : (nickOfUser(id) || (c && c.callerNick) || "Someone"));
+  const caller = who(c ? c.callerId : callerId);
+  const started = `<b>${esc(caller)}</b> started a call`;
 
-  if (!c || !c.outcome) {
-    const here = (c && c.participants) || [];
-    const names = here.filter((id) => id !== me.id).map((id) => nickOfUser(id) || "someone");
-    const listed = names.map((n) => `<b>${esc(n)}</b>`).join(", ");
-    if (!c || (c.here || 0) === 0) {
-      line.textContent = mine ? "📞 Calling… nobody has joined yet" : "📞 Call — nobody is in it right now";
-    } else if (names.length === 0) {
-      line.innerHTML = `<span class="live"></span>📞 You're in this call`;
-    } else if (inThis) {
-      // I'm in it too, so nobody is waiting on anybody.
-      line.innerHTML = `<span class="live"></span>📞 In this call with ${listed}`;
-    } else if (names.length === 1) {
-      line.innerHTML = `<span class="live"></span>📞 ${listed} is waiting`;
-    } else {
-      line.innerHTML = `<span class="live"></span>📞 ${listed} are in this call`;
-    }
+  // A call nobody recorded is one from before calls were tracked: history, not
+  // something to join.
+  if (!c) {
+    line.classList.add("over");
+    line.innerHTML = `<span class="callglyph">📞</span>${started}.`;
     box.append(line);
-    const actions = document.createElement("div");
-    actions.className = "callactions";
-    actions.append(mkBtn(inThis ? "Back to call" : "Join", "", () => joinCall(code)));
-    // Turning it down tells them, rather than leaving them waiting.
-    if (!mine && !inThis) actions.append(mkBtn("Decline", "secondary", () => declineCall(code)));
-    box.append(actions);
     return;
   }
 
-  const who = c.callerId === me.id ? "you" : (nickOfUser(c.callerId) || c.callerNick || "someone");
-  if (c.outcome === "missed") {
-    line.className += " over";
-    line.textContent = mine ? "📞 No answer" : `📞 Missed call from ${who}`;
-  } else if (c.outcome === "declined") {
-    line.className += " over";
-    const by = c.declinedBy === me.id ? "you" : (nickOfUser(c.declinedBy) || "they");
-    line.textContent = `📞 Declined by ${by}`;
+  if (c.outcome) {
+    line.classList.add("over");
+    if (c.outcome === "ended") {
+      line.innerHTML = `<span class="callglyph">📞</span>${started}` +
+        (c.answered && c.ended ? ` that lasted ${esc(fmtDuration(c.ended - c.answered))}.` : ".");
+    } else if (c.outcome === "declined") {
+      const by = c.declinedBy === me.id ? "You" : (nickOfUser(c.declinedBy) || "They");
+      line.innerHTML = by === "You"
+        ? `<span class="callglyph">📞</span>${started}. You declined it.`
+        : `<span class="callglyph">📞</span>${started}. <b>${esc(by)}</b> declined it.`;
+    } else { // missed
+      line.innerHTML = c.callerId === me.id
+        ? `<span class="callglyph">📞</span>${started}. Nobody joined.`
+        : `<span class="callglyph">📞</span>You missed a call from <b>${esc(caller)}</b>.`;
+    }
+    box.append(line);
+    return;
+  }
+
+  // Live: joinable, and it says who is actually in it.
+  const inThis = TBCall.active() && TBCall.room() === code.toUpperCase();
+  const here = (c.participants || []).filter((id) => id !== me.id).map((id) => nickOfUser(id) || "someone");
+  const listed = here.map((n) => `<b>${esc(n)}</b>`).join(", ");
+  line.classList.add("livecall");
+  if (inThis) {
+    line.innerHTML = `<span class="callglyph live-glyph">📞</span>${started}. ` +
+      (here.length ? `You're in it with ${listed}.` : "You're in it.");
+  } else if (here.length) {
+    line.innerHTML = `<span class="callglyph live-glyph">📞</span>${started}. ${listed} ` +
+      (here.length === 1 ? "is waiting." : "are in it.");
   } else {
-    line.className += " over";
-    line.textContent = `📞 Call ended${c.answered && c.ended ? " · " + fmtDuration(c.ended - c.answered) : ""}`;
+    line.innerHTML = `<span class="callglyph live-glyph">📞</span>${started}.`;
   }
   box.append(line);
+
+  const actions = document.createElement("div");
+  actions.className = "callactions";
+  actions.append(mkBtn(inThis ? "Back to call" : "Join", "", () => joinCall(code)));
+  if (c.callerId !== me.id && !inThis) actions.append(mkBtn("Decline", "secondary", () => declineCall(code)));
+  box.append(actions);
 }
 
 function fmtDuration(seconds) {
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
-  const m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
-  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
+  const m = Math.round(seconds / 60);
+  if (seconds < 60) return "less than a minute";
+  if (m < 60) return m === 1 ? "a minute" : `${m} minutes`;
+  const h = Math.floor(m / 60), rest = m % 60;
+  const hours = h === 1 ? "an hour" : `${h} hours`;
+  return rest ? `${hours} ${rest}m` : hours;
 }
 
 async function declineCall(code) {

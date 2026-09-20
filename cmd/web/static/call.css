@@ -58,8 +58,13 @@
 .tbc-bar button.tbc-icon:hover { background: #262d3c; }
 .tbc-bar button.tbc-icon.tbc-off { color: var(--tbc-muted); }
 .tbc-bar button.tbc-icon.tbc-on { background: var(--tbc-accent); border-color: transparent; color: #fff; }
-.tbc-bar button.tbc-danger { background: var(--tbc-danger); color: #fff; }
-.tbc-bar button.tbc-danger:hover { background: #f26565; }
+/* The leave button IS its icon — a red circle with the handset down. */
+.tbc-bar button.tbc-leave {
+  background: transparent; border-color: transparent; padding: 0;
+  transition: transform .12s ease, filter .12s ease;
+}
+.tbc-bar button.tbc-leave:hover { background: transparent; filter: brightness(1.12); transform: scale(1.06); }
+.tbc-bar button.tbc-leave svg { width: 100%; height: 100%; display: block; }
 .tbc-bar .tbc-status, .tbc-bar .tbc-code { font-size: .74rem; }
 .tbc-bar button {
   padding: .4rem .7rem; border-radius: 10px; border: 1px solid transparent;
