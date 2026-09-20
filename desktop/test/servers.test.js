@@ -124,9 +124,11 @@ const visible = (page, id) => page.evaluate((id) => { const e = document.getElem
     await page.evaluate(() => [...document.querySelectorAll("#channelList .chan.voice")][0].click());
     await bp.evaluate(() => [...document.querySelectorAll("#channelList .chan.voice")][0].click());
     const inCall = await waitUntil(async () => (await page.$$(".tbc-tile")).length === 2, 15000);
-    const mic = await page.evaluate(() => [...document.querySelectorAll(".tbc button")].map((b) => b.textContent).join(" | "));
+    // The call's controls are icons now, so read what they say they do.
+    const mic = await page.evaluate(() =>
+      [...document.querySelectorAll(".tbc button")].map((b) => b.getAttribute("aria-label") || b.textContent).join(" | "));
     record("joining a voice channel connects the app to the other member", inCall, `${(await page.$$(".tbc-tile")).length} tiles; buttons: ${mic}`);
-    record("the app's microphone is live in the voice call", /Mic on/.test(mic) && !/No mic/.test(mic));
+    record("the app's microphone is live in the voice call", /Mute microphone/.test(mic) && !/No microphone/.test(mic));
     const act = await api(web, bob, `/api/servers/active?server=${crew.id}`);
     record("server sees both in the voice channel", (act.voice[voice.id] || []).length === 2, JSON.stringify(act.voice));
     const occupants = await waitUntil(async () => (await texts(page, ".voice-occupant")).length === 2);

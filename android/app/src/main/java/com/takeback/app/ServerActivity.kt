@@ -84,16 +84,10 @@ class ServerActivity : AppCompatActivity(), EventsListener {
         }
         header.addView(iconBox)
         header.addView(title)
-        header.addView(Button(this).apply {
-            text = "Invite"
-            contentDescription = "Invite people"
-            setOnClickListener { server?.let { ServerDialogs.invite(this@ServerActivity, it) } }
+        header.addView(headerAction("Invite", "Invite people") {
+            server?.let { ServerDialogs.invite(this@ServerActivity, it) }
         })
-        header.addView(Button(this).apply {
-            text = "⚙"
-            contentDescription = "Server menu"
-            setOnClickListener { openMenu() }
-        })
+        header.addView(headerAction("⚙", "Server menu") { openMenu() })
         root.addView(header)
 
         content = LinearLayout(this).apply {
@@ -121,6 +115,7 @@ class ServerActivity : AppCompatActivity(), EventsListener {
 
     override fun onResume() {
         super.onResume()
+        IncomingCalls.attach(this) // someone calling shows up over whatever you're doing
         load()
     }
 
@@ -201,13 +196,20 @@ class ServerActivity : AppCompatActivity(), EventsListener {
             letterSpacing = 0.08f
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
-        if (onAdd != null) row.addView(Button(this, null, android.R.attr.buttonStyleSmall).apply {
-            text = "＋"
-            contentDescription = "New channel"
-            setOnClickListener { onAdd() }
-        })
+        if (onAdd != null) row.addView(headerAction("＋", "New channel") { onAdd() })
         content.addView(row)
     }
+
+    /**
+     * A muted, borderless action beside a heading — the same as the home
+     * screen's, rather than a bright accent button.
+     */
+    private fun headerAction(label: String, describe: String, onClick: () -> Unit): Button =
+        Button(androidx.appcompat.view.ContextThemeWrapper(this, R.style.HeaderAction), null, 0).apply {
+            text = label
+            contentDescription = describe
+            setOnClickListener { onClick() }
+        }
 
     private fun baseRow(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -344,4 +346,9 @@ class ServerActivity : AppCompatActivity(), EventsListener {
     override fun onMentionsChanged() = runOnUiThread { render() }
 
     override fun onPresence(userId: Long, online: Boolean) {}
+
+    override fun onPause() {
+        super.onPause()
+        IncomingCalls.detach(this)
+    }
 }

@@ -85,12 +85,14 @@ class ChatActivity : AppCompatActivity(), EventsListener {
         binding.callBtn.setOnClickListener { startCall() }
         binding.replyCancel.setOnClickListener { cancelReply() }
 
+        LastChat.remember(this, "dm", friendId, friendNick)
         Events.addListener(this)
         load()
     }
 
     override fun onResume() {
         super.onResume()
+        IncomingCalls.attach(this) // someone calling shows up over whatever you're doing
         Events.openFriendId = friendId
         Events.clearMessageNotification(friendId) // viewing it dismisses its notification
         Mentions.clear(Mentions.dmKey(friendId)) // and clears its red "you were mentioned" pip
@@ -98,6 +100,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onPause() {
         super.onPause()
+        IncomingCalls.detach(this)
         Events.openFriendId = null
     }
 

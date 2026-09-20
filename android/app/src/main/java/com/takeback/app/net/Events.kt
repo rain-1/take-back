@@ -253,6 +253,7 @@ object Events {
                 val c = ApiClient.parseCall(msg.optJSONObject("message") ?: return)
                 val incoming = msg.optString("type") == "call_incoming"
                 listeners.forEach { it.onCallState(c, incoming) }
+                com.takeback.app.IncomingCalls.update(c)
                 if (incoming && c.callerId != ApiClient.myId) {
                     post(NOTIF_CALL, "Incoming call", "${c.callerNick} is calling")
                 }

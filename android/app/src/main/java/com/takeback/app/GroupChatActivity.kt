@@ -90,12 +90,14 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         binding.replyCancel.setOnClickListener { cancelReply() }
         binding.addMemberBtn.setOnClickListener { promptAddMember() }
 
+        LastChat.remember(this, "group", groupId, groupName, extraName = callCode)
         Events.addListener(this)
         load()
     }
 
     override fun onResume() {
         super.onResume()
+        IncomingCalls.attach(this) // someone calling shows up over whatever you're doing
         Events.openGroupId = groupId
         Events.clearGroupMessageNotification(groupId) // viewing it dismisses its notification
         Mentions.clear(Mentions.groupKey(groupId)) // and clears its red "you were mentioned" pip
@@ -103,6 +105,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onPause() {
         super.onPause()
+        IncomingCalls.detach(this)
         Events.openGroupId = null
     }
 

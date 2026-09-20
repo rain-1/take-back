@@ -70,10 +70,13 @@ class HomeActivity : AppCompatActivity(), EventsListener {
 
         Mentions.init(this)
         Events.addListener(this)
+        // Come back to where you were, like the web client does on reload.
+        LastChat.reopen(this)
     }
 
     override fun onResume() {
         super.onResume()
+        IncomingCalls.attach(this) // someone calling shows up over whatever you're doing
         Events.openFriendId = null
         refresh()
     }
@@ -468,5 +471,10 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         val inVoice = activity.voice.values.sumOf { it.size }
         servers = servers.map { if (it.id == activity.serverId) it.copy(voiceCount = inVoice) else it }
         renderServers()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        IncomingCalls.detach(this)
     }
 }

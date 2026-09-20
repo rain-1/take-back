@@ -368,13 +368,13 @@ function startTestControl(port) {
 // exactly as deployed.
 function runTestScript() {
   const click = `(() => {
-    const b = [...document.querySelectorAll('button')].find(x => /Present screen/.test(x.textContent));
+    const b = document.querySelector('button[aria-label="Present your screen"]');
     if (b) { b.click(); return true; } return false;
   })()`;
   // TB_TEST_MUTE_MIC=1: mute the fake microphone first, so a live demo call
   // isn't full of Chromium's test beeps.
   const muteMic = `(() => {
-    const b = [...document.querySelectorAll('button')].find(x => /Mic on/.test(x.textContent));
+    const b = document.querySelector('button[aria-label="Mute microphone"]');
     if (b) { b.click(); return true; } return false;
   })()`;
   const tryClick = async (attempt = 0) => {

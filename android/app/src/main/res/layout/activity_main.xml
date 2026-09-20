@@ -11,22 +11,7 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textColor="#E8EAF0"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="webrtc nat-passthrough prototype"
-            android:textColor="#8A93A6"
-            android:paddingBottom="12dp" />
-
-        <!-- Step 1: nickname -->
+        <!-- Step 1: nickname (the standalone lobby; a call from a chat skips it) -->
         <LinearLayout
             android:id="@+id/nickStep"
             android:layout_width="match_parent"
@@ -110,12 +95,6 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/call_code"
-                    android:textColor="#8A93A6" />
-
-                <TextView
                     android:id="@+id/callCode"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -139,69 +118,6 @@
                 android:layout_height="wrap_content"
                 android:text="@string/connecting"
                 android:textColor="#8A93A6" />
-
-            <!-- Leave sits outside the scrolling row, so ending a call is always
-                 one tap away however many other buttons there are. -->
-            <LinearLayout
-                android:id="@+id/callControls"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-            <HorizontalScrollView
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:scrollbars="none">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/settingsBtn"
-                    style="?android:attr/buttonStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="⚙" />
-
-                <Button
-                    android:id="@+id/micBtn"
-                    style="?android:attr/buttonStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🎤" />
-
-                <Button
-                    android:id="@+id/camBtn"
-                    style="?android:attr/buttonStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="📷" />
-
-                <Button
-                    android:id="@+id/shareBtn"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/share_screen" />
-
-                <Button
-                    android:id="@+id/flipBtn"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/flip_camera" />
-
-            </LinearLayout>
-            </HorizontalScrollView>
-
-                <Button
-                    android:id="@+id/leaveBtn"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/leave" />
-            </LinearLayout>
 
             <!-- Devices & preferences: set once and keep. -->
             <LinearLayout
@@ -332,6 +248,68 @@
                 android:layout_height="wrap_content"
                 android:columnCount="2"
                 android:layout_marginTop="8dp" />
+
+            <!-- Leave sits outside the scrolling row, so ending a call is always
+                 one tap away however many other buttons there are. -->
+            <LinearLayout
+                android:id="@+id/callControls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+            <HorizontalScrollView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/settingsBtn"
+                    style="@style/CallIcon"
+                    android:text="⚙" />
+
+                <Button
+                    android:id="@+id/micBtn"
+                    style="@style/CallIcon"
+                    android:text="🎤" />
+
+                <Button
+                    android:id="@+id/camBtn"
+                    style="@style/CallIcon"
+                    android:text="📷" />
+
+                <Button
+                    android:id="@+id/shareBtn"
+                    style="@style/CallIcon"
+                    android:contentDescription="@string/share_screen"
+                    android:text="🖥" />
+
+                <Button
+                    android:id="@+id/flipBtn"
+                    style="@style/CallIcon"
+                    android:contentDescription="@string/flip_camera"
+                    android:text="🔄" />
+
+            </LinearLayout>
+            </HorizontalScrollView>
+
+                <ImageButton
+                    android:id="@+id/leaveBtn"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@string/leave"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_leave_call" />
+            </LinearLayout>
+
+
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

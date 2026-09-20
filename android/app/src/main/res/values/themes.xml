@@ -37,5 +37,24 @@
         <item name="android:textColor">#8A93A6</item>
         <item name="android:textSize">13sp</item>
         <item name="android:textAllCaps">false</item>
+        <item name="backgroundTint">@null</item>
+        <item name="android:background">@android:color/transparent</item>
+    </style>
+
+    <!-- A round call control: the phone's version of the web tray's icons. -->
+    <style name="CallIcon" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:layout_width">52dp</item>
+        <item name="android:layout_height">52dp</item>
+        <item name="android:layout_marginEnd">8dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:background">@drawable/bg_call_icon</item>
+        <!-- Material3 inflates <Button> as MaterialButton, which paints
+             backgroundTint over android:background — that's what made these
+             accent blue instead of the muted circle. -->
+        <item name="backgroundTint">@null</item>
+        <item name="android:textColor">#E8EAF0</item>
+        <item name="android:textSize">20sp</item>
     </style>
 </resources>

@@ -55,6 +55,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun logout() = lifecycleScope.launch {
         runCatching { ApiClient.logout() }
+        LastChat.forget(this@SettingsActivity)
         Events.stop()
         startActivity(Intent(this@SettingsActivity, LoginActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))

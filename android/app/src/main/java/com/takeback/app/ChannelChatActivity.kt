@@ -77,6 +77,8 @@ class ChannelChatActivity : AppCompatActivity(), EventsListener {
         binding.imgBtn.setOnClickListener { pickAttachment.launch("*/*") }
         binding.replyCancel.setOnClickListener { cancelReply() }
 
+        LastChat.remember(this, "channel", channelId,
+            intent.getStringExtra(EXTRA_CHANNEL_NAME) ?: "channel", serverId, serverName)
         Events.addListener(this)
         load()
     }
@@ -93,6 +95,7 @@ class ChannelChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onResume() {
         super.onResume()
+        IncomingCalls.attach(this) // someone calling shows up over whatever you're doing
         Events.openChannelId = channelId
         Events.clearChannelMessageNotification(channelId)
         Mentions.clear(Mentions.channelKey(channelId))
@@ -100,6 +103,7 @@ class ChannelChatActivity : AppCompatActivity(), EventsListener {
 
     override fun onPause() {
         super.onPause()
+        IncomingCalls.detach(this)
         Events.openChannelId = null
     }
 

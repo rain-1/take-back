@@ -496,7 +496,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         sharing = true
         broadcastState()
         engine?.startScreenShare(capturer) // adds a 2nd track; camera keeps running
-        binding.shareBtn.text = getString(R.string.stop_sharing)
+        binding.shareBtn.text = "🛑"
         if (shareAudioWanted) {
             // The projection exists once capture has started.
             val projection = capturer.mediaProjection
@@ -511,7 +511,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         engine?.stopScreenShare()
         stopService(Intent(this, ScreenCaptureService::class.java))
         sharing = false
-        binding.shareBtn.text = getString(R.string.share_screen)
+        binding.shareBtn.text = "🖥"
         broadcastState()
     }
 

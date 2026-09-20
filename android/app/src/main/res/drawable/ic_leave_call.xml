@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- @Etheri's leave button: a red circle with the handset down. Same artwork as
+     the web client inlines, redrawn as a vector drawable. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="52dp"
+    android:height="52dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:fillColor="#D0021B"
+        android:pathData="M256,0 A256,256 0 1,1 255.9,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M170.738 311.468c8.07-42.15 99.697-131.543 138.247-138.247 11.314 11.314 33.94 33.942 56.57 33.942l79.195-79.196c0-22.628-35.103-49.413-56.57-56.57C272.583 32.865 32.865 272.583 71.398 388.182c7.156 21.467 33.94 56.57 56.57 56.57l79.195-79.196c0-22.628-25.11-42.772-36.424-54.086z" />
+</vector>
