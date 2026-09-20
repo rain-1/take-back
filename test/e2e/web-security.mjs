@@ -10,6 +10,7 @@
 // Run against a fresh server with -open-registration (registers 2 accounts).
 // BASE lets this run against a server on another port without editing the file.
 const B = process.env.BASE || 'http://127.0.0.1:19290';
+import http from 'node:http';
 const EVIL = 'https://evil.example';
 
 let failures = 0;
@@ -81,5 +82,44 @@ check(page.headers.get('x-frame-options') === 'DENY'
   'the app page refuses to be framed');
 check(page.headers.get('referrer-policy') === 'no-referrer',
   'the app page sends no Referer, so an invite code in the URL cannot leak');
+
+// ---- nothing on this origin redirects off it ----
+//
+// The desktop app hands a window the preload bridge because the URL is ours, so
+// an endpoint here that reflected a caller-supplied URL into a Location header
+// would carry that window — bridge attached — to whoever asked. No handler sets
+// Location itself; these are the redirects the standard library issues on its
+// own (path cleaning, directory and index.html tidying), probed for the ways one
+// is usually turned outward: "//host" and "///host" read as protocol-relative if
+// the slashes survive cleaning, and CRLF in a path reads as a second header if
+// it is not escaped.
+//
+// Sent down a raw socket rather than through fetch, which would tidy the path
+// away before it ever left.
+function rawGet(path) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(B);
+    const req = http.request(
+      { host: u.hostname, port: u.port, method: 'GET', path },
+      (res) => { res.resume(); resolve({ status: res.statusCode, location: res.headers.location || '' }); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const offOrigin = [];
+for (const path of [
+  '//evil.example', '///evil.example', '//evil.example/x', '/media//evil.example',
+  '/api//evil.example', '/media/..//evil.example', '/.', '/..', '/call.html/',
+  '/media/index.html', '//evil.example%0d%0aX-Injected:%20yes',
+]) {
+  const { location } = await rawGet(path);
+  // Off-origin means a scheme, or the "//host" form a browser reads as one.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(location) || location.startsWith('//')) {
+    offOrigin.push(`${path} -> ${location}`);
+  }
+  if (/[\r\n]/.test(location)) offOrigin.push(`${path} -> CRLF in Location`);
+}
+check(offOrigin.length === 0, 'no request can be redirected off this origin', offOrigin.join('; '));
 
 process.exit(failures === 0 ? 0 : 1);
