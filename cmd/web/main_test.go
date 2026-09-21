@@ -2,6 +2,7 @@ package main
 
 import (
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -32,9 +33,16 @@ func TestRenderPagesStampsAssetVersion(t *testing.T) {
 			t.Errorf("%s still references ?v=dev after rendering", name)
 		}
 		stamped += strings.Count(body, want)
+		if strings.Contains(body, "tb-protocol:dev") {
+			t.Errorf("%s still references the development protocol marker", name)
+		}
 	}
 	if stamped == 0 {
 		t.Fatalf("no asset URL carries %q — cache busting is not wired up", want)
+	}
+	if !strings.Contains(pages["/index.html"],
+		"tb-protocol:"+strconv.Itoa(version.Protocol)) {
+		t.Fatal("index page protocol does not match the server protocol")
 	}
 }
 

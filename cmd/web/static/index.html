@@ -656,12 +656,12 @@
   <div class="card">
     <div class="brand">take-back</div>
     <h2 id="authTitle">Sign in to continue</h2>
-    <p id="authNote" class="auth-note hidden">Your password, passkey or authenticator app — whichever you set up.</p>
-    <input id="authNick" placeholder="nickname" autocomplete="username">
-    <input id="authPass" type="password" placeholder="password" autocomplete="current-password">
+    <p id="authNote" class="auth-note">Checking how this server signs you in…</p>
+    <input id="authNick" class="hidden" placeholder="nickname" autocomplete="username">
+    <input id="authPass" class="hidden" type="password" placeholder="password" autocomplete="current-password">
     <div class="err" id="authErr"></div>
     <button id="authBtn" style="width:100%;">Log in</button>
-    <div class="toggle" id="authToggle">No account? <a>Register</a></div>
+    <div class="toggle hidden" id="authToggle">No account? <a>Register</a></div>
     <div class="apk-dl">📱 <a href="/take-back.apk">Get the Android app</a></div>
   </div>
 </div>
@@ -867,7 +867,7 @@
 <script>
 // Wire-protocol version this client speaks. Must match the server's MAJOR /
 // protocol; see internal/version. Bump only alongside a breaking API change.
-const CLIENT_PROTOCOL = 1;
+const CLIENT_PROTOCOL = Number("tb-protocol:dev".split(":")[1]);
 // Stamped by cmd/web at startup (see assetVersion), so a tab knows its own build.
 const PAGE_VERSION = "tb-version:dev".split(":")[1];
 
@@ -929,13 +929,23 @@ async function initAuth() {
   }
   let st = null;
   try { st = await api("/api/auth/status"); } catch { /* old server: keep the form */ }
-  if (!st?.provider) return;
+  if (!st?.provider) {
+    // A self-hosted or older server still uses the local password form. Keep
+    // it hidden until this decision is known, so an Authentik server never
+    // flashes password fields it will not use.
+    $("authNote").classList.add("hidden");
+    $("authNick").classList.remove("hidden");
+    $("authPass").classList.remove("hidden");
+    $("authToggle").classList.remove("hidden");
+    return;
+  }
 
   authMode = "provider";
   $("authNick").classList.add("hidden");
   $("authPass").classList.add("hidden");
   $("authToggle").classList.add("hidden");
   $("authNote").classList.remove("hidden");
+  $("authNote").textContent = "Your password, passkey or authenticator app — whichever you set up.";
   $("authBtn").textContent = "Sign in";
   if (st.ready === false) {
     $("authErr").textContent = st.detail || "the sign-in service is not reachable right now";

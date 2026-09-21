@@ -43,6 +43,7 @@ var assetVersion = strings.NewReplacer(
 	// The page also states which build it is, so it can say whether the tab
 	// you're looking at is the current one.
 	"tb-version:dev", "tb-version:"+version.Version,
+	"tb-protocol:dev", fmt.Sprintf("tb-protocol:%d", version.Protocol),
 )
 
 // renderPages reads every .html file out of the embedded assets and applies
