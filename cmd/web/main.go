@@ -157,5 +157,9 @@ func setSecurityHeaders(w http.ResponseWriter) {
 func isBackendPath(p string) bool {
 	return strings.HasPrefix(p, "/api/") ||
 		strings.HasPrefix(p, "/media/") ||
+		// Sign-in redirects: the browser is sent to /auth/login and the
+		// provider sends it back to /auth/callback, both of which the server
+		// (not this static host) answers.
+		strings.HasPrefix(p, "/auth/") ||
 		p == "/ws"
 }

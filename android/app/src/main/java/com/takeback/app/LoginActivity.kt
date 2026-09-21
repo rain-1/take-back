@@ -2,8 +2,11 @@ package com.takeback.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.net.Uri
+import android.view.View
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.lifecycle.lifecycleScope
 import com.takeback.app.databinding.ActivityLoginBinding
 import com.takeback.app.net.ApiClient
@@ -19,12 +22,15 @@ class LoginActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityLoginBinding
     private var registerMode = false
+    private var providerMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ApiClient.init(this)
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        handleAuthIntent(intent)
 
         // Try to resume a saved session before showing the form.
         lifecycleScope.launch {
@@ -55,6 +61,12 @@ class LoginActivity : AppCompatActivity() {
         checkServerCompatibility()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthIntent(intent)
+    }
+
     /**
      * Warn if the server speaks a different wire protocol than this build —
      * MAJOR/PROTOCOL mismatch means the app must be updated (see
@@ -66,6 +78,7 @@ class LoginActivity : AppCompatActivity() {
             binding.serverLabel.text =
                 "${ApiClient.base} · app v${BuildConfig.VERSION_NAME} · server v${v.version}"
             applyRegistrationPolicy(v.openRegistration)
+            discoverAuthMode()
             if (!v.compatible) {
                 AlertDialog.Builder(this@LoginActivity)
                     .setTitle("Update required")
@@ -77,6 +90,21 @@ class LoginActivity : AppCompatActivity() {
                     .setPositiveButton("OK", null)
                     .show()
             }
+        }
+    }
+
+    private suspend fun discoverAuthMode() {
+        val status = runCatching { ApiClient.authStatus() }.getOrNull() ?: return
+        providerMode = status.provider
+        if (!providerMode) return
+        binding.nick.visibility = View.GONE
+        binding.password.visibility = View.GONE
+        binding.toggle.visibility = View.GONE
+        binding.providerNote.visibility = View.VISIBLE
+        binding.authTitle.setText(R.string.sign_in)
+        binding.submit.setText(R.string.sign_in)
+        if (!status.ready) binding.error.text = status.detail.ifBlank {
+            "The sign-in service is not reachable right now."
         }
     }
 
@@ -109,12 +137,47 @@ class LoginActivity : AppCompatActivity() {
 
     private fun submit() {
         binding.error.text = ""
+        if (providerMode) {
+            val url = Uri.parse(ApiClient.base + "/auth/login?native=1")
+            CustomTabsIntent.Builder().build().launchUrl(this, url)
+            return
+        }
         val nick = binding.nick.text.toString().trim()
         val password = binding.password.text.toString()
         binding.submit.isEnabled = false
         lifecycleScope.launch {
             try {
                 if (registerMode) ApiClient.register(nick, password) else ApiClient.login(nick, password)
+                goHome()
+            } catch (e: ApiException) {
+                binding.error.text = e.message
+            } catch (e: Exception) {
+                binding.error.text = "Network error: ${e.message}"
+            } finally {
+                binding.submit.isEnabled = true
+            }
+        }
+    }
+
+    private fun handleAuthIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "com.takeback.app" || data.host != "auth") return
+        // Do not redeem the same callback again after an Activity recreation.
+        setIntent(Intent(this, LoginActivity::class.java))
+        val error = data.getQueryParameter("error")
+        if (!error.isNullOrBlank()) {
+            binding.error.text = error
+            return
+        }
+        val code = data.getQueryParameter("code")
+        if (code.isNullOrBlank()) {
+            binding.error.text = "That sign-in did not return a code."
+            return
+        }
+        binding.submit.isEnabled = false
+        lifecycleScope.launch {
+            try {
+                ApiClient.finishProviderLogin(code)
                 goHome()
             } catch (e: ApiException) {
                 binding.error.text = e.message

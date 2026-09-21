@@ -13,6 +13,23 @@
 
 const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
+// This preload is attached to the BrowserWindow, so it also starts when that
+// window temporarily visits Authentik during sign-in. Never give the provider
+// page take-back's native audio bridge. Main-process permission checks provide
+// a second boundary, but the bridge should not exist there in the first place.
+const serverOrigin = (() => {
+  try {
+    const server = (process.env.TB_SERVER || "https://takeback.chain-of-thought.org").replace(/\/$/, "");
+    return new URL(process.env.TB_START_URL || server + "/").origin;
+  } catch (_) {
+    return null;
+  }
+})();
+if (location.origin !== serverOrigin) {
+  // Preload scripts cannot return at top level; keep all bridge setup inside
+  // the trusted-origin branch.
+} else {
+
 let audioCallback = null;
 const stats = { received: 0, delivered: 0 }; // diagnostics, reported in test mode
 ipcRenderer.on("audio:chunk", (_event, chunk) => {
@@ -181,3 +198,4 @@ function installShim() {
 }
 
 webFrame.executeJavaScript(`(${installShim.toString()})()`);
+}

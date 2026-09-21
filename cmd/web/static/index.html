@@ -656,6 +656,7 @@
   <div class="card">
     <div class="brand">take-back</div>
     <h2 id="authTitle">Sign in to continue</h2>
+    <p id="authNote" class="auth-note hidden">Your password, passkey or authenticator app — whichever you set up.</p>
     <input id="authNick" placeholder="nickname" autocomplete="username">
     <input id="authPass" type="password" placeholder="password" autocomplete="current-password">
     <div class="err" id="authErr"></div>
@@ -913,6 +914,34 @@ function applyRegistrationPolicy(open) {
   toggle.style.cursor = "default";
 }
 
+// How this server wants people to sign in. A server with an identity provider
+// configured (Authentik) has no password endpoints at all: the button hands
+// over to it, and it is where passkeys and 2FA live. A self-hosted server
+// without one keeps the original nick/password form.
+let authMode = "password";
+
+async function initAuth() {
+  // Anything the provider sent us back with — an expired sign-in, a refusal.
+  const failed = new URLSearchParams(location.search).get("authError");
+  if (failed) {
+    $("authErr").textContent = failed.replace(/\+/g, " ");
+    history.replaceState({}, "", location.pathname);
+  }
+  let st = null;
+  try { st = await api("/api/auth/status"); } catch { /* old server: keep the form */ }
+  if (!st?.provider) return;
+
+  authMode = "provider";
+  $("authNick").classList.add("hidden");
+  $("authPass").classList.add("hidden");
+  $("authToggle").classList.add("hidden");
+  $("authNote").classList.remove("hidden");
+  $("authBtn").textContent = "Sign in";
+  if (st.ready === false) {
+    $("authErr").textContent = st.detail || "the sign-in service is not reachable right now";
+  }
+}
+
 let registerMode = false;
 $("authToggle").onclick = () => {
   registerMode = !registerMode;
@@ -923,6 +952,10 @@ $("authToggle").onclick = () => {
   $("authToggle").querySelector("a").onclick = $("authToggle").onclick;
 };
 $("authBtn").onclick = async () => {
+  if (authMode === "provider") {
+    location.href = "/auth/login";
+    return;
+  }
   $("authErr").textContent = "";
   const nick = $("authNick").value.trim(), password = $("authPass").value;
   try {
@@ -984,8 +1017,14 @@ $("notifyToggle").onchange = () => {
 };
 
 $("logoutBtn").onclick = async () => {
-  await api("/api/logout", { method: "POST" }).catch(() => {});
   events?.close();
+  if (authMode === "provider") {
+    // Hand over to the server, which clears the session here and then ends it
+    // at the provider — otherwise the next sign-in walks straight back in.
+    location.href = "/auth/logout";
+    return;
+  }
+  await api("/api/logout", { method: "POST" }).catch(() => {});
   location.reload();
 };
 
@@ -1165,7 +1204,15 @@ function notify(title, body, onClick) {
 // cached page talking to a newer server.
 (async () => {
   checkVersion();
-  try { me = await api("/api/me"); enterApp(); } catch { /* show auth */ }
+  try {
+    me = await api("/api/me");
+    // Still needed while signed in: the Log out button behaves differently
+    // when a provider is in play.
+    initAuth();
+    enterApp();
+  } catch {
+    await initAuth(); // no session: shape the sign-in screen for this server
+  }
 })();
 
 // checkVersion shows the server version, and warns if this page's protocol no

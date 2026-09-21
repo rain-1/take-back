@@ -24,6 +24,25 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.0.0 — identity belongs in one place
+
+- Sign-in is delegated to an OpenID Connect provider (the production deployment
+  uses Authentik), adding passkeys and authenticator-app MFA without putting
+  OAuth tokens or client secrets in take-back's browser, Android, desktop, or
+  CLI clients.
+- Existing take-back accounts can be linked once by matching their provider
+  username; thereafter the provider's stable subject identifies them and a
+  rename cannot claim another account.
+- Android signs in through a Custom Tab and exchanges a two-minute, single-use
+  callback code for the ordinary `tb_session`. The desktop client permits the
+  configured provider only during top-level navigation and exposes neither its
+  native bridge nor take-back permissions there. The CLI uses device flow.
+- Logging out clears both the local session and the provider session. Legacy
+  `/api/login` and `/api/register` return 410 once the migration fallback is
+  disabled.
+- Deployment now includes an idempotent Authentik setup script, nginx config,
+  account administration commands, and a staged migration runbook.
+
 ## 1.34.0 — the phone app, drawn
 
 The phone app looked homemade next to the web client: emoji standing in for

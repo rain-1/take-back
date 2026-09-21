@@ -11,11 +11,11 @@ android {
         applicationId = "com.takeback.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 36
+        versionCode = 37
         // Keep in step with internal/version/version.go. MAJOR == PROTOCOL:
         // a client can only talk to a server with the same PROTOCOL.
-        versionName = "1.34.0"
-        buildConfigField("int", "PROTOCOL", "1")
+        versionName = "2.0.0"
+        buildConfigField("int", "PROTOCOL", "2")
 
         // Default take-back server (REST API + signaling). Overridable at
         // runtime via the in-app Settings screen — handy for pointing at a
@@ -44,6 +44,7 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.activity:activity-ktx:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
+    implementation("androidx.browser:browser:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // Maintained prebuilt WebRTC for Android (org.webrtc.* API).

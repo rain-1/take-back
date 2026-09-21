@@ -18,12 +18,12 @@ package version
 
 const (
 	// Version is the human-readable release of this build.
-	Version = "1.34.0"
+	Version = "2.0.0"
 
 	// Protocol is the wire-contract version. It must equal the MAJOR component
 	// of Version. Clients compare their own Protocol against the server's and
 	// refuse/warn on mismatch.
-	Protocol = 1
+	Protocol = 2
 
 	// Name identifies the service in the /api/version response.
 	Name = "take-back"

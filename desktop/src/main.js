@@ -22,6 +22,10 @@ for (const stream of [process.stdout, process.stderr]) {
 
 const SERVER = (process.env.TB_SERVER || "https://takeback.chain-of-thought.org").replace(/\/$/, "");
 const START_URL = process.env.TB_START_URL || SERVER + "/";
+// The identity provider is the one additional top-level origin the sign-in
+// redirect may visit. It receives no native permissions; the preload bridge
+// also refuses to expose itself there (see preload.js).
+const AUTH_ORIGIN = new URL(process.env.TB_AUTH_ORIGIN || "https://auth.chain-of-thought.org").origin;
 
 // Test mode (see test/): fake camera/mic, no picker (share this window's own
 // frame + TB_TEST_AUDIO), and side effects that would need a person — opening
@@ -140,7 +144,7 @@ function createWindow() {
       openInvite(invite);
       return;
     }
-    if (!isTakeBack(url)) {
+    if (!isAllowedTopLevel(url)) {
       event.preventDefault();
       if (TEST) console.log(`[test] blocked navigation to ${url}`);
     }
@@ -188,6 +192,10 @@ function createWindow() {
 // started for. Anything unparseable is not (an origin check that throws would
 // otherwise let the navigation through).
 const isTakeBack = (url) => originOf(url) === allowedOrigin;
+const isAllowedTopLevel = (url) => {
+  const origin = originOf(url);
+  return origin === allowedOrigin || origin === AUTH_ORIGIN;
+};
 
 // ---- server invite links ------------------------------------------------------
 

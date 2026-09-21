@@ -8,15 +8,19 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rain1/take-back/internal/api"
+	"github.com/rain1/take-back/internal/auth"
 	"github.com/rain1/take-back/internal/presence"
 	"github.com/rain1/take-back/internal/store"
 	"github.com/rain1/take-back/internal/version"
@@ -48,9 +52,9 @@ type client struct {
 	id    string
 	nick  string
 	voice bool // admitted to a voice channel; its seat is released on leave
-	room *room
-	conn *websocket.Conn
-	send chan Signal
+	room  *room
+	conn  *websocket.Conn
+	send  chan Signal
 }
 
 // room is the set of clients sharing one call id-code.
@@ -338,6 +342,15 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	openReg := flag.Bool("open-registration", false,
 		"allow anyone to create an account via POST /api/register (default: closed)")
+	// Account administration, for a server whose accounts live in an identity
+	// provider: there is no signup form to use, and hand-writing SQL against a
+	// live database is how people lose data.
+	makeAccount := flag.String("make-account", "",
+		"create a provider-managed account with this nick (no password) and exit")
+	linkAccount := flag.String("link", "",
+		"link an existing account to a provider identity, as nick=subject, and exit")
+	listAccounts := flag.Bool("list-accounts", false,
+		"print every account and whether it is linked to an identity, then exit")
 	flag.Parse()
 
 	if *showVersion {
@@ -352,6 +365,13 @@ func main() {
 	}
 	defer db.Close()
 
+	if *makeAccount != "" || *linkAccount != "" || *listAccounts {
+		if err := runAdmin(db, *makeAccount, *linkAccount, *listAccounts); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	media, err := api.NewMediaStore(*mediaDir)
 	if err != nil {
 		log.Fatalf("media dir: %v", err)
@@ -360,7 +380,31 @@ func main() {
 	// Presence hub is told who each user's friends are so it can route events.
 	pres := presence.NewHub(db.AcceptedFriendIDs)
 
-	restAPI := &api.API{Store: db, Presence: pres, Media: media, OpenRegistration: *openReg}
+	// Sign-in is delegated to an OpenID Connect provider (Authentik) when one
+	// is configured. The secret arrives by environment, not by flag, so it
+	// never shows up in `ps` output; see deploy/authentik/README.md.
+	oidcCfg := auth.Config{
+		Issuer:       os.Getenv("TB_OIDC_ISSUER"),
+		ClientID:     os.Getenv("TB_OIDC_CLIENT_ID"),
+		ClientSecret: os.Getenv("TB_OIDC_CLIENT_SECRET"),
+		RedirectURL:  os.Getenv("TB_OIDC_REDIRECT_URL"),
+	}
+	if oidcCfg.Enabled() {
+		log.Printf("sign-in: OpenID Connect via %s", oidcCfg.Issuer)
+		if os.Getenv("TB_AUTH_PASSWORD_FALLBACK") == "1" {
+			log.Printf("sign-in: local passwords ALSO still accepted (migration window)")
+		}
+	} else {
+		log.Printf("sign-in: local passwords (no identity provider configured)")
+	}
+
+	restAPI := &api.API{
+		Store: db, Presence: pres, Media: media,
+		OpenRegistration: *openReg,
+		OIDC:             auth.New(oidcCfg),
+		ClaimByUsername:  os.Getenv("TB_OIDC_CLAIM_BY_USERNAME") == "1",
+		PasswordFallback: os.Getenv("TB_AUTH_PASSWORD_FALLBACK") == "1",
+	}
 
 	// WebRTC signaling hub (unchanged).
 	h := newHub()
@@ -383,4 +427,46 @@ func main() {
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// runAdmin handles the one-shot account commands. They exist for the migration
+// to an identity provider: accounts have to be created and matched up to
+// provider identities without a signup form, and an admin who has to write SQL
+// by hand against a live database eventually writes the wrong UPDATE.
+func runAdmin(db *store.Store, makeAccount, link string, list bool) error {
+	switch {
+	case makeAccount != "":
+		u, err := db.CreateUser(makeAccount, "")
+		if err != nil {
+			return fmt.Errorf("create %q: %w", makeAccount, err)
+		}
+		fmt.Printf("created %s (id %d), with no password — it can only be used through the identity provider\n",
+			u.Nick, u.ID)
+	case link != "":
+		nick, sub, ok := strings.Cut(link, "=")
+		if !ok || nick == "" || sub == "" {
+			return errors.New("use -link nick=subject")
+		}
+		u, _, err := db.UserByNick(nick)
+		if err != nil {
+			return fmt.Errorf("no account %q: %w", nick, err)
+		}
+		if err := db.LinkOIDCSub(u.ID, sub); err != nil {
+			return fmt.Errorf("link %s: %w", nick, err)
+		}
+		fmt.Printf("%s (id %d) is now the account for identity %s\n", u.Nick, u.ID, sub)
+	case list:
+		accounts, err := db.AllAccounts()
+		if err != nil {
+			return err
+		}
+		for _, a := range accounts {
+			state := "not linked yet"
+			if a.Sub != "" {
+				state = "identity " + a.Sub
+			}
+			fmt.Printf("%-20s id=%-4d %s\n", a.Nick, a.ID, state)
+		}
+	}
+	return nil
 }

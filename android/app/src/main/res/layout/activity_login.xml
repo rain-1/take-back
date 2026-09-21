@@ -47,6 +47,17 @@
         android:importantForAutofill="no" />
 
     <TextView
+        android:id="@+id/providerNote"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/provider_sign_in_note"
+        android:textColor="@color/tb_muted"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:visibility="gone"
+        android:paddingBottom="8dp" />
+
+    <TextView
         android:id="@+id/error"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -66,6 +66,10 @@ func (kl *keyedLimiter) cleanupLoop() {
 var (
 	registerLimiter = newKeyedLimiter(rate.Every(12*time.Minute), 5)
 	loginLimiter    = newKeyedLimiter(rate.Every(6*time.Second), 10)
+	// The CLI polls while somebody finishes signing in on another device, so
+	// this one is generous: a poll every 2s sustained, with room for a burst
+	// when several terminals are waiting at once.
+	devicePollLimiter = newKeyedLimiter(rate.Every(2*time.Second), 30)
 )
 
 // clientIP extracts the real client address, trusting the header Cloudflare

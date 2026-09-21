@@ -7,6 +7,7 @@ Type=simple
 User=takeback
 Group=takeback
 WorkingDirectory=/opt/takeback
+EnvironmentFile=-/etc/takeback/oidc.env
 ExecStart=/opt/takeback/takeback-server -addr 127.0.0.1:8081 -db /var/lib/takeback/takeback.db -media /var/lib/takeback/media
 Restart=always
 RestartSec=2

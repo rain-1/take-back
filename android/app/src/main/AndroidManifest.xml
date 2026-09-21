@@ -36,10 +36,22 @@
 
         <activity
             android:name=".LoginActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The server returns a short-lived, single-use code here after
+                 Authentik has finished. No provider token or password enters
+                 the app. The package-specific scheme avoids collisions with
+                 ordinary web links; the code is still safe if another app
+                 observes it because redeeming it consumes it immediately. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.takeback.app" android:host="auth" />
             </intent-filter>
         </activity>
 

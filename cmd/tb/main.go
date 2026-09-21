@@ -373,11 +373,18 @@ func cmdLogin(c *client, args []string) error {
 	password := fs.String("password", "", "password (prompted if omitted)")
 	register := fs.Bool("register", false, "create the account instead of logging in")
 	_ = fs.Parse(args)
+	c.cfg.Server = *server
+
+	// A server with an identity provider has no passwords to give it: sign in
+	// on another device instead, the way a TV or a games console does.
+	if provider, err := c.usesProvider(); err == nil && provider {
+		return c.deviceLogin()
+	}
+
 	if fs.NArg() < 1 {
 		return errors.New("usage: tb login [-register] [-password PW] <nick>")
 	}
 	nick := fs.Arg(0)
-	c.cfg.Server = *server
 
 	pw := *password
 	if pw == "" {
@@ -395,6 +402,70 @@ func cmdLogin(c *client, args []string) error {
 	}
 	fmt.Printf("logged in as %s%s%s on %s\n", bold, nick, reset, c.cfg.Server)
 	return nil
+}
+
+// usesProvider asks the server how people sign in to it.
+func (c *client) usesProvider() (bool, error) {
+	var status struct {
+		Provider bool `json:"provider"`
+	}
+	if err := c.once("GET", "/api/auth/status", nil, &status); err != nil {
+		return false, err
+	}
+	return status.Provider, nil
+}
+
+// deviceLogin runs the OAuth device flow through the take-back server: it
+// prints a URL and a short code, waits for that to be approved in a browser
+// somewhere, and ends up with an ordinary take-back session. The terminal
+// never handles a password, a passkey or a 2FA code.
+func (c *client) deviceLogin() error {
+	var start struct {
+		DeviceCode      string `json:"deviceCode"`
+		UserCode        string `json:"userCode"`
+		VerificationURI string `json:"verificationUri"`
+		Interval        int    `json:"interval"`
+		ExpiresIn       int    `json:"expiresIn"`
+	}
+	if err := c.once("POST", "/api/auth/device/start", map[string]string{}, &start); err != nil {
+		return fmt.Errorf("start sign-in: %w", err)
+	}
+	fmt.Printf("open %s%s%s\n", bold, start.VerificationURI, reset)
+	fmt.Printf("and enter the code %s%s%s\n\n", bold, start.UserCode, reset)
+	fmt.Print("waiting for you to finish signing in… (ctrl-c to give up)")
+
+	interval := time.Duration(max(start.Interval, 1)) * time.Second
+	deadline := time.Now().Add(time.Duration(max(start.ExpiresIn, 300)) * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(interval)
+		var out struct {
+			Status string `json:"status"`
+			Token  string `json:"token"`
+			User   user   `json:"user"`
+		}
+		err := c.once("POST", "/api/auth/device/poll",
+			map[string]string{"deviceCode": start.DeviceCode}, &out)
+		if err != nil {
+			fmt.Println()
+			return err
+		}
+		if out.Status == "pending" {
+			fmt.Print(".")
+			continue
+		}
+		if out.Token == "" {
+			fmt.Println()
+			return errors.New("the server did not return a session")
+		}
+		c.cfg.Session, c.cfg.Nick = out.Token, out.User.Nick
+		if err := c.cfg.save(); err != nil {
+			return err
+		}
+		fmt.Printf("\n\nlogged in as %s%s%s on %s\n", bold, out.User.Nick, reset, c.cfg.Server)
+		return nil
+	}
+	fmt.Println()
+	return errors.New("that sign-in expired before it was approved — run tb login again")
 }
 
 func cmdInbox(c *client, args []string) error {

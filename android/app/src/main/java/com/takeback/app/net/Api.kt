@@ -41,6 +41,12 @@ data class ServerVersion(
     val compatible: Boolean get() = protocol == BuildConfig.PROTOCOL
 }
 
+data class AuthStatus(
+    val provider: Boolean,
+    val ready: Boolean,
+    val detail: String,
+)
+
 data class Friend(
     val user: User,
     val status: String,     // pending | accepted
@@ -279,6 +285,24 @@ object ApiClient {
 
     suspend fun login(nick: String, password: String): User =
         userCall("/api/login", nick, password)
+
+    suspend fun authStatus(): AuthStatus {
+        val o = JSONObject(get("/api/auth/status"))
+        return AuthStatus(
+            provider = o.optBoolean("provider"),
+            ready = !o.has("ready") || o.optBoolean("ready"),
+            detail = o.optString("detail"),
+        )
+    }
+
+    /** Exchange the browser callback's one-use code for the usual session cookie. */
+    suspend fun finishProviderLogin(code: String): User {
+        val body = JSONObject().put("code", code)
+        return parseUser(post("/api/auth/native", jsonBody(body))).also {
+            myId = it.id
+            myNick = it.nick
+        }
+    }
 
     private suspend fun userCall(path: String, nick: String, password: String): User {
         val body = JSONObject().put("nick", nick).put("password", password)

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rain1/take-back/internal/auth"
 	"github.com/rain1/take-back/internal/presence"
 	"github.com/rain1/take-back/internal/store"
 	"github.com/rain1/take-back/internal/version"
@@ -27,6 +28,30 @@ type API struct {
 	Presence *presence.Hub
 	Media    *MediaStore
 
+	// OIDC is the identity provider take-back delegates sign-in to. Nil (or
+	// unconfigured) means this server has no way to log in beyond sessions
+	// that already exist — see cmd/server for how it is supplied.
+	OIDC *auth.Provider
+
+	// PasswordFallback keeps the old nick/password endpoints alive while an
+	// identity provider is being introduced. It exists for the migration
+	// window: clients that predate the provider (a phone that hasn't been
+	// updated yet) can still sign in, and nobody is locked out of a running
+	// system. It weakens the provider's guarantees — a password still opens
+	// the same door a passkey does — so it is meant to be switched off as soon
+	// as every client can use the provider.
+	PasswordFallback bool
+
+	// ClaimByUsername lets a provider identity take over a pre-existing
+	// take-back account whose nick matches its username. It exists for the
+	// one-time migration of accounts that predate the provider, and is off
+	// unless the operator asks for it: with it on, anyone who can create a
+	// username in the provider can claim the matching account here.
+	ClaimByUsername bool
+
+	// oidc holds sign-ins in progress; Routes initialises it.
+	oidc *oidcState
+
 	// OpenRegistration allows anyone who can reach the server to create an
 	// account. It defaults to false — the zero value is the safe one, so a
 	// deployment that forgets the flag stays closed rather than silently
@@ -36,6 +61,8 @@ type API struct {
 
 // Routes registers all API endpoints on mux under /api/.
 func (a *API) Routes(mux *http.ServeMux) {
+	a.oidc = newOIDCState()
+	a.oidcRoutes(mux)
 	mux.HandleFunc("/api/version", a.handleVersion) // unauthenticated: compat check
 	mux.HandleFunc("/api/register", a.handleRegister)
 	mux.HandleFunc("/api/login", a.handleLogin)
@@ -117,9 +144,16 @@ func (a *API) auth(next func(http.ResponseWriter, *http.Request, *store.User)) h
 }
 
 func (a *API) setSession(w http.ResponseWriter, r *http.Request, userID int64) error {
+	_, err := a.setSessionToken(w, r, userID)
+	return err
+}
+
+// setSessionToken is setSession, handing back the token it minted so a caller
+// (the OIDC callback) can record what the session was created from.
+func (a *API) setSessionToken(w http.ResponseWriter, r *http.Request, userID int64) (string, error) {
 	token, err := a.Store.NewSession(userID, sessionTTL)
 	if err != nil {
-		return err
+		return "", err
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
@@ -134,7 +168,7 @@ func (a *API) setSession(w http.ResponseWriter, r *http.Request, userID int64) e
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
-	return nil
+	return token, nil
 }
 
 // isHTTPS reports whether the original client request used TLS.
@@ -178,6 +212,13 @@ type credentials struct {
 }
 
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if a.passwordsRetired() {
+		// Accounts live in the identity provider now. 410 rather than 404 so an
+		// old client says something true instead of "server not found".
+		writeErr(w, http.StatusGone,
+			"this server signs in through its identity provider — update your app, or open /auth/login")
+		return
+	}
 	if !a.OpenRegistration {
 		// Checked before the rate limiter and before reading the body: a closed
 		// server should spend nothing on the request.
@@ -215,6 +256,11 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if a.passwordsRetired() {
+		writeErr(w, http.StatusGone,
+			"this server signs in through its identity provider — update your app, or open /auth/login")
+		return
+	}
 	if !allow(w, r, loginLimiter) {
 		return
 	}
