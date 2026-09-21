@@ -97,7 +97,7 @@ object ServerDialogs {
         val name = input(activity, "e.g. Movie night crew")
         var icon: Uri? = null
         val iconLabel = TextView(activity).apply {
-            text = "No icon (optional)"; setTextColor(Color.parseColor("#8A93A6")); textSize = 13f
+            text = "No icon (optional)"; setTextColor(tbColor(R.color.tb_muted)); textSize = 13f
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
         val iconRow = LinearLayout(activity).apply {
@@ -169,7 +169,7 @@ object ServerDialogs {
                         preview.addView(TextView(activity).apply {
                             val count = "${p.server.memberCount} member" + if (p.server.memberCount == 1) "" else "s"
                             text = p.server.name + "\n" + count + if (p.alreadyMember) " · you're already in it" else ""
-                            setTextColor(Color.parseColor("#E8EAF0")); textSize = 14f
+                            setTextColor(tbColor(R.color.tb_text)); textSize = 14f
                             setPadding(dp(activity, 12), 0, 0, 0)
                         })
                     }
@@ -280,8 +280,8 @@ object ServerDialogs {
     fun createChannel(activity: AppCompatActivity, sv: Server, kind: String, onCreated: () -> Unit) {
         val name = input(activity, if (kind == "voice") "e.g. Hangout" else "e.g. announcements")
         val group = RadioGroup(activity).apply { orientation = RadioGroup.HORIZONTAL }
-        val text = RadioButton(activity).apply { this.text = "# Text"; id = View.generateViewId(); setTextColor(Color.parseColor("#E8EAF0")) }
-        val voice = RadioButton(activity).apply { this.text = "🔊 Voice"; id = View.generateViewId(); setTextColor(Color.parseColor("#E8EAF0")) }
+        val text = RadioButton(activity).apply { this.text = "Text"; id = View.generateViewId(); setTextColor(tbColor(R.color.tb_text)) }
+        val voice = RadioButton(activity).apply { this.text = "Voice"; id = View.generateViewId(); setTextColor(tbColor(R.color.tb_text)) }
         group.addView(text); group.addView(voice)
         group.check(if (kind == "voice") voice.id else text.id)
         val dialog = AlertDialog.Builder(activity)
@@ -307,13 +307,13 @@ object ServerDialogs {
 
     /** Long-press menu on a channel, for admins. */
     fun channelMenu(activity: AppCompatActivity, ch: Channel, onChanged: () -> Unit) {
-        val glyph = if (ch.kind == "voice") "🔊 " else "#"
         AlertDialog.Builder(activity)
-            .setTitle(glyph + ch.name)
+            .setIcon(if (ch.kind == "voice") R.drawable.ic_voice_channel else R.drawable.ic_text_channel)
+            .setTitle(ch.name)
             .setItems(arrayOf("Rename", "Delete")) { _, i ->
                 if (i == 0) prompt(activity, "Rename channel", ch.name, "Save") { n ->
                     ApiClient.renameChannel(ch.id, n); onChanged()
-                } else confirm(activity, "Delete $glyph${ch.name}?",
+                } else confirm(activity, "Delete ${ch.name}?",
                     if (ch.kind == "voice") "Anyone in it is disconnected." else "Its messages go with it, for everyone.", "Delete") {
                     ApiClient.deleteChannel(ch.id); onChanged()
                 }
@@ -352,7 +352,7 @@ object ServerDialogs {
             .show()
     }
 
-    private fun input(ctx: Context, hint: String) = EditText(ctx).apply {
+    private fun input(ctx: Context, hint: String) = tbInput(ctx).apply {
         this.hint = hint
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         isSingleLine = true
@@ -360,13 +360,13 @@ object ServerDialogs {
     }
 
     private fun label(ctx: Context, text: String) = TextView(ctx).apply {
-        this.text = text; setTextColor(Color.parseColor("#8A93A6")); textSize = 12f
+        this.text = text; setTextColor(tbColor(R.color.tb_muted)); textSize = 12f
         setPadding(0, dp(ctx, 8), 0, 0)
     }
 
     private fun note(ctx: Context, text: String, error: Boolean = false) = TextView(ctx).apply {
         this.text = text; textSize = 13f
-        setTextColor(Color.parseColor(if (error) "#F87171" else "#8A93A6"))
+        setTextColor(tbColor(if (error) R.color.tb_danger else R.color.tb_muted))
     }
 
     private fun column(ctx: Context, vararg views: View) = LinearLayout(ctx).apply {

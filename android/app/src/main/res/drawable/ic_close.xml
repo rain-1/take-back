@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn for take-back: the plus turned 45°, so close and add match. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512"
+    android:tint="?attr/colorControlNormal">
+    <group android:rotation="45" android:pivotX="256" android:pivotY="256">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M224,116 h64 v108 h108 v64 h-108 v108 h-64 v-108 h-108 v-64 h108 z" />
+    </group>
+</vector>

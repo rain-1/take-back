@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0B0D11">
+    android:background="@color/tb_bg">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -11,7 +11,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:padding="12dp"
-        android:background="#11141B">
+        android:background="@color/tb_panel">
 
         <View
             android:id="@+id/dot"
@@ -25,15 +25,20 @@
             android:layout_weight="1"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
-            android:textColor="#E8EAF0"
+            android:textColor="@color/tb_text"
             android:textSize="17sp"
             android:textStyle="bold" />
 
-        <Button
+        <ImageButton
             android:id="@+id/callBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="📹" />
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Start a call"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:tint="@color/tb_muted"
+            android:src="@drawable/ic_call" />
     </LinearLayout>
 
     <ScrollView
@@ -58,24 +63,23 @@
         android:gravity="center_vertical"
         android:visibility="gone"
         android:padding="8dp"
-        android:background="#0E1117">
+        android:background="@color/tb_panel_alt">
 
         <TextView
             android:id="@+id/replyBarText"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textColor="#8A93A6"
+            android:textColor="@color/tb_muted"
             android:textSize="13sp"
             android:maxLines="1"
             android:ellipsize="end" />
 
-        <Button
+        <ImageButton
             android:id="@+id/replyCancel"
-            style="?android:attr/buttonStyleSmall"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="✕" />
+            style="@style/HeaderIcon"
+            android:contentDescription="Cancel reply"
+            android:src="@drawable/ic_close" />
     </LinearLayout>
 
     <LinearLayout
@@ -84,30 +88,39 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:padding="8dp"
-        android:background="#11141B">
+        android:background="@color/tb_panel">
 
-        <Button
+        <ImageButton
             android:id="@+id/imgBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🖼️" />
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Attach a file"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:tint="@color/tb_muted"
+            android:src="@drawable/ic_attach" />
 
         <EditText
+            style="@style/TbInput"
             android:id="@+id/input"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="@string/message_hint"
-            android:textColor="#E8EAF0"
-            android:textColorHint="#5A6273"
             android:inputType="textMultiLine|textCapSentences"
             android:maxLines="4"
             android:importantForAutofill="no" />
 
-        <Button
+        <ImageButton
             android:id="@+id/sendBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/send" />
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Send"
+            android:padding="8dp"
+            android:scaleType="fitCenter"
+            android:tint="@color/tb_accent"
+            android:src="@drawable/ic_send" />
     </LinearLayout>
 </LinearLayout>

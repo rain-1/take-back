@@ -32,12 +32,12 @@ object ReactionsUi {
             val pill = TextView(ctx).apply {
                 text = "${r.emoji} ${r.count}"
                 textSize = 12f
-                setTextColor(Color.parseColor("#E8EAF0"))
+                setTextColor(tbColor(R.color.tb_text))
                 setPadding((10 * density).toInt(), (3 * density).toInt(), (10 * density).toInt(), (3 * density).toInt())
                 background = GradientDrawable().apply {
                     cornerRadius = 999f
-                    setColor(Color.parseColor(if (r.mine) "#2F4A8F" else "#171B24"))
-                    setStroke((1 * density).toInt(), Color.parseColor(if (r.mine) "#2F4A8F" else "#232936"))
+                    setColor(tbColor(if (r.mine) R.color.tb_accent_dim else R.color.tb_surface))
+                    setStroke((1 * density).toInt(), tbColor(if (r.mine) R.color.tb_accent_dim else R.color.tb_border))
                 }
                 setOnClickListener { onToggle(r.emoji, !r.mine) }
                 setOnLongClickListener { showWho(ctx, r); true }
@@ -75,12 +75,12 @@ object ReactionsUi {
     fun quoteBlock(ctx: Context, who: String, body: String, onJump: () -> Unit): LinearLayout {
         val d = ctx.resources.displayMetrics.density
         val strip = android.view.View(ctx).apply {
-            setBackgroundColor(Color.parseColor("#5B8CFF"))
+            setBackgroundColor(tbColor(R.color.tb_accent))
             layoutParams = LinearLayout.LayoutParams((3 * d).toInt(), -1)
         }
         val text = TextView(ctx).apply {
             text = "$who: ${body.ifEmpty { "message" }}"
-            setTextColor(Color.parseColor("#9BB4E8"))
+            setTextColor(tbColor(R.color.tb_quote_text))
             textSize = 12f
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -90,7 +90,7 @@ object ReactionsUi {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             val lp = LinearLayout.LayoutParams(-2, -2); lp.bottomMargin = (4 * d).toInt(); layoutParams = lp
-            setBackgroundColor(Color.parseColor("#22000000"))
+            setBackgroundColor(tbColor(R.color.tb_quote_bg))
             addView(strip); addView(text)
             setOnClickListener { onJump() }
         }

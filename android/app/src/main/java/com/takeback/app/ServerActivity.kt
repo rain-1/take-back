@@ -36,9 +36,6 @@ class ServerActivity : AppCompatActivity(), EventsListener {
     companion object {
         const val EXTRA_SERVER_ID = "serverId"
         const val EXTRA_SERVER_NAME = "serverName"
-        private const val DIM = "#5A6273"
-        private const val TEXT = "#E8EAF0"
-        private const val MUTED = "#8A93A6"
     }
 
     private var serverId = 0L
@@ -66,28 +63,28 @@ class ServerActivity : AppCompatActivity(), EventsListener {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0B0D11"))
+            setBackgroundColor(tbColor(R.color.tb_bg))
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(10), dp(8), dp(10))
-            setBackgroundColor(Color.parseColor("#11141B"))
+            setBackgroundColor(tbColor(R.color.tb_panel))
         }
         iconBox = LinearLayout(this)
         title = TextView(this).apply {
             text = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "server"
-            setTextColor(Color.parseColor(TEXT)); textSize = 18f
+            setTextColor(tbColor(R.color.tb_text)); textSize = 18f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = dp(10) }
         }
         header.addView(iconBox)
         header.addView(title)
-        header.addView(headerAction("Invite", "Invite people") {
+        header.addView(headerAction("Invite", "Invite people", R.drawable.ic_invite) {
             server?.let { ServerDialogs.invite(this@ServerActivity, it) }
         })
-        header.addView(headerAction("⚙", "Server menu") { openMenu() })
+        header.addView(headerAction("", "Server menu", R.drawable.ic_settings) { openMenu() })
         root.addView(header)
 
         content = LinearLayout(this).apply {
@@ -192,11 +189,11 @@ class ServerActivity : AppCompatActivity(), EventsListener {
         }
         row.addView(TextView(this).apply {
             text = label.uppercase()
-            setTextColor(Color.parseColor(DIM)); textSize = 11f
+            setTextColor(tbColor(R.color.tb_dim)); textSize = 11f
             letterSpacing = 0.08f
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
-        if (onAdd != null) row.addView(headerAction("＋", "New channel") { onAdd() })
+        if (onAdd != null) row.addView(headerAction("", "New channel", R.drawable.ic_plus) { onAdd() })
         content.addView(row)
     }
 
@@ -204,10 +201,15 @@ class ServerActivity : AppCompatActivity(), EventsListener {
      * A muted, borderless action beside a heading — the same as the home
      * screen's, rather than a bright accent button.
      */
-    private fun headerAction(label: String, describe: String, onClick: () -> Unit): Button =
+    private fun headerAction(label: String, describe: String, icon: Int = 0, onClick: () -> Unit): Button =
         Button(androidx.appcompat.view.ContextThemeWrapper(this, R.style.HeaderAction), null, 0).apply {
             text = label
             contentDescription = describe
+            if (icon != 0) {
+                setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
+                compoundDrawableTintList = android.content.res.ColorStateList.valueOf(tbColor(R.color.tb_muted))
+                compoundDrawablePadding = dp(6)
+            }
             setOnClickListener { onClick() }
         }
 
@@ -217,19 +219,19 @@ class ServerActivity : AppCompatActivity(), EventsListener {
         setPadding(dp(10), dp(12), dp(10), dp(12))
         isClickable = true
         background = android.graphics.drawable.RippleDrawable(
-            android.content.res.ColorStateList.valueOf(Color.parseColor("#232936")), null,
+            android.content.res.ColorStateList.valueOf(tbColor(R.color.tb_border)), null,
             GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(Color.WHITE) })
     }
 
     private fun textChannelRow(sv: Server, ch: Channel): View {
         val row = baseRow()
         val unread = ch.unread > 0
-        row.addView(TextView(this).apply { text = "#"; setTextColor(Color.parseColor(MUTED)); textSize = 17f })
+        row.addView(Icons.view(this, R.drawable.ic_text_channel, 18, R.color.tb_muted))
         row.addView(TextView(this).apply {
             text = ch.name
-            setTextColor(Color.parseColor(if (unread) TEXT else MUTED)); textSize = 16f
+            setTextColor(tbColor(if (unread) R.color.tb_text else R.color.tb_muted)); textSize = 16f
             if (unread) setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = dp(12) }
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = dp(10) }
         })
         if (unread) row.addView(pip(ch.unread, Mentions.has(Mentions.channelKey(ch.id))))
         row.setOnClickListener { openChannel(sv, ch) }
@@ -240,15 +242,16 @@ class ServerActivity : AppCompatActivity(), EventsListener {
     private fun voiceChannelRow(sv: Server, ch: Channel): View {
         val row = baseRow()
         val connected = Calls.voice?.channelId == ch.id
-        val color = if (connected) "#34D399" else MUTED
-        row.addView(TextView(this).apply { text = "🔊"; textSize = 15f })
+        val color = tbColor(if (connected) R.color.tb_online else R.color.tb_muted)
+        row.addView(Icons.view(this, R.drawable.ic_voice_channel, 18,
+            if (connected) R.color.tb_online else R.color.tb_muted))
         row.addView(TextView(this).apply {
             text = ch.name
-            setTextColor(Color.parseColor(color)); textSize = 16f
+            setTextColor(color); textSize = 16f
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = dp(10) }
         })
         if (connected) row.addView(TextView(this).apply {
-            text = "connected"; setTextColor(Color.parseColor("#34D399")); textSize = 12f
+            text = "connected"; setTextColor(tbColor(R.color.tb_online)); textSize = 12f
         })
         row.contentDescription = if (connected) "${ch.name}, voice, connected" else "Join voice ${ch.name}"
         row.setOnClickListener { joinVoice(ch) }
@@ -266,7 +269,7 @@ class ServerActivity : AppCompatActivity(), EventsListener {
             addView(Avatars.view(this@ServerActivity, nick, m?.user?.avatarUrl ?: "", 22, endMarginDp = 8))
             addView(TextView(this@ServerActivity).apply {
                 text = nick
-                setTextColor(Color.parseColor(if (userId == ApiClient.myId) TEXT else MUTED)); textSize = 14f
+                setTextColor(tbColor(if (userId == ApiClient.myId) R.color.tb_text else R.color.tb_muted)); textSize = 14f
             })
         }
     }
@@ -281,14 +284,14 @@ class ServerActivity : AppCompatActivity(), EventsListener {
         row.addView(Avatars.view(this, m.user.nick, m.user.avatarUrl, 32, endMarginDp = 10))
         row.addView(TextView(this).apply {
             text = m.user.nick + if (m.user.id == ApiClient.myId) " (you)" else ""
-            setTextColor(Color.parseColor(TEXT)); textSize = 15f
+            setTextColor(tbColor(R.color.tb_text)); textSize = 15f
         })
-        if (inVoice) row.addView(TextView(this).apply {
-            text = " 🔊"; textSize = 13f; contentDescription = "in a voice channel"
+        if (inVoice) row.addView(Icons.view(this, R.drawable.ic_voice_channel, 14, R.color.tb_online, endMarginDp = 4).apply {
+            contentDescription = "in a voice channel"
         })
         row.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
         if (m.role == "admin") row.addView(TextView(this).apply {
-            text = "ADMIN"; setTextColor(Color.parseColor(DIM)); textSize = 10f; letterSpacing = 0.06f
+            text = "ADMIN"; setTextColor(tbColor(R.color.tb_dim)); textSize = 10f; letterSpacing = 0.06f
         })
         return row
     }
@@ -300,7 +303,7 @@ class ServerActivity : AppCompatActivity(), EventsListener {
         if (mentioned) contentDescription = "$n unread, you were mentioned"
         background = GradientDrawable().apply {
             cornerRadius = 999f
-            setColor(Color.parseColor(if (mentioned) "#F87171" else "#5B8CFF"))
+            setColor(tbColor(if (mentioned) R.color.tb_danger else R.color.tb_accent))
         }
     }
 
@@ -316,7 +319,7 @@ class ServerActivity : AppCompatActivity(), EventsListener {
 
     private fun joinVoice(ch: Channel) {
         if (ch.callCode.isEmpty()) { ServerDialogs.toast(this, "That voice channel isn't available."); return }
-        if (Calls.voice?.channelId != ch.id) ServerDialogs.toast(this, "Joining 🔊 ${ch.name}")
+        if (Calls.voice?.channelId != ch.id) ServerDialogs.toast(this, "Joining ${ch.name}")
         Calls.join(this, ch.callCode, Calls.Voice(serverId, ch.id, ch.name))
     }
 

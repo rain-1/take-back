@@ -54,7 +54,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         const val EXTRA_VOICE_NAME = "voiceName"
 
         /** Ring colour for "this person is speaking". */
-        private val SPEAK_GREEN: Int = Color.parseColor("#34D399")
+        private val SPEAK_GREEN: Int = tbColor(R.color.tb_online)
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -164,7 +164,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.micBtn.setOnClickListener {
             micOn = !micOn
             engine?.setMicEnabled(micOn)
-            binding.micBtn.text = if (micOn) "🎤" else "🔇"
+            binding.micBtn.setImageResource(if (micOn) R.drawable.ic_mic_on else R.drawable.ic_mic_off)
             tiles[LOCAL_ID]?.muted = !micOn
             refreshTile(LOCAL_ID)
             broadcastState()
@@ -175,7 +175,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             if (!cameraOpen) { startVideo(); return@setOnClickListener }
             camOn = !camOn
             engine?.setCameraEnabled(camOn)
-            binding.camBtn.text = if (camOn) "📷" else "🚫"
+            binding.camBtn.setImageResource(R.drawable.ic_camera)
+            binding.camBtn.imageAlpha = if (camOn) 255 else 110
             tiles[LOCAL_ID]?.videoOn = camOn
             refreshTile(LOCAL_ID)
             broadcastState()
@@ -220,7 +221,18 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.lobbyStep.visibility = View.GONE
         binding.callStep.visibility = View.VISIBLE
         val v = voice
-        binding.callCode.text = if (v != null) "🔊 ${v.name}" else roomCode
+        // A channel gets the speaker glyph and ordinary type; a call code stays
+        // monospace, because it is something you read out character by character.
+        binding.callCode.text = v?.name ?: roomCode
+        binding.callCode.typeface =
+            if (v != null) android.graphics.Typeface.DEFAULT_BOLD
+            else android.graphics.Typeface.MONOSPACE
+        binding.callCode.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            if (v != null) R.drawable.ic_voice_channel else 0, 0, 0, 0
+        )
+        binding.callCode.compoundDrawableTintList =
+            android.content.res.ColorStateList.valueOf(tbColor(R.color.tb_muted))
+        binding.callCode.compoundDrawablePadding = (8 * resources.displayMetrics.density).toInt()
         // A voice channel is identified by its name; its room code is a secret
         // that only admits members anyway, so there's nothing to copy.
         binding.copyBtn.visibility = if (v != null) View.GONE else View.VISIBLE
@@ -237,11 +249,10 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         cameraOpen = cameraOpened
         camOn = cameraOpened
         binding.micBtn.isEnabled = mic
-        binding.micBtn.text = if (mic) "🎤" else "🔇"
+        binding.micBtn.setImageResource(if (mic) R.drawable.ic_mic_on else R.drawable.ic_mic_off)
         // With no camera the button OPENS one instead of being hidden: that's
         // how video gets turned on inside a voice channel.
-        // Kept short: this row has to fit a phone, and Leave must stay reachable.
-        binding.camBtn.text = "📷"
+        binding.camBtn.setImageResource(R.drawable.ic_camera)
         binding.flipBtn.visibility = if (cameraOpened) View.VISIBLE else View.GONE
         if (!cameraOpened) showLocalAvatarTile()
 
@@ -345,7 +356,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         if (others.isEmpty()) {
             binding.volumes.addView(TextView(this).apply {
                 text = getString(R.string.nobody_else)
-                setTextColor(Color.parseColor("#5A6273")); textSize = 12f
+                setTextColor(tbColor(R.color.tb_dim)); textSize = 12f
             })
             return
         }
@@ -356,12 +367,12 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             }
             row.addView(TextView(this).apply {
                 text = tiles[peerId]?.label?.text ?: peerId
-                setTextColor(Color.parseColor("#E8EAF0")); textSize = 13f
+                setTextColor(tbColor(R.color.tb_text)); textSize = 13f
                 width = (90 * resources.displayMetrics.density).toInt()
                 maxLines = 1
             })
             val valueLabel = TextView(this).apply {
-                setTextColor(Color.parseColor("#8A93A6")); textSize = 12f
+                setTextColor(tbColor(R.color.tb_muted)); textSize = 12f
                 width = (48 * resources.displayMetrics.density).toInt()
                 gravity = Gravity.END
             }
@@ -508,7 +519,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         sharing = true
         broadcastState()
         engine?.startScreenShare(capturer) // adds a 2nd track; camera keeps running
-        binding.shareBtn.text = "🛑"
+        binding.shareBtn.imageAlpha = 255   // presenting
         if (shareAudioWanted) {
             // The projection exists once capture has started.
             val projection = capturer.mediaProjection
@@ -523,7 +534,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         engine?.stopScreenShare()
         stopService(Intent(this, ScreenCaptureService::class.java))
         sharing = false
-        binding.shareBtn.text = "🖥"
+        binding.shareBtn.imageAlpha = 160   // not presenting
         broadcastState()
     }
 
@@ -666,7 +677,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         val renderer: SurfaceViewRenderer,
         val avatar: TextView,
         val photo: android.widget.ImageView,
-        val micBadge: TextView,
+        val micBadge: android.widget.ImageView,
         val label: TextView,
         val reconnect: TextView,
     ) {
@@ -714,18 +725,22 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             val d = (96 * resources.displayMetrics.density).toInt()
             layoutParams = FrameLayout.LayoutParams(d, d, Gravity.CENTER)
         }
-        val micBadge = TextView(this).apply {
-            text = "🔇"
+        val micBadge = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_mic_off)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            setBackgroundColor(tbColor(R.color.tb_scrim))
             visibility = View.GONE
-            setPadding(8, 4, 8, 4)
-            layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.TOP)
+            val pad = (4 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+            val side = (28 * resources.displayMetrics.density).toInt()
+            layoutParams = FrameLayout.LayoutParams(side, side, Gravity.END or Gravity.TOP)
         }
         val label = TextView(this).apply {
             text = nick
             setTextColor(Color.WHITE)
             textSize = 12f
             setPadding(12, 4, 12, 4)
-            setBackgroundColor(Color.parseColor("#99000000"))
+            setBackgroundColor(tbColor(R.color.tb_scrim))
             layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.BOTTOM)
         }
         val reconnect = TextView(this).apply {
@@ -734,7 +749,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             textSize = 13f
             gravity = Gravity.CENTER
             visibility = View.GONE
-            setBackgroundColor(Color.parseColor("#59000000"))
+            setBackgroundColor(tbColor(R.color.tb_scrim_soft))
             layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
         val root = FrameLayout(this).apply {
@@ -795,8 +810,13 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             when (spotlight) {
                 null -> {
                     t.root.visibility = View.VISIBLE
-                    lp.columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1, 1f)
-                    lp.height = screenH / 3
+                    // On your own — waiting for someone, or the last one left —
+                    // one wide tile beats a small one above an empty screen.
+                    val alone = tiles.size == 1
+                    lp.columnSpec = android.widget.GridLayout.spec(
+                        android.widget.GridLayout.UNDEFINED, if (alone) 2 else 1, 1f
+                    )
+                    lp.height = if (alone) (screenH * 0.55).toInt() else screenH / 3
                 }
                 key -> {
                     t.root.visibility = View.VISIBLE

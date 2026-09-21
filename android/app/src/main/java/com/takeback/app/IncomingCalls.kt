@@ -73,13 +73,14 @@ object IncomingCalls {
             setPadding((14 * d).toInt(), (10 * d).toInt(), (10 * d).toInt(), (10 * d).toInt())
             background = GradientDrawable().apply {
                 cornerRadius = 14 * d
-                setColor(Color.parseColor("#171B24"))
-                setStroke((1 * d).toInt(), Color.parseColor("#232936"))
+                setColor(tbColor(R.color.tb_surface))
+                setStroke((1 * d).toInt(), tbColor(R.color.tb_border))
             }
         }
+        row.addView(Icons.view(activity, R.drawable.ic_call, 18, R.color.tb_online, endMarginDp = 8))
         row.addView(TextView(activity).apply {
-            text = "📞 ${c.callerNick} is calling"
-            setTextColor(Color.parseColor("#E8EAF0"))
+            text = "${c.callerNick} is calling"
+            setTextColor(tbColor(R.color.tb_text))
             textSize = 15f
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
@@ -106,7 +107,7 @@ object IncomingCalls {
     private fun action(activity: Activity, label: String, onClick: () -> Unit): Button =
         Button(ContextThemeWrapper(activity, R.style.HeaderAction), null, 0).apply {
             text = label
-            setTextColor(Color.parseColor(if (label == "Join") "#5B8CFF" else "#8A93A6"))
+            setTextColor(tbColor(if (label == "Join") R.color.tb_accent else R.color.tb_muted))
             setOnClickListener { onClick() }
         }
 }

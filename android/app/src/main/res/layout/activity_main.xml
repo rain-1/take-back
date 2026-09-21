@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="#0B0D11">
+    android:background="@color/tb_bg">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -22,20 +22,20 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/enter_nickname"
-                android:textColor="#8A93A6" />
+                android:textColor="@color/tb_muted" />
 
             <EditText
+            style="@style/TbInput"
                 android:id="@+id/nickInput"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="e.g. river"
-                android:textColor="#E8EAF0"
-                android:textColorHint="#5A6273"
                 android:inputType="text"
                 android:importantForAutofill="no" />
 
             <Button
                 android:id="@+id/nickBtn"
+        style="@style/TbButtonPrimary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/cont" />
@@ -51,6 +51,7 @@
 
             <Button
                 android:id="@+id/hostBtn"
+        style="@style/TbButtonPrimary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/host_call" />
@@ -59,21 +60,21 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/join_with_code"
-                android:textColor="#8A93A6"
+                android:textColor="@color/tb_muted"
                 android:paddingTop="12dp" />
 
             <EditText
+            style="@style/TbInput"
                 android:id="@+id/joinInput"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="ABCD12"
-                android:textColor="#E8EAF0"
-                android:textColorHint="#5A6273"
                 android:inputType="textCapCharacters"
                 android:importantForAutofill="no" />
 
             <Button
                 android:id="@+id/joinBtn"
+        style="@style/TbButtonPrimary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/join" />
@@ -100,7 +101,7 @@
                     android:layout_height="wrap_content"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
-                    android:textColor="#E8EAF0"
+                    android:textColor="@color/tb_text"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:fontFamily="monospace" />
@@ -117,7 +118,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/connecting"
-                android:textColor="#8A93A6" />
+                android:textColor="@color/tb_muted" />
 
             <!-- Devices & preferences: set once and keep. -->
             <LinearLayout
@@ -128,13 +129,13 @@
                 android:visibility="gone"
                 android:padding="12dp"
                 android:layout_marginTop="8dp"
-                android:background="#0E1117">
+                android:background="@color/tb_panel_alt">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/audio_source"
-                    android:textColor="#8A93A6"
+                    android:textColor="@color/tb_muted"
                     android:textSize="12sp" />
 
                 <Spinner
@@ -146,7 +147,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/mic_level"
-                    android:textColor="#8A93A6"
+                    android:textColor="@color/tb_muted"
                     android:textSize="12sp"
                     android:paddingTop="8dp" />
 
@@ -178,7 +179,7 @@
                         android:layout_width="48dp"
                         android:layout_height="wrap_content"
                         android:text="100%"
-                        android:textColor="#8A93A6"
+                        android:textColor="@color/tb_muted"
                         android:textSize="12sp"
                         android:gravity="end" />
                 </LinearLayout>
@@ -187,7 +188,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/volumes"
-                    android:textColor="#8A93A6"
+                    android:textColor="@color/tb_muted"
                     android:textSize="12sp"
                     android:paddingTop="8dp" />
 
@@ -201,7 +202,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/camera"
-                    android:textColor="#8A93A6"
+                    android:textColor="@color/tb_muted"
                     android:textSize="12sp"
                     android:paddingTop="8dp" />
 
@@ -215,7 +216,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/mirror_my_video"
-                    android:textColor="#E8EAF0"
+                    android:textColor="@color/tb_text"
                     android:paddingTop="8dp" />
 
                 <CheckBox
@@ -223,7 +224,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/transmit_stereo"
-                    android:textColor="#E8EAF0"
+                    android:textColor="@color/tb_text"
                     android:paddingTop="4dp" />
 
                 <CheckBox
@@ -231,14 +232,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/crop_video_to_fill"
-                    android:textColor="#E8EAF0"
+                    android:textColor="@color/tb_text"
                     android:paddingTop="4dp" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/mirror_note"
-                    android:textColor="#5A6273"
+                    android:textColor="@color/tb_dim"
                     android:textSize="11sp" />
             </LinearLayout>
 
@@ -269,32 +270,50 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
-                <Button
+                <ImageButton
                     android:id="@+id/settingsBtn"
                     style="@style/CallIcon"
-                    android:text="⚙" />
+                    android:contentDescription="Devices and preferences"
+                    android:padding="15dp"
+                    android:scaleType="fitCenter"
+                    android:tint="@color/tb_text"
+                    android:src="@drawable/ic_settings" />
 
-                <Button
+                <ImageButton
                     android:id="@+id/micBtn"
                     style="@style/CallIcon"
-                    android:text="🎤" />
+                    android:contentDescription="Mute microphone"
+                    android:padding="12dp"
+                    android:scaleType="fitCenter"
+                    android:tint="@color/tb_text"
+                    android:src="@drawable/ic_mic_on" />
 
-                <Button
+                <ImageButton
                     android:id="@+id/camBtn"
                     style="@style/CallIcon"
-                    android:text="📷" />
+                    android:contentDescription="Turn camera off"
+                    android:padding="12dp"
+                    android:scaleType="fitCenter"
+                    android:tint="@color/tb_text"
+                    android:src="@drawable/ic_camera" />
 
-                <Button
+                <ImageButton
                     android:id="@+id/shareBtn"
                     style="@style/CallIcon"
-                    android:contentDescription="@string/share_screen"
-                    android:text="🖥" />
+                    android:contentDescription="Present your screen"
+                    android:padding="14dp"
+                    android:scaleType="fitCenter"
+                    android:tint="@color/tb_text"
+                    android:src="@drawable/ic_present" />
 
-                <Button
+                <ImageButton
                     android:id="@+id/flipBtn"
                     style="@style/CallIcon"
-                    android:contentDescription="@string/flip_camera"
-                    android:text="🔄" />
+                    android:contentDescription="Flip camera"
+                    android:padding="13dp"
+                    android:scaleType="fitCenter"
+                    android:tint="@color/tb_text"
+                    android:src="@drawable/ic_flip_camera" />
 
             </LinearLayout>
             </HorizontalScrollView>
@@ -303,6 +322,7 @@
                     android:id="@+id/leaveBtn"
                     android:layout_width="52dp"
                     android:layout_height="52dp"
+                    android:padding="2dp"
                     android:background="@android:color/transparent"
                     android:contentDescription="@string/leave"
                     android:scaleType="fitCenter"

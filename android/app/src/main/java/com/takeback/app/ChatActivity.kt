@@ -150,7 +150,7 @@ class ChatActivity : AppCompatActivity(), EventsListener {
 
     /** Prompt to edit one of my own messages, then push the change. */
     private fun editMessage(m: RMsg) {
-        val input = android.widget.EditText(this).apply { setText(m.body); setSelection(m.body.length) }
+        val input = tbInput(this).apply { setText(m.body); setSelection(m.body.length) }
         AlertDialog.Builder(this)
             .setTitle("Edit message")
             .setView(input)

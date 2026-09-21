@@ -36,6 +36,14 @@ class LoginActivity : AppCompatActivity() {
 
         binding.toggle.setOnClickListener { toggleMode() }
         binding.submit.setOnClickListener { submit() }
+        // The cog reads as part of the sentence, so it matches the text's size
+        // rather than the 24dp the drawable is drawn at.
+        val cog = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_settings)?.apply {
+            val side = (16 * resources.displayMetrics.density).toInt()
+            setBounds(0, 0, side, side)
+            setTint(tbColor(R.color.tb_muted))
+        }
+        binding.settingsLink.setCompoundDrawablesRelative(cog, null, null, null)
         binding.settingsLink.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }

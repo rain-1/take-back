@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn for take-back: game-icons' plus sits in a ring and reads too thin on
+     its own beside a heading. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M224,96 h64 v128 h128 v64 h-128 v128 h-64 v-128 h-128 v-64 h128 z" />
+</vector>

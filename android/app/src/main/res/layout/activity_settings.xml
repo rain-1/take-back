@@ -3,14 +3,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0B0D11"
+    android:background="@color/tb_bg"
     android:padding="24dp">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/server_settings"
-        android:textColor="#E8EAF0"
+        android:textColor="@color/tb_text"
         android:textSize="20sp"
         android:textStyle="bold"
         android:paddingBottom="6dp" />
@@ -19,7 +19,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/server_hint"
-        android:textColor="#8A93A6"
+        android:textColor="@color/tb_muted"
         android:textSize="13sp"
         android:paddingBottom="16dp" />
 
@@ -27,7 +27,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/profile_picture"
-        android:textColor="#8A93A6"
+        android:textColor="@color/tb_muted"
         android:textSize="12sp" />
 
     <LinearLayout
@@ -55,16 +55,17 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/server_url"
-        android:textColor="#8A93A6"
+        android:textColor="@color/tb_muted"
         android:textSize="12sp" />
 
     <EditText
+            style="@style/TbInput"
         android:id="@+id/serverUrl"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="https://takeback.chain-of-thought.org"
-        android:textColor="#E8EAF0"
-        android:textColorHint="#5A6273"
+        android:textColor="@color/tb_text"
+        android:textColorHint="@color/tb_dim"
         android:inputType="textUri"
         android:importantForAutofill="no" />
 
@@ -72,7 +73,7 @@
         android:id="@+id/error"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#F87171"
+        android:textColor="@color/tb_danger"
         android:textSize="13sp"
         android:minHeight="20dp"
         android:paddingTop="6dp" />
@@ -97,6 +98,7 @@
 
         <Button
             android:id="@+id/saveBtn"
+        style="@style/TbButtonPrimary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/save" />
@@ -106,7 +108,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/server_note"
-        android:textColor="#5A6273"
+        android:textColor="@color/tb_dim"
         android:textSize="12sp"
         android:paddingTop="18dp" />
 
@@ -114,14 +116,14 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="18dp"
-        android:background="#232936" />
+        android:background="@color/tb_border" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingTop="16dp"
         android:text="Messages while the app is closed"
-        android:textColor="#E8EAF0"
+        android:textColor="@color/tb_text"
         android:textSize="15sp"
         android:textStyle="bold" />
 
@@ -130,7 +132,7 @@
         android:layout_height="wrap_content"
         android:paddingTop="2dp"
         android:text="take-back has no push service behind it: your phone stays connected to your server itself. Android asks for a quiet notification in return."
-        android:textColor="#8A93A6"
+        android:textColor="@color/tb_muted"
         android:textSize="13sp" />
 
     <CheckBox
@@ -139,14 +141,14 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:text="Stay connected"
-        android:textColor="#E8EAF0" />
+        android:textColor="@color/tb_text" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingTop="16dp"
         android:text="This account"
-        android:textColor="#E8EAF0"
+        android:textColor="@color/tb_text"
         android:textSize="15sp"
         android:textStyle="bold" />
 
@@ -156,7 +158,7 @@
         android:layout_height="wrap_content"
         android:paddingTop="2dp"
         android:paddingBottom="10dp"
-        android:textColor="#8A93A6"
+        android:textColor="@color/tb_muted"
         android:textSize="13sp" />
 
     <Button
@@ -170,7 +172,7 @@
         android:layout_height="wrap_content"
         android:paddingTop="22dp"
         android:text="Version"
-        android:textColor="#E8EAF0"
+        android:textColor="@color/tb_text"
         android:textSize="15sp"
         android:textStyle="bold" />
 
@@ -179,7 +181,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingTop="2dp"
-        android:textColor="#8A93A6"
+        android:textColor="@color/tb_muted"
         android:textSize="13sp" />
 
     <TextView

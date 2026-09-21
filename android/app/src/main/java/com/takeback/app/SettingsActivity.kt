@@ -59,7 +59,7 @@ class SettingsActivity : AppCompatActivity() {
                 val current = v.version == BuildConfig.VERSION_NAME
                 binding.versionBadge.text = if (current) "up to date" else "update available"
                 binding.versionBadge.setTextColor(
-                    android.graphics.Color.parseColor(if (current) "#34D399" else "#F87171"))
+                    tbColor(if (current) R.color.tb_online else R.color.tb_danger))
                 binding.updateBtn.visibility = if (current) View.GONE else View.VISIBLE
                 binding.updateBtn.setOnClickListener {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ApiClient.base + "/take-back.apk")))

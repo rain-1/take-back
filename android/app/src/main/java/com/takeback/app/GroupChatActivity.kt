@@ -62,7 +62,14 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
         groupId = intent.getLongExtra(EXTRA_GROUP_ID, 0)
         groupName = intent.getStringExtra(EXTRA_GROUP_NAME) ?: "group"
         callCode = intent.getStringExtra(EXTRA_CALL_CODE) ?: ""
-        binding.groupName.text = "# $groupName"
+        binding.groupName.text = groupName
+        // The same bubble the channel list uses, rather than a typed "#".
+        binding.groupName.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            R.drawable.ic_text_channel, 0, 0, 0
+        )
+        binding.groupName.compoundDrawableTintList =
+            android.content.res.ColorStateList.valueOf(tbColor(R.color.tb_muted))
+        binding.groupName.compoundDrawablePadding = (8 * resources.displayMetrics.density).toInt()
 
         renderer = MessageRenderer(
             this, binding.messages, binding.scroll, markwon(),
@@ -139,7 +146,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(16, 8, 16, 8)
                 background = GradientDrawable().apply {
-                    cornerRadius = 999f; setColor(Color.parseColor("#171B24"))
+                    cornerRadius = 999f; setColor(tbColor(R.color.tb_surface))
                 }
                 val lp = LinearLayout.LayoutParams(-2, -2); lp.marginEnd = 12; layoutParams = lp
             }
@@ -147,11 +154,11 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
             val size = (8 * resources.displayMetrics.density).toInt()
             chip.addView(View(this).apply {
                 layoutParams = LinearLayout.LayoutParams(size, size).also { it.marginStart = 6; it.marginEnd = 8 }
-                setBackgroundColor(if (m.online) Color.parseColor("#34D399") else Color.parseColor("#39404F"))
+                setBackgroundColor(if (m.online) tbColor(R.color.tb_online) else tbColor(R.color.tb_border))
             })
             chip.addView(TextView(this).apply {
                 text = m.nick + if (m.owner) " ★" else ""
-                setTextColor(Color.parseColor("#E8EAF0")); textSize = 13f
+                setTextColor(tbColor(R.color.tb_text)); textSize = 13f
             })
             binding.members.addView(chip)
         }
@@ -160,7 +167,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
     private fun nickOf(userId: Long): String? = members.firstOrNull { it.id == userId }?.nick
 
     private fun promptAddMember() {
-        val input = EditText(this).apply { hint = "nickname" }
+        val input = tbInput(this).apply { hint = "nickname" }
         AlertDialog.Builder(this)
             .setTitle("Invite to group")
             .setView(input)
@@ -306,7 +313,7 @@ class GroupChatActivity : AppCompatActivity(), EventsListener {
 
     /** Prompt to edit one of my own group messages, then push the change. */
     private fun editMessage(m: RMsg) {
-        val input = android.widget.EditText(this).apply { setText(m.body); setSelection(m.body.length) }
+        val input = tbInput(this).apply { setText(m.body); setSelection(m.body.length) }
         AlertDialog.Builder(this)
             .setTitle("Edit message")
             .setView(input)

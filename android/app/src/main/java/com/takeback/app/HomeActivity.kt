@@ -119,7 +119,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
 
     /** New group: the same dialog shape as creating a server. */
     private fun createGroup() {
-        val input = EditText(this).apply { hint = "e.g. weekend plans" }
+        val input = tbInput(this).apply { hint = "e.g. weekend plans" }
         AlertDialog.Builder(this)
             .setTitle("New group")
             .setView(pad(input))
@@ -152,7 +152,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         if (groups.isEmpty()) {
             binding.groups.addView(TextView(this).apply {
                 text = "No groups yet — start one with ＋."
-                setTextColor(Color.parseColor("#5A6273"))
+                setTextColor(tbColor(R.color.tb_dim))
                 setPadding(16, 12, 16, 12)
             })
             return
@@ -168,19 +168,17 @@ class HomeActivity : AppCompatActivity(), EventsListener {
                 isClickable = true
                 setOnClickListener { openGroup(g) }
             }
-            row.addView(TextView(this).apply {
-                text = "#"; setTextColor(Color.parseColor("#8A93A6")); textSize = 16f
-            })
+            row.addView(Icons.view(this, R.drawable.ic_text_channel, 18, R.color.tb_muted))
             row.addView(TextView(this).apply {
                 text = g.name
-                setTextColor(Color.parseColor("#E8EAF0"))
+                setTextColor(tbColor(R.color.tb_text))
                 textSize = 16f
                 if (g.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 20 }
             })
             if (g.unread > 0) row.addView(pip(g.unread, Mentions.has(Mentions.groupKey(g.id)))) else row.addView(TextView(this).apply {
                 text = g.memberCount.toString()
-                setTextColor(Color.parseColor("#5A6273")); textSize = 13f
+                setTextColor(tbColor(R.color.tb_dim)); textSize = 13f
             })
             binding.groups.addView(row)
         }
@@ -193,7 +191,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         if (servers.isEmpty()) {
             binding.servers.addView(TextView(this).apply {
                 text = "No servers yet — create one, or join with an invite."
-                setTextColor(Color.parseColor("#5A6273"))
+                setTextColor(tbColor(R.color.tb_dim))
                 setPadding(16, 12, 16, 12)
             })
             return
@@ -209,17 +207,14 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             row.addView(ServerDialogs.iconView(this, sv, 36))
             row.addView(TextView(this).apply {
                 text = sv.name
-                setTextColor(Color.parseColor("#E8EAF0"))
+                setTextColor(tbColor(R.color.tb_text))
                 textSize = 16f
                 if (sv.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 24 }
             })
             // Someone is in one of its voice channels: say so without opening it.
-            if (sv.voiceCount > 0) row.addView(TextView(this).apply {
-                text = "🔊"
-                textSize = 13f
+            if (sv.voiceCount > 0) row.addView(Icons.view(this, R.drawable.ic_voice_channel, 16, R.color.tb_online, endMarginDp = 8).apply {
                 contentDescription = if (sv.voiceCount == 1) "1 person in voice" else "${sv.voiceCount} people in voice"
-                setPadding(0, 0, 12, 0)
             })
             if (sv.unread > 0) row.addView(pip(sv.unread, Mentions.serverMentioned(sv.id)))
             binding.servers.addView(row)
@@ -276,7 +271,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         if (accepted.isEmpty()) {
             binding.friends.addView(TextView(this).apply {
                 text = "No friends yet — add someone with ＋."
-                setTextColor(Color.parseColor("#5A6273"))
+                setTextColor(tbColor(R.color.tb_dim))
                 setPadding(16, 24, 16, 16)
             })
         } else {
@@ -296,13 +291,14 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         row.addView(dot(f.online))
         row.addView(TextView(this).apply {
             text = f.user.nick
-            setTextColor(Color.parseColor("#E8EAF0"))
+            setTextColor(tbColor(R.color.tb_text))
             textSize = 16f
             if (f.unread > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).also { it.marginStart = 16 }
         })
-        if (f.unread > 0) row.addView(pip(f.unread, Mentions.has(Mentions.dmKey(f.user.id)))) else row.addView(Button(this).apply {
-            text = "✕"
+        if (f.unread > 0) row.addView(pip(f.unread, Mentions.has(Mentions.dmKey(f.user.id)))) else row.addView(android.widget.ImageButton(this, null, 0, R.style.HeaderIcon).apply {
+            setImageResource(R.drawable.ic_close)
+            contentDescription = "Remove ${f.user.nick}"
             setOnClickListener { remove(f) }
         })
         return row
@@ -316,8 +312,8 @@ class HomeActivity : AppCompatActivity(), EventsListener {
             setPadding(16, 12, 16, 12)
         }
         row.addView(TextView(this).apply {
-            text = "# ${i.groupName}\ninvited by ${i.invitedBy}"
-            setTextColor(Color.parseColor("#E8EAF0")); textSize = 13f
+            text = "${i.groupName}\ninvited by ${i.invitedBy}"
+            setTextColor(tbColor(R.color.tb_text)); textSize = 13f
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
         row.addView(Button(this).apply {
@@ -344,7 +340,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         }
         row.addView(TextView(this).apply {
             text = f.user.nick
-            setTextColor(Color.parseColor("#E8EAF0"))
+            setTextColor(tbColor(R.color.tb_text))
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
         row.addView(Button(this).apply {
@@ -371,19 +367,19 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         if (mentioned) contentDescription = "$n unread, you were mentioned"
         background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = 999f
-            setColor(Color.parseColor(if (mentioned) "#F87171" else "#5B8CFF"))
+            setColor(tbColor(if (mentioned) R.color.tb_danger else R.color.tb_accent))
         }
     }
 
     private fun dot(online: Boolean): View = View(this).apply {
         val size = (10 * resources.displayMetrics.density).toInt()
         layoutParams = LinearLayout.LayoutParams(size, size)
-        setBackgroundColor(if (online) Color.parseColor("#34D399") else Color.parseColor("#39404F"))
+        setBackgroundColor(if (online) tbColor(R.color.tb_online) else tbColor(R.color.tb_border))
     }
 
     /** Add a friend: a dialog now, rather than a box wedged above the list. */
     private fun addFriend() {
-        val input = EditText(this).apply { hint = "their nickname" }
+        val input = tbInput(this).apply { hint = "their nickname" }
         AlertDialog.Builder(this)
             .setTitle("Add a friend")
             .setMessage("They'll get a request to accept before you can message each other.")

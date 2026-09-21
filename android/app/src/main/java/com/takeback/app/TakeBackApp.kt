@@ -21,6 +21,7 @@ class TakeBackApp : Application() {
     override fun onCreate() {
         super.onCreate()
         ApiClient.init(this)
+        Palette.init(this)
         // Events needs to know whether the app is in the foreground, to decide how
         // soon leaving a server's screens counts as no longer viewing it.
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {

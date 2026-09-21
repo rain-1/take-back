@@ -4,14 +4,14 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:background="#0B0D11"
+    android:background="@color/tb_bg"
     android:padding="24dp">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/app_name"
-        android:textColor="#E8EAF0"
+        android:textColor="@color/tb_text"
         android:textSize="26sp"
         android:textStyle="bold" />
 
@@ -20,27 +20,29 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/log_in"
-        android:textColor="#8A93A6"
+        android:textColor="@color/tb_muted"
         android:paddingBottom="18dp" />
 
     <EditText
+            style="@style/TbInput"
         android:id="@+id/nick"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/nickname"
-        android:textColor="#E8EAF0"
-        android:textColorHint="#5A6273"
+        android:textColor="@color/tb_text"
+        android:textColorHint="@color/tb_dim"
         android:inputType="text"
         android:importantForAutofill="no"
         android:layout_marginBottom="10dp" />
 
     <EditText
+            style="@style/TbInput"
         android:id="@+id/password"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/password"
-        android:textColor="#E8EAF0"
-        android:textColorHint="#5A6273"
+        android:textColor="@color/tb_text"
+        android:textColorHint="@color/tb_dim"
         android:inputType="textPassword"
         android:importantForAutofill="no" />
 
@@ -48,13 +50,14 @@
         android:id="@+id/error"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#F87171"
+        android:textColor="@color/tb_danger"
         android:textSize="13sp"
         android:minHeight="20dp"
         android:paddingTop="6dp" />
 
     <Button
         android:id="@+id/submit"
+        style="@style/TbButtonPrimary"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/log_in"
@@ -65,15 +68,18 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/need_account"
-        android:textColor="#5B8CFF"
+        android:textColor="@color/tb_accent"
         android:padding="12dp" />
 
     <TextView
         android:id="@+id/settingsLink"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="⚙ Server settings"
-        android:textColor="#8A93A6"
+        android:text="Server settings"
+        android:drawableTint="@color/tb_muted"
+        android:drawablePadding="6dp"
+        android:gravity="center_vertical"
+        android:textColor="@color/tb_muted"
         android:textSize="13sp"
         android:padding="8dp" />
 
@@ -81,6 +87,6 @@
         android:id="@+id/serverLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textColor="#5A6273"
+        android:textColor="@color/tb_dim"
         android:textSize="11sp" />
 </LinearLayout>

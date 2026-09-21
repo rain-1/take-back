@@ -14,13 +14,23 @@
         <item name="materialButtonStyle">@style/TbButton</item>
     </style>
 
-    <!-- Accent, rounded buttons like the web's primary button. -->
+    <!-- Buttons, like the web client's: quiet by default — a panel with a
+         border — so a screen full of them isn't a wall of accent blue. -->
     <style name="TbButton" parent="Widget.Material3.Button">
         <item name="cornerRadius">10dp</item>
-        <item name="backgroundTint">@color/tb_accent</item>
-        <item name="android:textColor">@color/white</item>
+        <item name="backgroundTint">@color/tb_surface2</item>
+        <item name="strokeColor">@color/tb_border</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:textColor">@color/tb_text</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- The one action a screen is really for: log in, save. -->
+    <style name="TbButtonPrimary" parent="TbButton">
+        <item name="backgroundTint">@color/tb_accent</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="android:textColor">@color/white</item>
     </style>
 
     <!-- The small action beside a section heading: muted, no chrome, like the
@@ -34,7 +44,7 @@
         <item name="android:paddingEnd">12dp</item>
         <item name="android:paddingTop">6dp</item>
         <item name="android:paddingBottom">6dp</item>
-        <item name="android:textColor">#8A93A6</item>
+        <item name="android:textColor">@color/tb_muted</item>
         <item name="android:textSize">13sp</item>
         <item name="android:textAllCaps">false</item>
         <item name="backgroundTint">@null</item>
@@ -54,7 +64,33 @@
              backgroundTint over android:background — that's what made these
              accent blue instead of the muted circle. -->
         <item name="backgroundTint">@null</item>
-        <item name="android:textColor">#E8EAF0</item>
+        <item name="android:textColor">@color/tb_text</item>
         <item name="android:textSize">20sp</item>
+    </style>
+
+    <!-- An icon-only action beside a heading. Material3 inflates <Button> as
+         MaterialButton, which silently drops android:drawable* — so these are
+         ImageButtons, tinted muted rather than accent. -->
+    <style name="HeaderIcon">
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:tint">@color/tb_muted</item>
+    </style>
+
+    <!-- Text fields across the app: the same rounded panel as the web client's,
+         instead of Material's bright accent underline. -->
+    <style name="TbInput" parent="Widget.AppCompat.EditText">
+        <item name="android:background">@drawable/bg_input</item>
+        <item name="android:textColor">@color/tb_text</item>
+        <item name="android:textColorHint">@color/tb_dim</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+        <item name="android:textCursorDrawable">@null</item>
     </style>
 </resources>

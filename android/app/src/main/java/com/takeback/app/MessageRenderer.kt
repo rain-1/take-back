@@ -120,12 +120,12 @@ class MessageRenderer(
         val h = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         h.addView(TextView(ctx).apply {
             text = m.senderNick
-            setTextColor(Color.parseColor("#E8EAF0")); textSize = 14f
+            setTextColor(tbColor(R.color.tb_text)); textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         h.addView(TextView(ctx).apply {
             text = timeOf(m.created)
-            setTextColor(Color.parseColor("#5A6273")); textSize = 11f
+            setTextColor(tbColor(R.color.tb_dim)); textSize = 11f
             val lp = LinearLayout.LayoutParams(-2, -2); lp.marginStart = dp(6); layoutParams = lp
         })
         return h
@@ -165,8 +165,11 @@ class MessageRenderer(
             // A withdrawn message leaves a marker rather than a hole, so replies
             // quoting it still point at something and the list doesn't reflow.
             col.addView(TextView(ctx).apply {
-                text = "🗑 message deleted"
-                setTextColor(Color.parseColor("#5A6273"))
+                text = "message deleted"
+                setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_delete, 0, 0, 0)
+                compoundDrawableTintList = android.content.res.ColorStateList.valueOf(tbColor(R.color.tb_dim))
+                compoundDrawablePadding = dp(6)
+                setTextColor(tbColor(R.color.tb_dim))
                 textSize = 13f
                 setTypeface(typeface, android.graphics.Typeface.ITALIC)
             })
@@ -175,7 +178,7 @@ class MessageRenderer(
             col.addView(callView(m, m.callCode))
         } else {
             if (m.body.isNotEmpty()) {
-                val tv = TextView(ctx).apply { setTextColor(Color.parseColor("#E8EAF0")); textSize = 15f }
+                val tv = TextView(ctx).apply { setTextColor(tbColor(R.color.tb_text)); textSize = 15f }
                 renderBody(tv, m.body)
                 // Tappable mentions/links give the text view its own touch
                 // handling, which would otherwise swallow the long-press that
@@ -185,7 +188,7 @@ class MessageRenderer(
                 col.addView(tv)
                 // Muted "· edited" marker, shown once a message has been edited.
                 val mark = TextView(ctx).apply {
-                    text = "· edited"; setTextColor(Color.parseColor("#5A6273")); textSize = 11f
+                    text = "· edited"; setTextColor(tbColor(R.color.tb_dim)); textSize = 11f
                     visibility = if (m.editedAt > 0) View.VISIBLE else View.GONE
                 }
                 editedMarks[m.id] = mark
@@ -233,9 +236,9 @@ class MessageRenderer(
         }
 
         val icon = when (att.kind) {
-            "video" -> "🎬"
-            "audio" -> "🎵"
-            else -> "📎"
+            "video" -> R.drawable.ic_video
+            "audio" -> R.drawable.ic_audio
+            else -> R.drawable.ic_attach
         }
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -243,13 +246,13 @@ class MessageRenderer(
             setPadding(dp(10), dp(8), dp(12), dp(8))
             background = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()
-                setColor(Color.parseColor("#171B24"))
-                setStroke(dp(1), Color.parseColor("#232936"))
+                setColor(tbColor(R.color.tb_surface))
+                setStroke(dp(1), tbColor(R.color.tb_border))
             }
-            addView(TextView(ctx).apply { text = icon; textSize = 16f })
+            addView(Icons.view(ctx, icon, 18, R.color.tb_muted))
             addView(TextView(ctx).apply {
                 text = att.name
-                setTextColor(Color.parseColor("#E8EAF0"))
+                setTextColor(tbColor(R.color.tb_text))
                 textSize = 13f
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.MIDDLE // keep the extension visible
@@ -258,7 +261,7 @@ class MessageRenderer(
             if (att.size > 0) {
                 addView(TextView(ctx).apply {
                     text = formatSize(att.size)
-                    setTextColor(Color.parseColor("#5A6273"))
+                    setTextColor(tbColor(R.color.tb_dim))
                     textSize = 11f
                     val lp = LinearLayout.LayoutParams(-2, -2); lp.leftMargin = dp(8); layoutParams = lp
                 })
@@ -282,10 +285,16 @@ class MessageRenderer(
         val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val c = callStateFor(code)
         val caller = if (m.mine) "You" else m.senderNick
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val glyph = Icons.view(ctx, R.drawable.ic_call, 16, R.color.tb_online, endMarginDp = 8)
         val line = TextView(ctx).apply { textSize = 14f }
         val history = { text: String ->
-            line.text = "📞 $text"
-            line.setTextColor(Color.parseColor("#8A93A6"))
+            line.text = text
+            line.setTextColor(tbColor(R.color.tb_muted))
+            glyph.setColorFilter(tbColor(R.color.tb_muted))
         }
         when {
             c == null -> history("$caller started a call.")
@@ -301,16 +310,17 @@ class MessageRenderer(
                         else "You missed a call from $caller.")
             else -> {
                 val others = c.participants.filter { it != myId() }.mapNotNull { nickOf(it) }
-                line.text = "📞 $caller started a call." +
+                line.text = "$caller started a call." +
                     when {
                         others.isEmpty() -> ""
                         others.size == 1 -> " ${others[0]} is waiting."
                         else -> " ${others.joinToString(", ")} are in it."
                     }
-                line.setTextColor(Color.parseColor("#E8EAF0"))
+                line.setTextColor(tbColor(R.color.tb_text))
             }
         }
-        box.addView(line)
+        row.addView(glyph); row.addView(line)
+        box.addView(row)
         if (c != null && c.live) {
             val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
             row.addView(Button(ctx).apply { text = "Join"; setOnClickListener { onJoinCall(code) } })
@@ -367,8 +377,11 @@ class MessageRenderer(
         col.removeAllViews()
         col.setOnLongClickListener(null) // nothing left to reply to, react to or edit
         col.addView(TextView(ctx).apply {
-            text = "🗑 message deleted"
-            setTextColor(Color.parseColor("#5A6273"))
+            text = "message deleted"
+            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_delete, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(tbColor(R.color.tb_dim))
+            compoundDrawablePadding = dp(6)
+            setTextColor(tbColor(R.color.tb_dim))
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.ITALIC)
         })
@@ -403,8 +416,8 @@ class MessageRenderer(
             val start = name.range.first - 1 // include the @
             val end = name.range.last + 1
             val isMe = nick.equals(com.takeback.app.net.ApiClient.myNick, ignoreCase = true)
-            val fg = Color.parseColor(if (isMe) "#FFD7A8" else "#9EC1FF")
-            val bg = Color.parseColor(if (isMe) "#33E8935F" else "#265B8CFF")
+            val fg = tbColor(if (isMe) R.color.tb_mention_me else R.color.tb_mention)
+            val bg = tbColor(if (isMe) R.color.tb_mention_me_bg else R.color.tb_mention_bg)
             ssb.setSpan(object : android.text.style.ClickableSpan() {
                 override fun onClick(widget: View) = onMentionTap(nick)
                 override fun updateDrawState(ds: android.text.TextPaint) {
@@ -436,7 +449,7 @@ class MessageRenderer(
         scroll.post {
             scroll.smoothScrollTo(0, v.top)
             val orig = v.background
-            v.setBackgroundColor(Color.parseColor("#2F4A8F"))
+            v.setBackgroundColor(tbColor(R.color.tb_accent_dim))
             v.postDelayed({ v.background = orig }, 900)
         }
     }

@@ -47,7 +47,7 @@ object MediaDialog {
         val video = VideoView(ctx)
         val status = TextView(ctx).apply {
             text = if (kind == "audio") "🎵 Loading…" else "Loading…"
-            setTextColor(Color.parseColor("#8A93A6")); textSize = 14f
+            setTextColor(tbColor(R.color.tb_muted)); textSize = 14f
             gravity = Gravity.CENTER
         }
         val frame = FrameLayout(ctx).apply {
@@ -63,7 +63,10 @@ object MediaDialog {
         video.setMediaController(controls)
         video.setVideoURI(Uri.parse(url))
         video.setOnPreparedListener {
-            status.text = if (kind == "audio") "🎵 $name" else ""
+            status.text = if (kind == "audio") name else ""
+            status.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                if (kind == "audio") R.drawable.ic_audio else 0, 0, 0, 0
+            )
             if (kind != "audio") status.visibility = android.view.View.GONE
             video.start()
             controls.show(0)

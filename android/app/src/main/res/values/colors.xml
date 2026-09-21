@@ -15,5 +15,16 @@
     <color name="tb_online">#34D399</color>
     <color name="tb_danger">#F87171</color>
     <color name="tb_panel_alt">#0E1117</color>
+    <!-- An @mention in a message: yours warm, everyone else's in the accent. -->
+    <color name="tb_mention_me">#FFD7A8</color>
+    <color name="tb_mention_me_bg">#33E8935F</color>
+    <color name="tb_mention">#9EC1FF</color>
+    <color name="tb_mention_bg">#265B8CFF</color>
+    <!-- A quoted message: its text, and the wash behind it. -->
+    <color name="tb_quote_text">#9BB4E8</color>
+    <color name="tb_quote_bg">#22000000</color>
+    <!-- Scrims over video: the label strip and the reconnecting veil. -->
+    <color name="tb_scrim">#99000000</color>
+    <color name="tb_scrim_soft">#59000000</color>
     <color name="white">#FFFFFF</color>
 </resources>

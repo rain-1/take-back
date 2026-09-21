@@ -53,7 +53,14 @@ class ChannelChatActivity : AppCompatActivity(), EventsListener {
         channelId = intent.getLongExtra(EXTRA_CHANNEL_ID, 0)
         serverId = intent.getLongExtra(EXTRA_SERVER_ID, 0)
         val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "server"
-        binding.groupName.text = "# ${intent.getStringExtra(EXTRA_CHANNEL_NAME) ?: "channel"}  ·  $serverName"
+        binding.groupName.text = "${intent.getStringExtra(EXTRA_CHANNEL_NAME) ?: "channel"}  ·  $serverName"
+        // The same bubble the channel list uses, rather than a typed "#".
+        binding.groupName.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            R.drawable.ic_text_channel, 0, 0, 0
+        )
+        binding.groupName.compoundDrawableTintList =
+            android.content.res.ColorStateList.valueOf(tbColor(R.color.tb_muted))
+        binding.groupName.compoundDrawablePadding = (8 * resources.displayMetrics.density).toInt()
         // A channel has no call button (voice channels are the calls) and no
         // member strip or add-member (that's the server's business).
         binding.callBtn.visibility = View.GONE
@@ -191,7 +198,7 @@ class ChannelChatActivity : AppCompatActivity(), EventsListener {
     }
 
     private fun editMessage(m: RMsg) {
-        val input = android.widget.EditText(this).apply { setText(m.body); setSelection(m.body.length) }
+        val input = tbInput(this).apply { setText(m.body); setSelection(m.body.length) }
         AlertDialog.Builder(this)
             .setTitle("Edit message")
             .setView(input)

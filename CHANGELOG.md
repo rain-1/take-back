@@ -24,6 +24,29 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.34.0 — the phone app, drawn
+
+The phone app looked homemade next to the web client: emoji standing in for
+icons, Material's bright blue on every button, and colours typed in by hand.
+
+- **One set of icons.** 20 interface icons from [game-icons.net](https://game-icons.net)
+  (CC BY 3.0 — see `ATTRIBUTION.md`), redrawn as vector drawables, replacing the
+  emoji that rendered as a different typeface and colour on every phone: the
+  call controls, send and attach, channels, invites, members, the attachment
+  chips, the deleted-message marker, the incoming-call banner. Etheri's paper
+  arrow is the send button and their handset is Leave; the muted microphone is
+  the same microphone struck through, since game-icons has no muted one.
+- **Quiet buttons.** Buttons are a bordered panel by default, with the accent
+  kept for the one action a screen is actually for — log in, save. The section
+  actions beside SERVERS / GROUPS / FRIENDS are icons, not blue pills.
+- **Text fields** are the web client's rounded panel rather than Material's
+  accent underline, in the layouts and in dialogs.
+- **On a call on your own**, the tile now fills the screen instead of sitting
+  small above an empty half, and a voice channel is named with its speaker glyph
+  rather than a monospaced call code.
+- **One palette.** Every colour in the app is a named token in `colors.xml`;
+  nothing is typed in as a hex literal any more.
+
 ## 1.33.0 — security
 
 Three audits (web/backend, desktop, phone), and what they found.
