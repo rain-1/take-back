@@ -24,8 +24,8 @@ sg kvm -c '$ANDROID_HOME/emulator/emulator -avd tbtest -no-window -no-audio \
 
 # 3. the app, built against the local server (10.0.2.2 is the host from inside
 #    the emulator), installed, and driven
-#    (edit BASE_URL in android/app/build.gradle.kts to http://10.0.2.2:19290)
-./gradlew assembleDebug && adb -s emulator-5556 install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew -PtakeBackBaseUrl=http://10.0.2.2:19290 assembleDebug
+adb -s emulator-5556 install -r app/build/outputs/apk/debug/app-debug.apk
 PUPPETEER=/path/to/node_modules/puppeteer-core python3 test/android/phone_smoke.py
 ```
 

@@ -13,10 +13,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <!-- Staying connected while the app is closed, so messages reach you: there
-         is no push service behind take-back, just this connection. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Bring a call already in progress back to the front when you rejoin it. -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
 
@@ -67,20 +63,6 @@
             android:exported="false"
             android:supportsPictureInPicture="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" />
-
-        <!-- Holds the connection open while the app is closed. -->
-        <service
-            android:name=".ConnectionService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <receiver
-            android:name=".BootReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
 
         <!-- Keeps a call alive while the app is in the background. -->
         <service

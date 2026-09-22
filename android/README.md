@@ -12,6 +12,8 @@ host/join by code → peer-to-peer audio/video, plus screen sharing and camera f
   mic + camera; screen sharing swaps the capturer feeding one video source, so no
   renegotiation (mirrors the web client's `replaceTrack`).
 - `ScreenCaptureService.kt` — mediaProjection foreground service (API 29+ gate).
+- `BackgroundNotifications.kt` — transport-neutral notification sync, with a
+  WorkManager poll today and a one-shot entry point for future push receivers.
 - `MainActivity.kt` — three-step UI, permissions, and the video grid.
 
 ## Build

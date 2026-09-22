@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val takeBackBaseUrl = providers.gradleProperty("takeBackBaseUrl")
+    .orElse("https://takeback.chain-of-thought.org")
+
 android {
     namespace = "com.takeback.app"
     compileSdk = 34
@@ -11,16 +14,16 @@ android {
         applicationId = "com.takeback.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 39
+        versionCode = 40
         // Keep in step with internal/version/version.go. MAJOR == PROTOCOL:
         // a client can only talk to a server with the same PROTOCOL.
-        versionName = "2.2.0"
+        versionName = "2.3.0"
         buildConfigField("int", "PROTOCOL", "2")
 
         // Default take-back server (REST API + signaling). Overridable at
         // runtime via the in-app Settings screen — handy for pointing at a
         // local dev server (e.g. http://10.0.2.2:8081 from the emulator).
-        buildConfigField("String", "BASE_URL", "\"https://takeback.chain-of-thought.org\"")
+        buildConfigField("String", "BASE_URL", "\"${takeBackBaseUrl.get()}\"")
     }
 
     buildFeatures {
@@ -45,6 +48,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
     implementation("androidx.browser:browser:1.8.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // Maintained prebuilt WebRTC for Android (org.webrtc.* API).

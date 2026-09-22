@@ -191,7 +191,7 @@ class LoginActivity : AppCompatActivity() {
 
     private fun goHome() {
         Events.start(applicationContext)
-        ConnectionService.start(this) // keep listening after you close the app
+        BackgroundNotifications.configure(this)
         startActivity(Intent(this, HomeActivity::class.java))
         finish()
     }

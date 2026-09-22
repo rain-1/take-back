@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A DM must reach you with the app closed (@river)."""
+"""A WorkManager check delivers a DM without a permanent foreground service."""
 import sys, time
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -11,8 +11,9 @@ def check(label, ok, extra=""):
     if not ok: fails.append(label)
 
 PKG = "com.takeback.app"
-me = register("phoneDM")
-friend = register("webDM")
+suffix = str(int(time.time()))[-6:]
+me = register("phoneDM" + suffix)
+friend = register("webDM" + suffix)
 api("/api/friends/request", "POST", {"nick": friend["nick"]}, cookie=me["cookie"])
 api("/api/friends/respond", "POST", {"userId": me["id"], "accept": True}, cookie=friend["cookie"])
 
@@ -29,7 +30,9 @@ a = find(dump(), text="Allow")
 if a: tap(a); time.sleep(1.5)
 
 services = shell(f"dumpsys activity services {PKG}")
-check("the app holds a connection while it runs", "ConnectionService" in services, services[:200])
+check("no permanent connection service is running", "ConnectionService" not in services, services[:200])
+
+jobs = shell(f"dumpsys jobscheduler {PKG}")
 
 # Close the app entirely: not just backgrounded — swiped away.
 shell("input keyevent KEYCODE_HOME")
@@ -38,7 +41,15 @@ shell(f"am kill {PKG}")   # what Android does to a backgrounded app under pressu
 time.sleep(3)
 
 api("/api/messages", "POST", {"with": me["id"], "body": "are you there?"}, cookie=friend["cookie"])
-time.sleep(6)
+# Periodic work is deliberately inexact (minimum 15 minutes). The debug APK has
+# an explicit receiver that requests the same coalesced one-shot sync a future
+# FCM or UnifiedPush receiver will request. It is absent from release builds.
+shell(f"am broadcast -n {PKG}/.BackgroundSyncTestReceiver")
+time.sleep(8)
+jobs = shell(f"dumpsys jobscheduler {PKG}")
+check("WorkManager scheduled a background check",
+      f"{PKG}/androidx.work.impl.background.systemjob.SystemJobService" in jobs,
+      jobs[:500])
 notifs = shell("dumpsys notification --noredact")
 check("a DM arrives as a notification with the app closed",
       "are you there?" in notifs, [l for l in notifs.splitlines() if "takeback" in l.lower()][:3])

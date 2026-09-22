@@ -131,7 +131,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingTop="2dp"
-        android:text="take-back has no push service behind it: your phone stays connected to your server itself. Android asks for a quiet notification in return."
+        android:text="take-back checks periodically while closed. Android may defer checks to save battery, so messages can arrive up to about 15 minutes late."
         android:textColor="@color/tb_muted"
         android:textSize="13sp" />
 
@@ -140,7 +140,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="Stay connected"
+        android:text="Background message checks"
         android:textColor="@color/tb_text" />
 
     <TextView

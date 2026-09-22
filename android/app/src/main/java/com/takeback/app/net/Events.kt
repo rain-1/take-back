@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.takeback.app.BackgroundNotifications
+import com.takeback.app.NotificationCenter
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -61,8 +63,6 @@ interface EventsListener {
  */
 object Events {
     private const val CHANNEL = "takeback_events"
-    private const val NOTIF_FRIEND = 1001
-    private const val NOTIF_MESSAGE_BASE = 2000
     private const val NOTIF_CALL = 1500
 
     private lateinit var appContext: Context
@@ -178,7 +178,8 @@ object Events {
                 val fromId = msg.optLong("userId")
                 val nick = msg.optString("nick")
                 listeners.forEach { it.onFriendRequest(fromId, nick) }
-                notifyFriendRequest(nick)
+                BackgroundNotifications.recordSeen(appContext, "friend_requests", fromId)
+                NotificationCenter.friendRequest(appContext, fromId, nick)
             }
             "friend_update" -> listeners.forEach { it.onFriendUpdate() }
             "message" -> {
@@ -189,7 +190,8 @@ object Events {
                     if (mentioned && Mentions.mark(Mentions.dmKey(m.senderId))) {
                         listeners.forEach { it.onMentionsChanged() }
                     }
-                    notifyMessage(m, mentioned)
+                    BackgroundNotifications.recordMessage(appContext, "dm", m.senderId, m.id)
+                    NotificationCenter.dm(appContext, m, nickFor(m.senderId), mentioned)
                 }
             }
             "message_edited" -> {
@@ -204,7 +206,8 @@ object Events {
                     if (mentioned && Mentions.mark(Mentions.groupKey(m.groupId))) {
                         listeners.forEach { it.onMentionsChanged() }
                     }
-                    notifyGroupMessage(m, mentioned)
+                    BackgroundNotifications.recordMessage(appContext, "group", m.groupId, m.id)
+                    NotificationCenter.group(appContext, m, groupNames[m.groupId] ?: "a group", mentioned)
                 }
             }
             "group_message_edited" -> {
@@ -216,7 +219,8 @@ object Events {
                 val name = msg.optString("groupName")
                 val by = msg.optString("nick")
                 listeners.forEach { it.onGroupInvite(gid, name, by) }
-                post(NOTIF_FRIEND + 1, "Group invite", "$by invited you to $name")
+                BackgroundNotifications.recordSeen(appContext, "group_invites", gid)
+                NotificationCenter.groupInvite(appContext, gid, name, by)
             }
             "group_update" -> {
                 val groupId = msg.optLong("userId") // group id is carried in userId
@@ -236,7 +240,8 @@ object Events {
                     if (mentioned && Mentions.markChannel(m.serverId, m.channelId)) {
                         listeners.forEach { it.onMentionsChanged() }
                     }
-                    notifyChannelMessage(m, mentioned)
+                    BackgroundNotifications.recordMessage(appContext, "channel", m.channelId, m.id)
+                    NotificationCenter.channel(appContext, m, serverNames[m.serverId] ?: "a server", mentioned)
                 }
             }
             "channel_message_edited" -> {
@@ -346,19 +351,6 @@ object Events {
         }
     }
 
-    private fun notifyFriendRequest(nick: String) =
-        post(NOTIF_FRIEND, "Friend request", "$nick wants to be your friend")
-
-    private fun notifyMessage(m: Message, mentioned: Boolean) {
-        val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
-        val nick = nickFor(m.senderId)
-        post(NOTIF_MESSAGE_BASE + m.senderId.toInt(),
-            if (mentioned) "$nick mentioned you" else "Message from $nick", preview,
-            android.content.Intent(appContext, com.takeback.app.ChatActivity::class.java)
-                .putExtra(com.takeback.app.ChatActivity.EXTRA_FRIEND_ID, m.senderId)
-                .putExtra(com.takeback.app.ChatActivity.EXTRA_FRIEND_NICK, nick))
-    }
-
     /** A sender's name, from the friend list we already hold. */
     private fun nickFor(userId: Long): String =
         knownNicks[userId] ?: "someone"
@@ -366,51 +358,21 @@ object Events {
     /** Nicks seen in the friend list, so a notification can name the sender. */
     val knownNicks = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
-    private fun notifyGroupMessage(m: GroupMessage, mentioned: Boolean) {
-        val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
-        val where = groupNames[m.groupId] ?: "a group"
-        post(NOTIF_MESSAGE_BASE + 100000 + m.groupId.toInt(),
-            if (mentioned) "You were mentioned in $where" else "Message in $where", preview,
-            android.content.Intent(appContext, com.takeback.app.GroupChatActivity::class.java)
-                .putExtra(com.takeback.app.GroupChatActivity.EXTRA_GROUP_ID, m.groupId)
-                .putExtra(com.takeback.app.GroupChatActivity.EXTRA_GROUP_NAME, where))
-    }
-
     /** Group names by id, so a notification can say where a message landed. */
     val groupNames = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
-    private fun notifyChannelMessage(m: ChannelMessage, mentioned: Boolean) {
-        val preview = if (m.body.isNotEmpty()) m.body.take(80) else attachmentPreview(m.attachment)
-        val where = serverNames[m.serverId] ?: "a server"
-        post(NOTIF_MESSAGE_BASE + 200000 + m.channelId.toInt(),
-            if (mentioned) "You were mentioned in $where" else "Message in $where", preview,
-            android.content.Intent(appContext, com.takeback.app.ChannelChatActivity::class.java)
-                .putExtra(com.takeback.app.ChannelChatActivity.EXTRA_CHANNEL_ID, m.channelId)
-                .putExtra(com.takeback.app.ChannelChatActivity.EXTRA_SERVER_ID, m.serverId)
-                .putExtra(com.takeback.app.ChannelChatActivity.EXTRA_SERVER_NAME, where))
-    }
-
     fun clearChannelMessageNotification(channelId: Long) =
-        cancel(NOTIF_MESSAGE_BASE + 200000 + channelId.toInt())
-
-    /** Notification text for a message that is nothing but an attachment. */
-    private fun attachmentPreview(a: Attachment?): String = when (a?.kind) {
-        "image" -> "\uD83D\uDCF7 image"
-        "video" -> "\uD83C\uDFAC " + a.name
-        "audio" -> "\uD83C\uDFB5 " + a.name
-        null -> "message"
-        else -> "\uD83D\uDCCE " + a.name
-    }
+        NotificationCenter.clearChannel(appContext, channelId)
 
     /**
      * Dismiss the tray notification for a conversation once you open/view it.
-     * (Notification ids mirror notifyMessage/notifyGroupMessage above.) Opening a
-     * chat only suppressed *future* notifications; the already-posted one lingered.
+     * Opening a chat only suppressed *future* notifications; the already-posted
+     * one lingered until explicitly cancelled.
      */
-    fun clearMessageNotification(friendId: Long) = cancel(NOTIF_MESSAGE_BASE + friendId.toInt())
+    fun clearMessageNotification(friendId: Long) = NotificationCenter.clearDm(appContext, friendId)
 
     fun clearGroupMessageNotification(groupId: Long) =
-        cancel(NOTIF_MESSAGE_BASE + 100000 + groupId.toInt())
+        NotificationCenter.clearGroup(appContext, groupId)
 
     private fun cancel(id: Int) {
         if (::appContext.isInitialized) {

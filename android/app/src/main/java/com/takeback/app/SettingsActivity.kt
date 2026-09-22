@@ -41,9 +41,9 @@ class SettingsActivity : AppCompatActivity() {
         binding.logoutBtn.setOnClickListener { logout() }
         binding.settingsVersion.text = "This app: ${BuildConfig.VERSION_NAME}"
 
-        binding.stayConnected.isChecked = ConnectionService.enabled(this)
+        binding.stayConnected.isChecked = BackgroundNotifications.enabled(this)
         binding.stayConnected.setOnCheckedChangeListener { _, on ->
-            ConnectionService.setEnabled(this, on)
+            BackgroundNotifications.setEnabled(this, on)
         }
 
         lifecycleScope.launch {
@@ -71,7 +71,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun logout() = lifecycleScope.launch {
         runCatching { ApiClient.logout() }
         LastChat.forget(this@SettingsActivity)
-        ConnectionService.stop(this@SettingsActivity)
+        BackgroundNotifications.reset(this@SettingsActivity)
         Events.stop()
         startActivity(Intent(this@SettingsActivity, LoginActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
@@ -119,6 +119,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         // Switch servers: drop any live session/socket and restart at login.
         Events.stop()
+        BackgroundNotifications.reset(this)
         ApiClient.setServer(url)
         val intent = Intent(this, LoginActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)

@@ -24,6 +24,20 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.3.0 — battery-friendly Android notifications
+
+- Android no longer holds a permanent foreground service and WebSocket while
+  the app is closed, removing the system's long-running-app battery warning.
+- WorkManager performs a network-constrained message check roughly every 15
+  minutes. Android may defer a check under Doze, so this is intentionally an
+  interim transport rather than instant push.
+- Notification discovery, de-duplication and rendering are separated from the
+  wake-up transport. A future FCM or UnifiedPush receiver can enqueue the same
+  one-shot sync without replacing the notification implementation.
+- The live WebSocket remains active while the UI is visible and is closed once
+  the application moves to the background. Calls and screen sharing retain
+  their purpose-specific foreground services.
+
 ## 2.2.0 — product landing page
 
 - The signed-out web experience now introduces take-back with a responsive,

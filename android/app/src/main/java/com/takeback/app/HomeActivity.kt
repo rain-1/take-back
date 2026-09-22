@@ -69,7 +69,7 @@ class HomeActivity : AppCompatActivity(), EventsListener {
         setupCollapsible()
 
         Mentions.init(this)
-        ConnectionService.start(this)
+        BackgroundNotifications.configure(this)
         Events.addListener(this)
         // Come back to where you were, like the web client does on reload.
         LastChat.reopen(this)
