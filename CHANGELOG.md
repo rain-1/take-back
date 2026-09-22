@@ -24,6 +24,18 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 1.20.0
+
+**Added — a proper product landing page**
+- The signed-out web experience now introduces take-back with a responsive,
+  brand-led landing page while keeping the real sign-in and registration flow
+  close at hand. The authenticated chat application is unchanged.
+- A live-call preview uses lightweight, photographic webcam participants and
+  the feature story includes a real capture of an intentionally strange group
+  conversation, complete with reactions.
+- New photographic assets are served as compact WebP files and stamped with the
+  release version so Cloudflare cannot hold the previous presentation in cache.
+
 ## 1.19.1
 
 **Changed — registration is closed by default**
