@@ -24,6 +24,22 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.1.0 — pluggable identity providers
+
+- The OIDC implementation now has explicit `generic`, `authentik`, and
+  `keycloak` backend profiles. Discovery, PKCE, signed-token verification,
+  nonce/state protection, native callback codes, and session handling remain
+  shared; profiles contain only provider-specific request behavior.
+- Keycloak is supported for browser, Android, desktop, and CLI sign-in,
+  including RP-initiated logout and its confidential-client device flow.
+  An idempotent Admin REST setup script creates the client and enables that
+  grant without weakening direct-access or implicit-flow settings.
+- The desktop app discovers the configured provider origin from take-back,
+  rather than hardcoding Authentik. It still withholds its native bridge and
+  all privileged permissions while the window is on the provider origin.
+- `/api/auth/status` reports the selected backend and authorization origin.
+  Existing configurations that omit `TB_OIDC_BACKEND` continue as `generic`.
+
 ## 2.0.0 — identity belongs in one place
 
 - Sign-in is delegated to an OpenID Connect provider (the production deployment

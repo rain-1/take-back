@@ -1,5 +1,5 @@
-// Package auth makes take-back a relying party of an OpenID Connect provider
-// (Authentik), which is where passwords, passkeys and 2FA now live.
+// Package auth makes take-back a relying party of an OpenID Connect provider,
+// which is where passwords, passkeys and 2FA live.
 //
 // The take-back *server* is the only OIDC client. Browsers, the phone, the
 // desktop app and the CLI all authenticate against take-back, which does the
@@ -9,8 +9,11 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -20,8 +23,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// Config is what the operator supplies (see deploy/authentik/README.md).
+// Config is what the operator supplies (see deploy/auth/README.md).
 type Config struct {
+	Backend      string // generic (default), authentik, or keycloak
 	Issuer       string // e.g. https://auth.example.org/application/o/take-back/
 	ClientID     string
 	ClientSecret string
@@ -51,7 +55,9 @@ type Identity struct {
 // chat server that refuses to start because an unrelated container is slow is
 // worse than one that reports "sign-in unavailable" for a few seconds.
 type Provider struct {
-	cfg Config
+	cfg       Config
+	backend   backendProfile
+	configErr error
 
 	mu       sync.Mutex
 	provider *oidc.Provider
@@ -64,7 +70,17 @@ type Provider struct {
 // ErrNotConfigured is returned when no provider has been configured at all.
 var ErrNotConfigured = errors.New("no identity provider configured")
 
-func New(cfg Config) *Provider { return &Provider{cfg: cfg} }
+func New(cfg Config) *Provider {
+	backend, err := profileFor(cfg.Backend)
+	return &Provider{cfg: cfg, backend: backend, configErr: err}
+}
+
+// ValidateConfig catches a misspelled backend at startup instead of turning it
+// into an unhelpful "identity provider unavailable" message on the login page.
+func ValidateConfig(cfg Config) error {
+	_, err := profileFor(cfg.Backend)
+	return err
+}
 
 func toggleTrailingSlash(s string) string {
 	if strings.HasSuffix(s, "/") {
@@ -75,11 +91,32 @@ func toggleTrailingSlash(s string) string {
 
 func (p *Provider) Config() Config { return p.cfg }
 
+func (p *Provider) Backend() string {
+	if p.backend == nil {
+		return ""
+	}
+	return p.backend.Name()
+}
+
+// AuthorizationOrigin is the only additional top-level origin a native shell
+// needs to allow while a browser is completing sign-in. It deliberately
+// returns only scheme+host, never an authorization path or query string.
+func (p *Provider) AuthorizationOrigin() string {
+	u, err := url.Parse(p.cfg.Issuer)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
 // discoveryRetry is how long a failed discovery is remembered, so a provider
 // that is down doesn't turn every sign-in into a fresh timeout.
 const discoveryRetry = 10 * time.Second
 
 func (p *Provider) ensure(ctx context.Context) error {
+	if p.configErr != nil {
+		return p.configErr
+	}
 	if !p.cfg.Enabled() {
 		return ErrNotConfigured
 	}
@@ -136,12 +173,16 @@ func (p *Provider) AuthCodeURL(ctx context.Context, state, nonce, verifier strin
 	p.mu.Lock()
 	cfg := *p.oauth
 	p.mu.Unlock()
-	return cfg.AuthCodeURL(state,
+	opts := []oauth2.AuthCodeOption{
 		oidc.Nonce(nonce),
 		oauth2.S256ChallengeOption(verifier),
-		// Authentik remembers the last consent; ask it to re-authenticate only
-		// when take-back explicitly wants that (see ForceLogin).
-	), nil
+	}
+	for key, values := range p.backend.AuthorizationParameters(false) {
+		for _, value := range values {
+			opts = append(opts, oauth2.SetAuthURLParam(key, value))
+		}
+	}
+	return cfg.AuthCodeURL(state, opts...), nil
 }
 
 // ForceLoginURL is AuthCodeURL with prompt=login: used when someone explicitly
@@ -151,7 +192,19 @@ func (p *Provider) ForceLoginURL(ctx context.Context, state, nonce, verifier str
 	if err != nil {
 		return "", err
 	}
-	return u + "&prompt=login", nil
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return "", err
+	}
+	q := parsed.Query()
+	for key, values := range p.backend.AuthorizationParameters(true) {
+		q.Del(key)
+		for _, value := range values {
+			q.Add(key, value)
+		}
+	}
+	parsed.RawQuery = q.Encode()
+	return parsed.String(), nil
 }
 
 // Exchange turns an authorization code into a verified identity. It checks the
@@ -225,7 +278,13 @@ func (p *Provider) StartDevice(ctx context.Context) (*DeviceAuth, error) {
 	cfg := *p.oauth
 	p.mu.Unlock()
 
-	resp, err := cfg.DeviceAuth(ctx)
+	var opts []oauth2.AuthCodeOption
+	for key, values := range p.backend.DeviceAuthorizationParameters(cfg.ClientSecret) {
+		for _, value := range values {
+			opts = append(opts, oauth2.SetAuthURLParam(key, value))
+		}
+	}
+	resp, err := cfg.DeviceAuth(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("device authorization: %w", err)
 	}
@@ -259,25 +318,91 @@ func (p *Provider) PollDevice(ctx context.Context, deviceCode string) (*Identity
 	cfg, ver := *p.oauth, p.verifier
 	p.mu.Unlock()
 
-	tok, err := cfg.DeviceAccessToken(ctx, &oauth2.DeviceAuthResponse{
-		DeviceCode: deviceCode,
-		// A zero Expiry would make x/oauth2 poll until its own deadline; we
-		// want exactly one attempt per call so the HTTP request can't hang.
-		Expiry:   time.Now().Add(time.Second),
-		Interval: 1,
-	})
+	tok, err := pollDeviceToken(ctx, &cfg, deviceCode)
 	if err != nil {
-		var re *oauth2.RetrieveError
-		if errors.As(err, &re) && (re.ErrorCode == "authorization_pending" || re.ErrorCode == "slow_down") {
-			return nil, ErrDevicePending
-		}
-		if strings.Contains(err.Error(), "authorization_pending") || errors.Is(err, context.DeadlineExceeded) {
+		var pe *deviceTokenError
+		if errors.As(err, &pe) && (pe.Code == "authorization_pending" || pe.Code == "slow_down") {
 			return nil, ErrDevicePending
 		}
 		return nil, err
 	}
 	// The device grant has no browser redirect, so there is no nonce to check.
 	return p.identityFrom(ctx, ver, tok, "")
+}
+
+type deviceTokenError struct {
+	Code        string
+	Description string
+}
+
+func (e *deviceTokenError) Error() string {
+	if e.Description != "" {
+		return e.Code + ": " + e.Description
+	}
+	return e.Code
+}
+
+// pollDeviceToken makes exactly one RFC 8628 token request. x/oauth2's
+// DeviceAccessToken owns the polling loop itself; wrapping it in a short
+// context races its first ticker and can report "pending" even after approval.
+// The take-back HTTP API already owns the polling cadence, so one request per
+// call is both simpler and correct.
+func pollDeviceToken(ctx context.Context, cfg *oauth2.Config, deviceCode string) (*oauth2.Token, error) {
+	form := url.Values{
+		"client_id":   {cfg.ClientID},
+		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+		"device_code": {deviceCode},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Endpoint.TokenURL,
+		strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	if cfg.ClientSecret != "" {
+		req.SetBasicAuth(cfg.ClientID, cfg.ClientSecret)
+	}
+	client := http.DefaultClient
+	if configured, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok && configured != nil {
+		client = configured
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		AccessToken      string `json:"access_token"`
+		TokenType        string `json:"token_type"`
+		RefreshToken     string `json:"refresh_token"`
+		ExpiresIn        int64  `json:"expires_in"`
+		IDToken          string `json:"id_token"`
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("device token response (HTTP %d): invalid JSON", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 || payload.Error != "" {
+		return nil, &deviceTokenError{Code: payload.Error, Description: payload.ErrorDescription}
+	}
+	if payload.AccessToken == "" || payload.IDToken == "" {
+		return nil, errors.New("device token response omitted a token")
+	}
+	tok := &oauth2.Token{
+		AccessToken:  payload.AccessToken,
+		TokenType:    payload.TokenType,
+		RefreshToken: payload.RefreshToken,
+	}
+	if payload.ExpiresIn > 0 {
+		tok.Expiry = time.Now().Add(time.Duration(payload.ExpiresIn) * time.Second)
+	}
+	return tok.WithExtra(map[string]any{"id_token": payload.IDToken}), nil
 }
 
 // ---- logout ----
@@ -304,11 +429,10 @@ func (p *Provider) EndSessionURL(ctx context.Context, idToken, postLogout string
 		return postLogout
 	}
 	q := u.Query()
-	if idToken != "" {
-		q.Set("id_token_hint", idToken)
-	}
-	if postLogout != "" {
-		q.Set("post_logout_redirect_uri", postLogout)
+	for key, values := range p.backend.LogoutParameters(idToken, postLogout) {
+		for _, value := range values {
+			q.Add(key, value)
+		}
 	}
 	u.RawQuery = q.Encode()
 	return u.String()

@@ -18,6 +18,7 @@ The command prints the client ID and secret. Store them on the take-back host
 in `/etc/takeback/oidc.env`, owned by root and mode `0600`:
 
 ```ini
+TB_OIDC_BACKEND=authentik
 TB_OIDC_ISSUER=https://auth.example.org/application/o/take-back/
 TB_OIDC_CLIENT_ID=...
 TB_OIDC_CLIENT_SECRET=...
@@ -52,6 +53,5 @@ provider-only local row without opening registration, use
 `takeback-server -make-account nick`. Stop the service before running these
 commands against SQLite, or use a copied database for inspection.
 
-For a non-production desktop deployment, set `TB_AUTH_ORIGIN` to the exact
-Authentik origin when launching Electron. The production origin defaults to
-`https://auth.chain-of-thought.org`.
+The desktop app discovers the Authentik origin from the server. `TB_AUTH_ORIGIN`
+is only an override for development or servers predating that discovery field.

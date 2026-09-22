@@ -380,17 +380,22 @@ func main() {
 	// Presence hub is told who each user's friends are so it can route events.
 	pres := presence.NewHub(db.AcceptedFriendIDs)
 
-	// Sign-in is delegated to an OpenID Connect provider (Authentik) when one
+	// Sign-in is delegated to an OpenID Connect provider when one
 	// is configured. The secret arrives by environment, not by flag, so it
-	// never shows up in `ps` output; see deploy/authentik/README.md.
+	// never shows up in `ps` output; see deploy/auth/README.md.
 	oidcCfg := auth.Config{
+		Backend:      os.Getenv("TB_OIDC_BACKEND"),
 		Issuer:       os.Getenv("TB_OIDC_ISSUER"),
 		ClientID:     os.Getenv("TB_OIDC_CLIENT_ID"),
 		ClientSecret: os.Getenv("TB_OIDC_CLIENT_SECRET"),
 		RedirectURL:  os.Getenv("TB_OIDC_REDIRECT_URL"),
 	}
+	if err := auth.ValidateConfig(oidcCfg); err != nil {
+		log.Fatal(err)
+	}
 	if oidcCfg.Enabled() {
-		log.Printf("sign-in: OpenID Connect via %s", oidcCfg.Issuer)
+		provider := auth.New(oidcCfg)
+		log.Printf("sign-in: OpenID Connect (%s) via %s", provider.Backend(), oidcCfg.Issuer)
 		if os.Getenv("TB_AUTH_PASSWORD_FALLBACK") == "1" {
 			log.Printf("sign-in: local passwords ALSO still accepted (migration window)")
 		}

@@ -280,6 +280,7 @@ def main():
     ensure_device_code(api)
 
     print("\n--- take-back server configuration ---")
+    print("TB_OIDC_BACKEND=authentik")
     print(f"TB_OIDC_ISSUER={url.rstrip('/')}/application/o/{APP_SLUG}/")
     print(f"TB_OIDC_CLIENT_ID={prov['client_id']}")
     print(f"TB_OIDC_CLIENT_SECRET={prov['client_secret']}")

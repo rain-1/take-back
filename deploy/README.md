@@ -56,7 +56,9 @@ Set `BASE_URL` in `android/app/build.gradle.kts` to
 
 ## Authentik / OIDC
 
-See [`authentik/README.md`](authentik/README.md). Introduce it with
+See the shared [`auth/README.md`](auth/README.md), then choose
+[`authentik/`](authentik/README.md) or [`keycloak/`](keycloak/README.md).
+Introduce it with
 `TB_AUTH_PASSWORD_FALLBACK=1` first so pre-2.0 Android clients can still sign
 in during the upgrade window; remove that setting only after the 2.0 APK and
 desktop build are published and accounts have been linked.

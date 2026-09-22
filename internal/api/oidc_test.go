@@ -451,14 +451,17 @@ func TestAuthStatusTellsClientsHowToSignIn(t *testing.T) {
 		t.Fatalf("status: %d", rec.Code)
 	}
 	var out struct {
-		Provider bool   `json:"provider"`
-		Ready    bool   `json:"ready"`
-		LoginURL string `json:"loginUrl"`
+		Provider            bool   `json:"provider"`
+		Ready               bool   `json:"ready"`
+		LoginURL            string `json:"loginUrl"`
+		Backend             string `json:"backend"`
+		AuthorizationOrigin string `json:"authorizationOrigin"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !out.Provider || !out.Ready || out.LoginURL != "/auth/login" {
+	if !out.Provider || !out.Ready || out.LoginURL != "/auth/login" ||
+		out.Backend != auth.BackendGeneric || out.AuthorizationOrigin != idp.URL {
 		t.Fatalf("unexpected status: %+v", out)
 	}
 }

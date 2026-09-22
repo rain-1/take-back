@@ -14,7 +14,7 @@
 const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 // This preload is attached to the BrowserWindow, so it also starts when that
-// window temporarily visits Authentik during sign-in. Never give the provider
+// window temporarily visits the identity provider during sign-in. Never give it
 // page take-back's native audio bridge. Main-process permission checks provide
 // a second boundary, but the bridge should not exist there in the first place.
 const serverOrigin = (() => {

@@ -25,7 +25,8 @@ const START_URL = process.env.TB_START_URL || SERVER + "/";
 // The identity provider is the one additional top-level origin the sign-in
 // redirect may visit. It receives no native permissions; the preload bridge
 // also refuses to expose itself there (see preload.js).
-const AUTH_ORIGIN = new URL(process.env.TB_AUTH_ORIGIN || "https://auth.chain-of-thought.org").origin;
+let allowedAuthOrigin = process.env.TB_AUTH_ORIGIN
+  ? new URL(process.env.TB_AUTH_ORIGIN).origin : null;
 
 // Test mode (see test/): fake camera/mic, no picker (share this window's own
 // frame + TB_TEST_AUDIO), and side effects that would need a person — opening
@@ -194,8 +195,25 @@ function createWindow() {
 const isTakeBack = (url) => originOf(url) === allowedOrigin;
 const isAllowedTopLevel = (url) => {
   const origin = originOf(url);
-  return origin === allowedOrigin || origin === AUTH_ORIGIN;
+  return origin === allowedOrigin || origin === allowedAuthOrigin;
 };
+
+// Ask the take-back server which provider origin its redirects use. This keeps
+// packaged desktop builds provider-neutral: switching from Authentik to
+// Keycloak does not require rebuilding the app. An explicit TB_AUTH_ORIGIN is
+// still available for development and for servers predating this field.
+async function discoverAuthOrigin() {
+  if (allowedAuthOrigin) return;
+  try {
+    const response = await fetch(`${allowedOrigin}/api/auth/status`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const status = await response.json();
+    const candidate = /^https?:\/\//i.test(status.authorizationOrigin || "")
+      ? originOf(status.authorizationOrigin) : null;
+    if (status.provider && candidate) allowedAuthOrigin = candidate;
+  } catch (_) { /* password-only or offline server: no extra origin needed */ }
+}
 
 // ---- server invite links ------------------------------------------------------
 
@@ -384,12 +402,13 @@ if (!firstInstance) {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // quit() above is asynchronous: a second copy still reaches ready, and would
   // open (and on screen, flash) a window of its own before it exits.
   if (!firstInstance) return;
   installPermissionHandlers();
   installDisplayMediaHandler();
+  await discoverAuthOrigin();
   createWindow();
   const invite = inviteInArgs(process.argv);
   if (invite) win.webContents.once("did-finish-load", () => setTimeout(() => openInvite(invite), 1500));

@@ -915,7 +915,7 @@ function applyRegistrationPolicy(open) {
 }
 
 // How this server wants people to sign in. A server with an identity provider
-// configured (Authentik) has no password endpoints at all: the button hands
+// configured has no password endpoints at all: the button hands
 // over to it, and it is where passkeys and 2FA live. A self-hosted server
 // without one keeps the original nick/password form.
 let authMode = "password";
@@ -931,7 +931,7 @@ async function initAuth() {
   try { st = await api("/api/auth/status"); } catch { /* old server: keep the form */ }
   if (!st?.provider) {
     // A self-hosted or older server still uses the local password form. Keep
-    // it hidden until this decision is known, so an Authentik server never
+    // it hidden until this decision is known, so an OIDC server never
     // flashes password fields it will not use.
     $("authNote").classList.add("hidden");
     $("authNick").classList.remove("hidden");

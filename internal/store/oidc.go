@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Identities from the identity provider (Authentik).
+// Identities from an OpenID Connect provider.
 //
 // take-back does not hold passwords any more: an account is recognised by the
 // `sub` claim the provider puts in its ID token. Everything else in the schema

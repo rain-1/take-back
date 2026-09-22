@@ -164,6 +164,8 @@ func (a *API) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"passwordFallback": a.oidcEnabled() && a.PasswordFallback,
 	}
 	if a.oidcEnabled() {
+		resp["backend"] = a.OIDC.Backend()
+		resp["authorizationOrigin"] = a.OIDC.AuthorizationOrigin()
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := a.OIDC.Ready(ctx); err != nil {
