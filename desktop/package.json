@@ -1,6 +1,6 @@
 {
   "name": "take-back-desktop",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "private": true,
   "description": "take-back desktop proof of concept: screen share with per-application audio",
   "main": "src/main.js",

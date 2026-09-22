@@ -5,6 +5,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import android.os.Handler
+import android.os.Looper
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -56,17 +58,71 @@ class SignalingClient(
         .build()
 
     private var socket: WebSocket? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var generation = 0
+    private var stopped = false
+    private var reconnectDelayMs = 1_000L
+    private var reconnectPending = false
 
-    fun connect() {
+    @Synchronized fun connect() {
+        stopped = false
+        open(++generation)
+    }
+
+    private fun open(gen: Int) {
         val url = "$baseUrl?room=${enc(room)}&nick=${enc(nick)}"
         val request = Request.Builder().url(url).build()
         socket = http.newWebSocket(request, object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) = dispatch(text)
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (!markOpen(gen)) webSocket.close(1000, "superseded")
+            }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (gen != generation || stopped) return
+                runCatching { dispatch(text) }.onFailure {
+                    listener.onClosed("invalid signaling message")
+                }
+            }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) =
-                listener.onClosed(reason.ifEmpty { "closed" })
+                reconnectLater(gen, reason.ifEmpty { "closed" })
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) =
-                listener.onClosed(t.message ?: "connection failed")
+                reconnectLater(gen, t.message ?: "connection failed")
         })
+    }
+
+    @Synchronized private fun markOpen(gen: Int): Boolean {
+        if (gen != generation || stopped) return false
+        reconnectDelayMs = 1_000L
+        reconnectPending = false
+        return true
+    }
+
+    @Synchronized private fun reconnectLater(gen: Int, reason: String) {
+        if (stopped || gen != generation || reconnectPending) return
+        listener.onClosed(reason)
+        reconnectPending = true
+        val delay = reconnectDelayMs
+        reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(15_000L)
+        handler.postDelayed({
+            retry(gen)
+        }, delay)
+    }
+
+    @Synchronized private fun retry(gen: Int) {
+        if (stopped || gen != generation) return
+        reconnectPending = false
+        open(gen)
+    }
+
+    /** Drop a socket tied to the old default network and reconnect immediately. */
+    @Synchronized fun networkChanged() {
+        if (stopped) return
+        generation++
+        reconnectPending = false
+        handler.removeCallbacksAndMessages(null)
+        socket?.cancel()
+        socket = null
+        reconnectDelayMs = 1_000L
+        open(generation)
     }
 
     private fun dispatch(text: String) {
@@ -127,7 +183,11 @@ class SignalingClient(
     fun sendAnswer(to: String, sdp: JSONObject) = sendRaw("answer", to, sdp)
     fun sendCandidate(to: String, candidate: JSONObject) = sendRaw("candidate", to, candidate)
 
-    fun close() {
+    @Synchronized fun close() {
+        stopped = true
+        generation++
+        reconnectPending = false
+        handler.removeCallbacksAndMessages(null)
         socket?.close(1000, "bye")
         socket = null
     }

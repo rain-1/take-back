@@ -24,6 +24,7 @@ object CallSettings {
     private const val KEY_VIDEO_FILL = "videoFill"
     private const val KEY_STEREO = "stereo"
     private const val KEY_VIDEO_QUALITY = "videoQuality"
+    private const val KEY_AUDIO_DEVICE_TYPE = "audioDeviceType"
 
     enum class VideoQuality(
         val label: String,
@@ -88,18 +89,35 @@ object CallSettings {
         }
     }
 
-    /** An audio route the user can pick. [id] of -1 means "system default". */
-    data class AudioOption(val id: Int, val label: String)
+    /** An audio route the user can pick. [id] of -1 means automatic routing. */
+    data class AudioOption(val id: Int, val type: Int, val label: String)
 
     fun audioOptions(c: Context): List<AudioOption> {
-        val out = mutableListOf(AudioOption(-1, "System default"))
+        val out = mutableListOf(AudioOption(-1, -1, "Automatic (headset preferred)"))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val am = c.getSystemService(AudioManager::class.java)
             for (d in am.availableCommunicationDevices) {
-                out.add(AudioOption(d.id, labelFor(d)))
+                out.add(AudioOption(d.id, d.type, labelFor(d)))
             }
         }
         return out
+    }
+
+    fun audioDeviceType(c: Context): Int = prefs(c).getInt(KEY_AUDIO_DEVICE_TYPE, -1)
+    fun setAudioDeviceType(c: Context, type: Int) =
+        prefs(c).edit().putInt(KEY_AUDIO_DEVICE_TYPE, type).apply()
+
+    /** Apply the saved route, resolving a fresh device id after reconnects. */
+    fun applySavedAudioOption(c: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        val type = audioDeviceType(c)
+        val devices = c.getSystemService(AudioManager::class.java).availableCommunicationDevices
+        val chosen = if (type >= 0) devices.firstOrNull { it.type == type }
+        else devices.firstOrNull { isBluetoothHeadset(it.type) }
+            ?: devices.firstOrNull { isWiredHeadset(it.type) }
+        val am = c.getSystemService(AudioManager::class.java)
+        return if (chosen != null) am.setCommunicationDevice(chosen)
+        else { am.clearCommunicationDevice(); type < 0 }
     }
 
     /** Route call audio to [id], or clear back to the system default. */
@@ -107,19 +125,27 @@ object CallSettings {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
         val am = c.getSystemService(AudioManager::class.java)
         if (id < 0) {
-            am.clearCommunicationDevice()
-            return true
+            setAudioDeviceType(c, -1)
+            return applySavedAudioOption(c)
         }
         val device = am.availableCommunicationDevices.firstOrNull { it.id == id } ?: return false
+        setAudioDeviceType(c, device.type)
         return am.setCommunicationDevice(device)
     }
+
+    private fun isBluetoothHeadset(type: Int) = type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+
+    private fun isWiredHeadset(type: Int) = type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+        type == AudioDeviceInfo.TYPE_USB_HEADSET || type == AudioDeviceInfo.TYPE_USB_DEVICE
 
     private fun labelFor(d: AudioDeviceInfo): String = when (d.type) {
         AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Phone microphone"
         AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Earpiece"
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Speaker"
         AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Wired headset"
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLE_HEADSET -> "Bluetooth headset"
         AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> "USB audio"
         else -> d.productName?.toString()?.ifBlank { "Audio device" } ?: "Audio device"
     }

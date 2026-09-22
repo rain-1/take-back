@@ -9,6 +9,11 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -68,6 +73,30 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private var micOn = true
     private var camOn = true
     private var inCall = false // true between beginCall() and leaveCall(); gates PiP
+    private var defaultNetwork: Network? = null
+    private var networkCallbackRegistered = false
+    private var audioCallbackRegistered = false
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = runOnUiThread {
+            if (!inCall) return@runOnUiThread
+            val previous = defaultNetwork
+            defaultNetwork = network
+            if (previous != null && previous != network) {
+                binding.status.text = getString(R.string.connecting)
+                signaling?.networkChanged()
+                engine?.restartIce()
+            }
+        }
+        override fun onLost(network: Network) = runOnUiThread {
+            if (inCall && defaultNetwork == network) binding.status.text = getString(R.string.disconnected)
+        }
+    }
+
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = refreshAutomaticAudioRoute()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = refreshAutomaticAudioRoute()
+    }
     /** Whether this call has a microphone track (permission granted). */
     private var micAvailable = false
     /** Whether a camera is open in this call (false in a voice channel). */
@@ -259,6 +288,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         // Hold the call open when you leave the app: without a foreground
         // service Android suspends us and the audio stops.
         CallService.start(this, if (v != null) "In ${v.name}" else "In a call")
+        startCallSystemListeners()
 
         // The session cookie rides along (ApiClient.http), which a voice channel
         // requires; and use the server the app is pointed at, not the default.
@@ -304,6 +334,7 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     private fun leaveCall() {
         if (Calls.voice == voice) Calls.voice = null
         inCall = false
+        stopCallSystemListeners()
         CallService.stop(this)
         signaling?.close(); signaling = null
         engine?.close(); engine = null
@@ -315,6 +346,38 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.videoGrid.removeAllViews()
         binding.callStep.visibility = View.GONE
         binding.lobbyStep.visibility = View.VISIBLE
+    }
+
+    private fun startCallSystemListeners() {
+        if (!networkCallbackRegistered) {
+            runCatching {
+                getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+                networkCallbackRegistered = true
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !audioCallbackRegistered) {
+            getSystemService(AudioManager::class.java).registerAudioDeviceCallback(
+                audioDeviceCallback, Handler(Looper.getMainLooper()))
+            audioCallbackRegistered = true
+            CallSettings.applySavedAudioOption(this)
+        }
+    }
+
+    private fun stopCallSystemListeners() {
+        if (networkCallbackRegistered) {
+            runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) }
+            networkCallbackRegistered = false
+            defaultNetwork = null
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && audioCallbackRegistered) {
+            getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(audioDeviceCallback)
+            getSystemService(AudioManager::class.java).clearCommunicationDevice()
+            audioCallbackRegistered = false
+        }
+    }
+
+    private fun refreshAutomaticAudioRoute() = runOnUiThread {
+        if (inCall && CallSettings.audioDeviceType(this) < 0) CallSettings.applySavedAudioOption(this)
     }
 
     // ---- Settings panel ----
@@ -474,6 +537,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         binding.audioSelect.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item, audio.map { it.label })
         binding.audioSelect.isEnabled = audio.size > 1
+        val savedAudioType = CallSettings.audioDeviceType(this)
+        audio.indexOfFirst { it.type == savedAudioType }.takeIf { it >= 0 }
+            ?.let { binding.audioSelect.setSelection(it) }
         binding.audioSelect.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 val opt = audio.getOrNull(pos) ?: return
@@ -606,7 +672,9 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
 
     override fun onLeave(fromId: String) = runOnUiThread { engine?.removePeer(fromId) }
 
-    override fun onClosed(reason: String) = runOnUiThread { binding.status.text = getString(R.string.disconnected) }
+    override fun onClosed(reason: String) = runOnUiThread {
+        if (inCall && !isDestroyed) binding.status.text = getString(R.string.disconnected)
+    }
 
     // ---- RtcEvents (signaling thread) ----
 
@@ -964,8 +1032,8 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         Calls.detach(this)
+        stopCallSystemListeners()
         if (inCall) {
             inCall = false
             if (Calls.voice == voice) Calls.voice = null
@@ -975,5 +1043,6 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
         CallService.stop(this)
         engine?.close()
         eglBase.release()
+        super.onDestroy()
     }
 }

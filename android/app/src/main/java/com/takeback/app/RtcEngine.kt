@@ -28,6 +28,7 @@ import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
 /**
@@ -115,6 +116,7 @@ class RtcEngine(
     private var cameraCapturer: VideoCapturer? = null
 
     private val peers = ConcurrentHashMap<String, PeerBox>()
+    private val closed = AtomicBoolean(false)
     private val nicks = ConcurrentHashMap<String, String>()
 
     /** Our own peer id, from the server's welcome. Used for the polite tiebreak. */
@@ -257,7 +259,7 @@ class RtcEngine(
 
     /** Compute RMS over a buffer of 16-bit PCM and feed the local detector. */
     private fun onMicSamples(samples: JavaAudioDeviceModule.AudioSamples) {
-        if (!micEnabledFlag) return // muted: never imply we're transmitting
+        if (closed.get() || !micEnabledFlag) return // muted/closed: never imply we're transmitting
         val data = samples.data
         var sum = 0.0
         var n = 0
@@ -282,6 +284,7 @@ class RtcEngine(
     private fun startStatsPolling() {
         statsHandler.postDelayed(object : Runnable {
             override fun run() {
+                if (closed.get()) return
                 for ((peerId, box) in peers) {
                     box.pc.getStats { report ->
                         var level = 0.0
@@ -295,7 +298,7 @@ class RtcEngine(
                         detectorFor(peerId).update(level)
                     }
                 }
-                statsHandler.postDelayed(this, 200)
+                if (!closed.get()) statsHandler.postDelayed(this, 200)
             }
         }, 200)
     }
@@ -441,11 +444,20 @@ class RtcEngine(
 
     fun removePeer(peerId: String) {
         remoteAudio.remove(peerId)
-        peers.remove(peerId)?.let { box ->
+        val removed = peers.remove(peerId) ?: return
+        removed.let { box ->
             box.dropRunnable?.let { statsHandler.removeCallbacks(it) }
             box.pc.close()
         }
         events.onPeerClosed(peerId)
+    }
+
+    /** Re-gather ICE candidates after the phone's default network changes. */
+    fun restartIce() {
+        if (closed.get()) return
+        for (box in peers.values) {
+            box.pc.restartIce()
+        }
     }
 
     private fun createPeer(peerId: String, nick: String): PeerBox {
@@ -457,11 +469,13 @@ class RtcEngine(
         }
         val pc = factory.createPeerConnection(config, object : PcObserver() {
             override fun onIceCandidate(candidate: IceCandidate) {
+                if (closed.get()) return
                 signaler.sendCandidate(peerId, candidate.toJson())
             }
             // onAddTrack (not onTrack) because it hands us the MediaStreams —
             // we need the stream id to tell a screen share from a camera.
             override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
+                if (closed.get()) return
                 when (val t = receiver.track()) {
                     is VideoTrack -> {
                         val streamId = streams.firstOrNull()?.id ?: ""
@@ -474,6 +488,7 @@ class RtcEngine(
                 }
             }
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
+                if (closed.get()) return
                 when (newState) {
                     PeerConnection.PeerConnectionState.FAILED,
                     PeerConnection.PeerConnectionState.CLOSED -> removePeer(peerId)
@@ -670,6 +685,7 @@ class RtcEngine(
     }
 
     fun close() {
+        if (!closed.compareAndSet(false, true)) return
         stopAppAudio()
         statsHandler.removeCallbacksAndMessages(null)
         detectors.clear()

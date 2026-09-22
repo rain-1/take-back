@@ -24,6 +24,16 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.5.0 — calls survive going out
+
+- Android call signaling reconnects with bounded backoff and restarts ICE when
+  the phone moves between Wi-Fi and mobile data.
+- Late socket and WebRTC callbacks are ignored after teardown, and closing a
+  call is idempotent, removing races that could touch disposed call resources.
+- Android call audio now defaults to automatic routing that prefers Bluetooth,
+  then wired/USB headsets, and follows devices connected during a call. Explicit
+  route choices remain saved, and the routing request is cleared when leaving.
+
 ## 2.4.0 — selectable video quality
 
 - Web, desktop, and Android calls offer Low data, Balanced, High, and Maximum
