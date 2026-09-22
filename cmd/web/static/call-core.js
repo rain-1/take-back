@@ -38,12 +38,23 @@ window.TBCall = (function () {
   // Preferences that outlive a call.
   const PREF_MIRROR = "tb.mirror", PREF_MIC = "tb.micId", PREF_CAM = "tb.camId";
   const PREF_STEREO = "tb.stereo", PREF_GAIN = "tb.micGain", PREF_FIT = "tb.videoFit";
+  const PREF_VIDEO_QUALITY = "tb.videoQuality";
+  const VIDEO_QUALITY = {
+    low:      { camera: 350000,  screen: 700000 },
+    balanced: { camera: 1200000, screen: 2500000 },
+    high:     { camera: 2500000, screen: 6000000 },
+    maximum:  { camera: null,    screen: null },
+  };
 
   // Transmit mono by default; stereo is opt-in (it roughly doubles audio bitrate
   // and most mics are mono anyway). Stored as "1" (stereo) / "0" or unset (mono).
   function stereoWanted() { return localStorage.getItem(PREF_STEREO) === "1"; }
   // Scale-to-fit by default: show the whole frame rather than cropping it.
   function fillWanted() { return localStorage.getItem(PREF_FIT) === "fill"; }
+  function videoQualityWanted() {
+    const value = localStorage.getItem(PREF_VIDEO_QUALITY) || "balanced";
+    return VIDEO_QUALITY[value] ? value : "balanced";
+  }
 
   // The single live session, or null. One call at a time is the whole model:
   // there is one microphone and one camera.
@@ -155,6 +166,12 @@ window.TBCall = (function () {
     u.fitSel = el("select");
     u.fitSel.append(new Option("Fit — show the whole frame", "fit"),
       new Option("Fill — crop to the tile", "fill"));
+    u.qualitySel = el("select");
+    u.qualitySel.append(
+      new Option("Low data — 0.35 Mbps camera / 0.7 Mbps screen", "low"),
+      new Option("Balanced — 1.2 Mbps camera / 2.5 Mbps screen", "balanced"),
+      new Option("High — 2.5 Mbps camera / 6 Mbps screen", "high"),
+      new Option("Maximum — let WebRTC use the available connection", "maximum"));
     u.camSelect = el("select");
 
     row("Microphone", u.micSelect);
@@ -175,6 +192,7 @@ window.TBCall = (function () {
     row("Volumes", u.volumes).classList.add("tbc-volrow-wrap");
 
     row("Camera", u.camSelect);
+    row("Video quality", u.qualitySel);
     row("Video scaling", u.fitSel);
 
     const mirrorNote = el("span", "tbc-note");
@@ -376,7 +394,10 @@ window.TBCall = (function () {
       // addTrack fires negotiationneeded, which sends the offer for us — doing
       // it here as well would make two offers collide.
       if (sender) await sender.replaceTrack(track);
-      else entry.pc.addTrack(track, S.cameraStream);
+      else {
+        const added = entry.pc.addTrack(track, S.cameraStream);
+        applyVideoBitrate(added, false);
+      }
     }
     addTile("local", S.nick + " (you)", S.cameraStream, true);
     setTileVideo("local", true);
@@ -430,6 +451,7 @@ window.TBCall = (function () {
       if (u.panel.classList.contains("tbc-hidden")) { stopMeter(); return; }
       u.stereoSel.value = stereoWanted() ? "stereo" : "mono";
       u.fitSel.value = fillWanted() ? "fill" : "fit";
+      u.qualitySel.value = videoQualityWanted();
       await loadDevices();
       renderVolumes();
       startMeter();
@@ -456,6 +478,12 @@ window.TBCall = (function () {
       const fill = u.fitSel.value === "fill";
       localStorage.setItem(PREF_FIT, fill ? "fill" : "fit");
       u.root.classList.toggle("fill", fill);
+    };
+
+    u.qualitySel.onchange = async () => {
+      localStorage.setItem(PREF_VIDEO_QUALITY, u.qualitySel.value);
+      await applyVideoQualityToAllSenders();
+      log("Video quality set to " + u.qualitySel.options[u.qualitySel.selectedIndex].text + ".");
     };
 
     u.gain.value = String(Math.round(S.micGainValue * 100));
@@ -855,7 +883,43 @@ window.TBCall = (function () {
   // stream so the far side groups them onto the same tile — which is what makes
   // the shared audio come out of the screen tile rather than over the caller.
   function addScreenTracks(pc, capture) {
-    return capture.getTracks().map((t) => pc.addTrack(t, capture));
+    return capture.getTracks().map((t) => {
+      const sender = pc.addTrack(t, capture);
+      if (t.kind === "video") applyVideoBitrate(sender, true);
+      return sender;
+    });
+  }
+
+  // setParameters needs no SDP renegotiation, so changing quality is immediate.
+  // A null ceiling removes our cap and restores the WebRTC implementation's
+  // adaptive default.
+  async function applyVideoBitrate(sender, screen) {
+    if (!sender || !sender.track || sender.track.kind !== "video") return;
+    try {
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      const ceiling = VIDEO_QUALITY[videoQualityWanted()][screen ? "screen" : "camera"];
+      for (const encoding of params.encodings) {
+        if (ceiling == null) delete encoding.maxBitrate;
+        else encoding.maxBitrate = ceiling;
+      }
+      await sender.setParameters(params);
+    } catch (err) {
+      // Keep calls working on an older embedded engine that exposes senders but
+      // not writable encoding parameters.
+      console.warn("[take-back] Couldn't apply video bitrate", err);
+    }
+  }
+
+  async function applyVideoQualityToAllSenders() {
+    if (!S) return;
+    const work = [];
+    for (const entry of S.peers.values()) {
+      for (const sender of entry.pc.getSenders()) {
+        work.push(applyVideoBitrate(sender, entry.screenSenders.includes(sender)));
+      }
+    }
+    await Promise.all(work);
   }
 
   function stopScreenShare() {
@@ -1075,7 +1139,10 @@ window.TBCall = (function () {
     };
     S.peers.set(peerId, entry);
 
-    S.cameraStream.getTracks().forEach((t) => pc.addTrack(t, S.cameraStream));
+    S.cameraStream.getTracks().forEach((t) => {
+      const sender = pc.addTrack(t, S.cameraStream);
+      if (t.kind === "video") applyVideoBitrate(sender, false);
+    });
     // Without a local track of a kind, the offer would have no media section to
     // RECEIVE that kind on either. Ask for it explicitly, so someone who joined
     // without a camera still sees everyone else's.
@@ -1116,6 +1183,11 @@ window.TBCall = (function () {
         clearTimeout(entry.dropTimer);
         entry.dropTimer = null;
         markReconnecting(peerId, false); // recovered
+        // Retry after negotiation too. Some WebRTC engines do not expose an
+        // encoding entry until the sender has negotiated for the first time.
+        for (const sender of pc.getSenders()) {
+          applyVideoBitrate(sender, entry.screenSenders.includes(sender));
+        }
         // Someone who joined with no camera and no microphone sends no tracks,
         // so ontrack never fires and they'd get no tile — present in the call,
         // listening, and invisible to everyone else. Give every connected

@@ -211,6 +211,19 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content" />
 
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/video_quality"
+                    android:textColor="@color/tb_muted"
+                    android:textSize="12sp"
+                    android:paddingTop="8dp" />
+
+                <Spinner
+                    android:id="@+id/videoQualitySelect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
                 <CheckBox
                     android:id="@+id/mirrorChk"
                     android:layout_width="wrap_content"

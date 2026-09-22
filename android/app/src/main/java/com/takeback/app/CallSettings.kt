@@ -23,6 +23,18 @@ object CallSettings {
     private const val KEY_MIC_GAIN = "micGain"
     private const val KEY_VIDEO_FILL = "videoFill"
     private const val KEY_STEREO = "stereo"
+    private const val KEY_VIDEO_QUALITY = "videoQuality"
+
+    enum class VideoQuality(
+        val label: String,
+        val cameraBitrateBps: Int?,
+        val screenBitrateBps: Int?,
+    ) {
+        LOW("Low data — 0.35 / 0.7 Mbps", 350_000, 700_000),
+        BALANCED("Balanced — 1.2 / 2.5 Mbps", 1_200_000, 2_500_000),
+        HIGH("High — 2.5 / 6 Mbps", 2_500_000, 6_000_000),
+        MAXIMUM("Maximum — use available connection", null, null),
+    }
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -46,6 +58,14 @@ object CallSettings {
      */
     fun stereo(c: Context): Boolean = prefs(c).getBoolean(KEY_STEREO, false)
     fun setStereo(c: Context, on: Boolean) = prefs(c).edit().putBoolean(KEY_STEREO, on).apply()
+
+    /** Video bitrate ceilings for camera / screen; null means WebRTC's default. */
+    fun videoQuality(c: Context): VideoQuality = runCatching {
+        VideoQuality.valueOf(prefs(c).getString(KEY_VIDEO_QUALITY, null) ?: "BALANCED")
+    }.getOrDefault(VideoQuality.BALANCED)
+
+    fun setVideoQuality(c: Context, quality: VideoQuality) =
+        prefs(c).edit().putString(KEY_VIDEO_QUALITY, quality.name).apply()
 
     /** Mic gain (1.0 = untouched). Applied to the captured buffer before encoding. */
     fun micGain(c: Context): Float = prefs(c).getFloat(KEY_MIC_GAIN, 1.0f)

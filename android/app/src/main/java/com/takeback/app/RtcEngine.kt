@@ -140,6 +140,7 @@ class RtcEngine(
         var makingOffer = false
         var ignoreOffer = false
         var screenSender: org.webrtc.RtpSender? = null
+        var cameraSender: org.webrtc.RtpSender? = null
         // Pending "drop this peer" runnable, scheduled while it's disconnected.
         var dropRunnable: Runnable? = null
     }
@@ -349,7 +350,9 @@ class RtcEngine(
         val track = factory.createVideoTrack("video0", videoSource)
         localVideo = track
         for ((peerId, box) in peers) {
-            box.pc.addTrack(track, listOf(CAM_STREAM_ID))
+            box.cameraSender = box.pc.addTrack(track, listOf(CAM_STREAM_ID)).also {
+                applyVideoBitrate(it, screen = false)
+            }
             renegotiate(peerId, box)
         }
         events.onLocalVideo(track)
@@ -507,9 +510,17 @@ class RtcEngine(
 
         val camStream = listOf(CAM_STREAM_ID)
         localAudio?.let { pc.addTrack(it, camStream) }
-        localVideo?.let { pc.addTrack(it, camStream) }
+        localVideo?.let {
+            box.cameraSender = pc.addTrack(it, camStream).also { sender ->
+                applyVideoBitrate(sender, screen = false)
+            }
+        }
         // Already sharing when this peer joins? Send them the screen too.
-        screenTrack?.let { box.screenSender = pc.addTrack(it, listOf(SCREEN_STREAM_ID)) }
+        screenTrack?.let {
+            box.screenSender = pc.addTrack(it, listOf(SCREEN_STREAM_ID)).also { sender ->
+                applyVideoBitrate(sender, screen = true)
+            }
+        }
 
         peers[peerId] = box
         return box
@@ -538,7 +549,9 @@ class RtcEngine(
         screenTrack = track
 
         for ((peerId, box) in peers) {
-            box.screenSender = box.pc.addTrack(track, listOf(SCREEN_STREAM_ID))
+            box.screenSender = box.pc.addTrack(track, listOf(SCREEN_STREAM_ID)).also {
+                applyVideoBitrate(it, screen = true)
+            }
             renegotiate(peerId, box)
         }
         events.onLocalScreen(track)
@@ -567,6 +580,22 @@ class RtcEngine(
         screenSource = null
         screenTrack = null
         events.onLocalScreenEnded()
+    }
+
+    /** Apply a new saved quality immediately to every live video sender. */
+    fun applyVideoQuality() {
+        for (box in peers.values) {
+            box.cameraSender?.let { applyVideoBitrate(it, screen = false) }
+            box.screenSender?.let { applyVideoBitrate(it, screen = true) }
+        }
+    }
+
+    private fun applyVideoBitrate(sender: org.webrtc.RtpSender, screen: Boolean) {
+        val quality = CallSettings.videoQuality(appContext)
+        val ceiling = if (screen) quality.screenBitrateBps else quality.cameraBitrateBps
+        val parameters = sender.parameters
+        for (encoding in parameters.encodings) encoding.maxBitrateBps = ceiling
+        sender.parameters = parameters
     }
 
     /** [sdp] with the Opus stereo flags applied when this call transmits stereo. */

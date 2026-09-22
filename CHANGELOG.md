@@ -24,6 +24,16 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.4.0 — selectable video quality
+
+- Web, desktop, and Android calls offer Low data, Balanced, High, and Maximum
+  video-quality presets, remembered on each device.
+- Camera and screen sharing use separate bitrate ceilings so presentations keep
+  text legible without forcing camera video to consume the same bandwidth.
+- Changes apply to active calls without renegotiation. WebRTC may still adapt
+  below the selected ceiling when the network cannot sustain it; Maximum removes
+  the application ceiling and leaves allocation to the WebRTC implementation.
+
 ## 2.3.0 — battery-friendly Android notifications
 
 - Android no longer holds a permanent foreground service and WebSocket while

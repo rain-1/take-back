@@ -455,6 +455,20 @@ class MainActivity : AppCompatActivity(), SignalingListener, Signaler, RtcEvents
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
+        val qualities = CallSettings.VideoQuality.entries
+        binding.videoQualitySelect.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, qualities.map { it.label })
+        binding.videoQualitySelect.setSelection(qualities.indexOf(CallSettings.videoQuality(this)))
+        binding.videoQualitySelect.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val quality = qualities.getOrNull(pos) ?: return
+                if (quality == CallSettings.videoQuality(this@MainActivity)) return
+                CallSettings.setVideoQuality(this@MainActivity, quality)
+                engine?.applyVideoQuality()
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
         // Audio route (Android 12+ only; see CallSettings).
         val audio = CallSettings.audioOptions(this)
         binding.audioSelect.adapter = ArrayAdapter(
