@@ -24,6 +24,14 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.2.0 — product landing page
+
+- The signed-out web experience now introduces take-back with a responsive,
+  brand-led landing page while keeping provider-backed sign-in close at hand.
+- A live-call preview and group-conversation showcase use compact WebP assets.
+- The landing page delegates authentication to the configured OIDC provider;
+  it contains no nickname or password fields.
+
 ## 2.1.0 — pluggable identity providers
 
 - The OIDC implementation now has explicit `generic`, `authentik`, and
@@ -485,7 +493,6 @@ Android catches up with four web features (@river asked for these).
   connections rendered each message **3×** on the old client and **1×** on the
   new one, which still received messages afterwards and recovered once from a
   server restart.
-
 ## 1.19.1
 
 **Changed — registration is closed by default**
