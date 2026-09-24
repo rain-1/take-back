@@ -32,6 +32,5 @@ systemctl --user enable --now takeback-idea-feed.service takeback-session-relay.
 Check both services with `systemctl --user status takeback-idea-feed.service
  takeback-session-relay.service`. The queue and service journals retain intake
 and delivery evidence. The feed receives messages while connected; it does not
-backfill earlier group history. On this host, systemd lingering is disabled, so
-both services run while the `ubuntu` user manager is active. A root operator
-can enable lingering if they must survive logout.
+backfill earlier group history. On this host, systemd lingering is enabled for
+`ubuntu`, so both user services continue running after logout.
