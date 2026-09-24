@@ -1,0 +1,15 @@
+[Unit]
+Description=Queue messages from the Takeback ideas group
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/take-back
+Environment=XDG_CONFIG_HOME=%h/.config/take-back-codex
+ExecStart=/bin/bash -o pipefail -c 'exec %h/.local/bin/tb-codex watch -plain | exec /usr/bin/python3 scripts/takeback-idea-feed.py "#bugrep & featurereq" --output %h/.local/share/takeback-ideas/messages.jsonl'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

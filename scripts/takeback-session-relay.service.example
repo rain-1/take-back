@@ -1,0 +1,16 @@
+[Unit]
+Description=Relay Takeback ideas into this Codex thread
+After=takeback-idea-feed.service
+Wants=takeback-idea-feed.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/take-back
+Environment=PATH=%h/.nvm/versions/node/v24.15.0/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=%h/.config/take-back-codex/session.env
+ExecStart=/usr/bin/python3 scripts/takeback-session-relay.py --queue %h/.local/share/takeback-ideas/messages.jsonl --offset %h/.local/share/takeback-ideas/relay.offset --codex %h/.nvm/versions/node/v24.15.0/bin/codex
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
