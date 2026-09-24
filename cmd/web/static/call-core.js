@@ -1089,30 +1089,31 @@ window.TBCall = (function () {
     }
   }
 
-  // tuneAudio rewrites the Opus fmtp line so peers know whether to expect
-  // stereo. Mono is the default and leaves the SDP untouched (the lowest-risk
-  // path, byte for byte what we sent before this feature existed); stereo
-  // appends stereo=1;sprop-stereo=1 to the Opus payload's fmtp so both
-  // directions carry two channels. SDP lines are CRLF-separated, so preserve
-  // that on the way out.
+  // stereo=1 tells the FAR SIDE that we can receive two channels. It must not
+  // depend on our microphone's transmit setting: otherwise a listener using
+  // the default mono setting asks a stereo sender to collapse to mono.
+  // sprop-stereo describes what we send, including stereo desktop share audio.
   function tuneAudio(sdp) {
-    if (!stereoWanted()) return sdp;
-    const m = sdp.match(/a=rtpmap:(\d+) opus\/48000/i);
-    if (!m) return sdp;
-    const pt = m[1];
-    const params = "stereo=1;sprop-stereo=1";
     const lines = sdp.split("\r\n");
+    const sendingStereo = stereoWanted() || !!S.screenStream?.getAudioTracks().length;
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith("a=fmtp:" + pt + " ")) {
-        if (!/stereo=1/.test(lines[i])) lines[i] += ";" + params;
-        return lines.join("\r\n");
+      const opus = lines[i].match(/^a=rtpmap:(\d+) opus\/48000(?:\/2)?$/i);
+      if (!opus) continue;
+      const prefix = "a=fmtp:" + opus[1] + " ";
+      let fmtp = -1;
+      for (let j = i + 1; j < lines.length && !lines[j].startsWith("m="); j++) {
+        if (lines[j].startsWith(prefix)) { fmtp = j; break; }
       }
-    }
-    // No fmtp line for Opus yet: add one right after its rtpmap.
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith("a=rtpmap:" + pt + " ")) {
-        lines.splice(i + 1, 0, "a=fmtp:" + pt + " " + params);
-        break;
+      const existing = fmtp < 0 ? [] : lines[fmtp].slice(prefix.length).split(";")
+        .map((p) => p.trim()).filter((p) => p && !/^(?:stereo|sprop-stereo)=/i.test(p));
+      existing.push("stereo=1");
+      if (sendingStereo) existing.push("sprop-stereo=1");
+      const tuned = prefix + existing.join(";");
+      if (fmtp < 0) {
+        lines.splice(i + 1, 0, tuned);
+        i++;
+      } else {
+        lines[fmtp] = tuned;
       }
     }
     return lines.join("\r\n");

@@ -613,9 +613,9 @@ class RtcEngine(
         sender.parameters = parameters
     }
 
-    /** [sdp] with the Opus stereo flags applied when this call transmits stereo. */
+    /** [sdp] advertises stereo reception independently of our capture setting. */
     private fun tuned(sdp: SessionDescription): SessionDescription =
-        if (stereo) SessionDescription(sdp.type, tuneOpusStereo(sdp.description)) else sdp
+        SessionDescription(sdp.type, tuneOpusStereo(sdp.description, stereo))
 
     /**
      * renegotiate re-offers to one peer after our track set changed. We only
@@ -702,23 +702,32 @@ class RtcEngine(
 }
 
 /**
- * tuneOpusStereo adds `stereo=1;sprop-stereo=1` to the Opus fmtp line so the
- * far side decodes (and sends) two channels. Same rewrite as the web client's
- * tuneAudio, so a phone and a browser agree. Mono calls never come here, which
- * keeps the default SDP byte-for-byte what it was before stereo existed.
+ * `stereo=1` advertises that we can receive stereo regardless of our own
+ * capture setting. `sprop-stereo=1` describes our outgoing capture when enabled.
  */
-internal fun tuneOpusStereo(sdp: String): String {
-    val pt = Regex("a=rtpmap:(\\d+) opus/48000", RegexOption.IGNORE_CASE).find(sdp)?.groupValues?.get(1)
-        ?: return sdp
-    val params = "stereo=1;sprop-stereo=1"
+internal fun tuneOpusStereo(sdp: String, transmitStereo: Boolean): String {
     val lines = sdp.split("\r\n").toMutableList()
-    val fmtp = lines.indexOfFirst { it.startsWith("a=fmtp:$pt ") }
-    if (fmtp >= 0) {
-        if (!lines[fmtp].contains("stereo=1")) lines[fmtp] = lines[fmtp] + ";" + params
-    } else {
-        // No fmtp line for Opus yet: add one straight after its rtpmap.
-        val rtpmap = lines.indexOfFirst { it.startsWith("a=rtpmap:$pt ") }
-        if (rtpmap >= 0) lines.add(rtpmap + 1, "a=fmtp:$pt $params")
+    val opus = Regex("^a=rtpmap:(\\d+) opus/48000(?:/2)?$", RegexOption.IGNORE_CASE)
+    var i = 0
+    while (i < lines.size) {
+        val pt = opus.find(lines[i])?.groupValues?.get(1)
+        if (pt == null) { i++; continue }
+        val prefix = "a=fmtp:$pt "
+        var fmtp = -1
+        var j = i + 1
+        while (j < lines.size && !lines[j].startsWith("m=")) {
+            if (lines[j].startsWith(prefix)) { fmtp = j; break }
+            j++
+        }
+        val params = if (fmtp >= 0) lines[fmtp].removePrefix(prefix).split(";")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("stereo=", true) && !it.startsWith("sprop-stereo=", true) }
+            .toMutableList() else mutableListOf()
+        params.add("stereo=1")
+        if (transmitStereo) params.add("sprop-stereo=1")
+        val tuned = prefix + params.joinToString(";")
+        if (fmtp >= 0) lines[fmtp] = tuned else { lines.add(i + 1, tuned); i++ }
+        i++
     }
     return lines.joinToString("\r\n")
 }

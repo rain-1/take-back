@@ -24,6 +24,14 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.6.0 — stereo reception follows the listener
+
+- Web and Android advertise stereo reception even when their own microphone
+  transmits mono. A listener's mono transmit setting no longer asks a stereo
+  sender to collapse its audio to mono.
+- Stereo transmit still depends on the selected capture setting. Desktop app
+  audio shared with a screen is advertised as stereo when present.
+
 ## 2.5.0 — calls survive going out
 
 - Android call signaling reconnects with bounded backoff and restarts ICE when
