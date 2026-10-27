@@ -24,6 +24,17 @@ Because MAJOR == protocol, **compatibility is readable from the version string**
 
 ---
 
+## 2.7.0 — sign in to the desktop app from your browser
+
+- The desktop app (Windows and Linux) opens sign-in in the system browser, so
+  saved passwords, password managers and passkeys work. The browser hands a
+  one-time code back to the app on a 127.0.0.1 loopback port (RFC 8252); the
+  app redeems it at `/api/auth/native` and the browser itself gets no session.
+- `/auth/login` accepts `desktop=<port>&ds=<state>`, and `/api/auth/status`
+  advertises `desktopSignIn`. Older desktop builds, and desktop builds talking
+  to older servers, keep signing in inside the app window.
+- A Linux build of the desktop app: `desktop/scripts/package-linux.sh`.
+
 ## 2.6.0 — stereo reception follows the listener
 
 - Web and Android advertise stereo reception even when their own microphone

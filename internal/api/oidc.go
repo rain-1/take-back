@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,7 +43,12 @@ type flight struct {
 	nonce    string
 	verifier string // PKCE
 	native   bool   // finish by handing a one-time code back to the phone
-	created  time.Time
+	// The desktop app's loopback listener (RFC 8252 §7.3): finish by handing a
+	// one-time code to http://127.0.0.1:<desktopPort>, echoing desktopState so
+	// the app knows the code answers its own sign-in. Zero for other clients.
+	desktopPort  int
+	desktopState string
+	created      time.Time
 }
 
 // A code the phone exchanges for its session, once.
@@ -166,6 +172,9 @@ func (a *API) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if a.oidcEnabled() {
 		resp["backend"] = a.OIDC.Backend()
 		resp["authorizationOrigin"] = a.OIDC.AuthorizationOrigin()
+		// /auth/login understands desktop=<port>&ds=<state>: the desktop app
+		// may send the person to their own browser to sign in.
+		resp["desktopSignIn"] = true
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := a.OIDC.Ready(ctx); err != nil {
@@ -185,6 +194,18 @@ func (a *API) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "this server has no identity provider configured")
 		return
 	}
+	// A desktop sign-in names the loopback port to hand its code to. Checked
+	// before the rate limit: a malformed request shouldn't spend an attempt.
+	var desktopPort int
+	desktopState := r.URL.Query().Get("ds")
+	if d := r.URL.Query().Get("desktop"); d != "" {
+		port, err := strconv.Atoi(d)
+		if err != nil || port < 1024 || port > 65535 || !desktopStateRE.MatchString(desktopState) {
+			writeErr(w, http.StatusBadRequest, "bad desktop sign-in parameters")
+			return
+		}
+		desktopPort = port
+	}
 	if !allow(w, r, loginLimiter) {
 		return
 	}
@@ -195,6 +216,9 @@ func (a *API) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		verifier: verifier,
 		native:   r.URL.Query().Get("native") == "1",
 		created:  time.Now(),
+	}
+	if desktopPort != 0 {
+		f.native, f.desktopPort, f.desktopState = false, desktopPort, desktopState
 	}
 	if !a.oidc.start(state, f) {
 		writeErr(w, http.StatusServiceUnavailable, "too many sign-ins in progress — try again shortly")
@@ -229,14 +253,14 @@ func (a *API) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if e := q.Get("error"); e != "" {
 		// The person declined, or the provider refused them.
 		f, _ := a.oidc.take(q.Get("state"))
-		a.authFailure(w, r, "sign-in was cancelled or refused", f.native)
+		a.authFailure(w, r, "sign-in was cancelled or refused", f)
 		return
 	}
 	f, ok := a.oidc.take(q.Get("state"))
 	if !ok {
 		// Unknown state: a replayed callback, an expired sign-in, or a forged
 		// one. All three are the same answer — start again.
-		a.authFailure(w, r, "that sign-in expired — please try again", false)
+		a.authFailure(w, r, "that sign-in expired — please try again", flight{})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
@@ -244,12 +268,12 @@ func (a *API) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	id, err := a.OIDC.Exchange(ctx, q.Get("code"), f.verifier, f.nonce)
 	if err != nil {
-		a.authFailure(w, r, "the identity provider could not confirm that sign-in", f.native)
+		a.authFailure(w, r, "the identity provider could not confirm that sign-in", f)
 		return
 	}
 	user, err := a.userForIdentity(id)
 	if err != nil {
-		a.authFailure(w, r, err.Error(), f.native)
+		a.authFailure(w, r, err.Error(), f)
 		return
 	}
 
@@ -259,9 +283,15 @@ func (a *API) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, nativeRedirect+"?code="+a.oidc.mintCode(user.ID), http.StatusFound)
 		return
 	}
+	if f.desktopPort != 0 {
+		// The desktop app's loopback listener: same one-time code, and again no
+		// cookie for this browser.
+		http.Redirect(w, r, desktopRedirect(f)+"&code="+a.oidc.mintCode(user.ID), http.StatusFound)
+		return
+	}
 	token, err := a.setSessionToken(w, r, user.ID)
 	if err != nil {
-		a.authFailure(w, r, "could not start a session", false)
+		a.authFailure(w, r, "could not start a session", flight{})
 		return
 	}
 	// Kept for logout, so the provider can end its own session without asking
@@ -273,12 +303,27 @@ func (a *API) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 // nativeRedirect is the phone app's deep link (see AndroidManifest.xml).
 const nativeRedirect = "com.takeback.app://auth"
 
+// desktopStateRE is what the desktop app may ask to have echoed back: an
+// opaque random token, constrained so it can't smuggle anything into the URL.
+var desktopStateRE = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
+// desktopRedirect is the desktop app's loopback listener for this sign-in.
+// Always the IPv4 loopback literal, never "localhost", which some resolvers
+// send elsewhere (RFC 8252 §8.3).
+func desktopRedirect(f flight) string {
+	return "http://127.0.0.1:" + strconv.Itoa(f.desktopPort) + "/callback?state=" + f.desktopState
+}
+
 // authFailure sends a browser somewhere it can read what went wrong. The web
 // client shows ?authError= on its sign-in screen.
-func (a *API) authFailure(w http.ResponseWriter, r *http.Request, msg string, native bool) {
+func (a *API) authFailure(w http.ResponseWriter, r *http.Request, msg string, f flight) {
 	// A native sign-in has no useful web page to return to, so return the error
 	// to the app that started the flow.
-	if native {
+	if f.desktopPort != 0 {
+		http.Redirect(w, r, desktopRedirect(f)+"&error="+urlQueryEscape(msg), http.StatusFound)
+		return
+	}
+	if f.native {
 		http.Redirect(w, r, nativeRedirect+"?error="+urlQueryEscape(msg), http.StatusFound)
 		return
 	}

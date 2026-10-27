@@ -33,6 +33,7 @@ and plays from the screen tile.
 | Windows per-app capture | ✅ run on real Windows 11: lists audio apps, captures one app's audio in isolation |
 | Windows build | ✅ `scripts/package-win.sh` (from Linux/WSL, no Windows toolchain). Ran on real Windows 11 in a call: the other side received the source at 441 Hz within 0.25 s |
 | Real app capture inside the Windows build, in a call | ⏳ needs a human test on Windows |
+| Linux build | ✅ `scripts/package-linux.sh`. Launches on Debian 13 (X11); not yet tested in a call |
 | Linux (PipeWire) | ⚠️ written, not yet run on a PipeWire desktop |
 | macOS | ❌ not started (ScreenCaptureKit) |
 
@@ -70,6 +71,13 @@ through a redirect on take-back's own origin), to load another site in an
 iframe, to open a local file, and to help itself to permissions. Everything the
 app grants a page is listed there, so a change that widens it fails a check.
 
+Signing in happens in your own browser, so saved passwords and passkeys work:
+pressing Sign in opens the server's sign-in page there, and once you're
+through, the browser hands a one-time code back to the app on a random
+`127.0.0.1` port (RFC 8252's loopback redirect). The app swaps it for its own
+session; the browser never gets one. Servers older than 2.7.0 don't support
+this, and the app signs in inside its own window instead.
+
 Server invite links (`<server>/?invite=CODE`) open the join dialog **in the
 app**: clicked in chat, or passed on the command line, including to a copy
 that's already running (`take-back.exe https://…/?invite=CODE`).
@@ -80,11 +88,30 @@ Windows package (from Linux/WSL):
 ZIG=/path/to/zig scripts/package-win.sh   # -> dist/take-back-desktop-win32-x64-<version>.zip
 ```
 
-It downloads the official Electron Windows build, verifies it against
-Electron's published SHA-256 sums, adds the app and the cross-compiled audio
-helper, zips it, and writes `<zip>.sha256` beside it.
+Linux package (needs only curl, jq and unzip — no Node or Zig):
 
-The zip is **unsigned** — Windows SmartScreen warns on first run, and there is
+```sh
+scripts/package-linux.sh                  # -> dist/take-back-desktop-linux-x64-<version>.tar.gz
+```
+
+Unpack it anywhere and run `./take-back`; `./install.sh` adds it to your
+applications menu. Per-app sound needs PipeWire (`pw-dump`, `pw-record`) and,
+for matching a window to its app, `xprop` on X11.
+
+If it exits straight away with *"The SUID sandbox helper binary was found, but
+is not configured correctly"*, the distro blocks unprivileged user namespaces
+(Ubuntu 24.04+ does, via AppArmor). Give the sandbox helper the setuid bit it
+expects, rather than turning the sandbox off:
+
+```sh
+sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox
+```
+
+Each packager downloads the official Electron build, verifies it against
+Electron's published SHA-256 sums, adds the app (and on Windows the
+cross-compiled audio helper), archives it, and writes a `.sha256` beside the archive.
+
+Neither build is **signed** — Windows SmartScreen warns on first run, and there is
 no update channel: whoever downloads it is trusting the HTTPS connection to the
 download page and nothing else. Anyone who can change what that page serves (a
 compromised server, a stolen certificate) can hand out a trojaned build, and

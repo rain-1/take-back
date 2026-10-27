@@ -369,6 +369,55 @@ func TestNativeSignInHandsBackAOneTimeCode(t *testing.T) {
 	}
 }
 
+func TestDesktopSignInHandsCodeToLoopback(t *testing.T) {
+	idp := newStubIdP(t, "take-back-test")
+	_, mux := newOIDCTestAPI(t, idp, true, false)
+	idp.sub, idp.username = "sub-desktop", "desktopuser"
+
+	// Parameters that could point the code anywhere but a loopback port, or
+	// smuggle extra query into it, are refused before the provider is asked.
+	for _, q := range []string{
+		"desktop=80&ds=abcdefghijklmnop",
+		"desktop=notaport&ds=abcdefghijklmnop",
+		"desktop=51000&ds=short",
+		"desktop=51000&ds=abcdefghijklmnop%26code%3Dx",
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/auth/login?"+q, nil)
+		req.RemoteAddr = "10.9.9.9:5555"
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", q, rec.Code)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/auth/login?desktop=51000&ds=abcdefghijklmnop", nil)
+	req.RemoteAddr = "10.9.9.9:5555" // its own rate-limit bucket
+	mux.ServeHTTP(rec, req)
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	idp.nonce = loc.Query().Get("nonce")
+	rec = callback(mux, loc.Query().Get("state"))
+	back, err := url.Parse(rec.Header().Get("Location"))
+	if err != nil || back.Scheme != "http" || back.Host != "127.0.0.1:51000" || back.Path != "/callback" {
+		t.Fatalf("desktop callback should go to the loopback listener, got %q", rec.Header().Get("Location"))
+	}
+	if back.Query().Get("state") != "abcdefghijklmnop" {
+		t.Fatalf("the app's state should be echoed back, got %q", back.RawQuery)
+	}
+	if sessionCookieFrom(rec) != "" {
+		t.Fatal("the browser must not get the session; the app does")
+	}
+	req = httptest.NewRequest("POST", "/api/auth/native",
+		strings.NewReader(fmt.Sprintf(`{"code":%q}`, back.Query().Get("code"))))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || sessionCookieFrom(rec) == "" {
+		t.Fatalf("exchange: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPasswordEndpointsRetireWhenProviderConfigured(t *testing.T) {
 	idp := newStubIdP(t, "take-back-test")
 	a, mux := newOIDCTestAPI(t, idp, true, false)

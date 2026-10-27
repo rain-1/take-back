@@ -8,7 +8,9 @@
 "use strict";
 
 const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } = require("electron");
+const crypto = require("crypto");
 const fs = require("fs");
+const http = require("http");
 const path = require("path");
 const audio = require("./audio-sources");
 
@@ -27,6 +29,9 @@ const START_URL = process.env.TB_START_URL || SERVER + "/";
 // also refuses to expose itself there (see preload.js).
 let allowedAuthOrigin = process.env.TB_AUTH_ORIGIN
   ? new URL(process.env.TB_AUTH_ORIGIN).origin : null;
+// Whether the server can hand a sign-in finished in the system browser back to
+// the app (see signInInBrowser). Servers that can't get the in-window sign-in.
+let browserSignIn = false;
 
 // Test mode (see test/): fake camera/mic, no picker (share this window's own
 // frame + TB_TEST_AUDIO), and side effects that would need a person — opening
@@ -138,6 +143,13 @@ function createWindow() {
   // that tries to navigate ITSELF elsewhere is not a click, and must not be
   // able to open things on the user's machine either.
   const guard = (event, url) => {
+    if (browserSignIn && isSignInStart(url)) {
+      // Sign in in the person's own browser, with their password manager and
+      // passkeys, rather than in a window with no address bar.
+      event.preventDefault();
+      signInInBrowser(url);
+      return;
+    }
     const invite = inviteCodeOf(url);
     if (invite) {
       // Reloading the page to reach the dialog would hang up a call in progress.
@@ -203,7 +215,6 @@ const isAllowedTopLevel = (url) => {
 // Keycloak does not require rebuilding the app. An explicit TB_AUTH_ORIGIN is
 // still available for development and for servers predating this field.
 async function discoverAuthOrigin() {
-  if (allowedAuthOrigin) return;
   try {
     const response = await fetch(`${allowedOrigin}/api/auth/status`, {
       signal: AbortSignal.timeout(5000),
@@ -211,8 +222,99 @@ async function discoverAuthOrigin() {
     const status = await response.json();
     const candidate = /^https?:\/\//i.test(status.authorizationOrigin || "")
       ? originOf(status.authorizationOrigin) : null;
-    if (status.provider && candidate) allowedAuthOrigin = candidate;
+    if (status.provider && candidate && !allowedAuthOrigin) allowedAuthOrigin = candidate;
+    browserSignIn = status.provider === true && status.desktopSignIn === true;
   } catch (_) { /* password-only or offline server: no extra origin needed */ }
+}
+
+// ---- signing in through the system browser ----------------------------------
+//
+// RFC 8252's loopback redirect: the app listens on a random 127.0.0.1 port,
+// opens /auth/login?desktop=<port>&ds=<state> in the person's browser, and the
+// server, once the provider has confirmed them, sends that browser to
+// http://127.0.0.1:<port>/callback?state=<state>&code=<one-time code>. The app
+// swaps the code for a session in its own cookie jar; the browser never gets
+// one. `state` is random per sign-in, so nothing else on this machine can push
+// a code (and so an account) into the app.
+
+const SIGN_IN_TTL = 15 * 60 * 1000; // matches the server's flightTTL
+let pendingSignIn = null; // { server, timer } of the sign-in in progress
+
+const isSignInStart = (url) => {
+  try {
+    const u = new URL(url);
+    return u.origin === allowedOrigin && u.pathname === "/auth/login";
+  } catch (_) {
+    return false;
+  }
+};
+
+function endSignIn() {
+  if (!pendingSignIn) return;
+  clearTimeout(pendingSignIn.timer);
+  pendingSignIn.server.close();
+  pendingSignIn = null;
+}
+
+function signInInBrowser(loginUrl) {
+  endSignIn(); // pressing Sign in again starts over
+  const state = crypto.randomBytes(24).toString("base64url");
+  const server = http.createServer(async (req, res) => {
+    const u = new URL(req.url, "http://127.0.0.1");
+    if (u.pathname !== "/callback" || u.searchParams.get("state") !== state) {
+      res.writeHead(404);
+      return res.end();
+    }
+    endSignIn();
+    // Redeem first, so the tab can say how it actually went.
+    const error = await finishSignIn(u.searchParams.get("code"), u.searchParams.get("error"));
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(signInDonePage(error));
+  });
+  server.on("error", (e) => console.error("[sign-in] loopback:", e.message));
+  server.listen(0, "127.0.0.1", () => {
+    const target = new URL(loginUrl);
+    target.searchParams.set("desktop", String(server.address().port));
+    target.searchParams.set("ds", state);
+    openExternal(target.href);
+  });
+  pendingSignIn = { server, timer: setTimeout(endSignIn, SIGN_IN_TTL) };
+}
+
+// finishSignIn swaps the code for a session and returns the error, if any.
+async function finishSignIn(code, error) {
+  if (!win) return "the take-back window was closed";
+  if (win.isMinimized()) win.restore();
+  if (SHOW_WINDOW) { win.show(); win.focus(); }
+  if (!error) {
+    try {
+      // The window's own session, so the cookie lands where the page needs it.
+      const res = await win.webContents.session.fetch(`${allowedOrigin}/api/auth/native`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code || "" }),
+        credentials: "include",
+      });
+      if (!res.ok) error = (await res.json().catch(() => ({}))).error || "sign-in failed";
+    } catch (_) {
+      error = "couldn't reach take-back to finish signing in";
+    }
+  }
+  // The web client shows ?authError= on its sign-in screen, as in a browser.
+  win.loadURL(error ? `${allowedOrigin}/?authError=${encodeURIComponent(error)}` : `${allowedOrigin}/`);
+  return error;
+}
+
+// What the browser tab shows once it has handed the sign-in back.
+function signInDonePage(error) {
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const message = error
+    ? `Sign-in didn't complete: ${esc(error)}. Go back to take-back to try again.`
+    : "You're signed in to the take-back app. You can close this tab.";
+  return `<!doctype html><meta charset="utf-8"><title>take-back</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0d11;color:#e8eaf0;font:16px system-ui,sans-serif">
+<p style="max-width:28rem;padding:0 16px;text-align:center">${message}</p>`;
 }
 
 // ---- server invite links ------------------------------------------------------
